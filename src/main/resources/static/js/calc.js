@@ -6,6 +6,8 @@
 //  - A player who paid for an expense gets that amount credited to their balance.
 //  - A series-wide tournament fee is split equally among players taking part (player.tournament !== false).
 //  - A player's payments ({ id, date, amount, method, note }) add up to what they have paid.
+//  - tournament.payments are transfers from the admin to the tournament management; only money
+//    actually sent leaves the admin's account (cash in hand), the rest is still owed to management.
 (function (root) {
   const MATCHES = [1, 2, 3, 4, 5].map(i => ({ id: 'm' + i, label: 'Match ' + i, short: 'M' + i, type: 'match' }));
 
@@ -100,7 +102,8 @@
   function totals(state, fmt) {
     const stats = allStats(state);
     const tour = tournamentStats(state);
-    let collected = 0, payBack = 0, owed = 0, fronted = 0, daySpent = 0, fundSpent = tour.fee;
+    const sent = round2(((state.tournament && state.tournament.payments) || []).reduce((s, x) => s + num(x.amount), 0));
+    let collected = 0, payBack = 0, owed = 0, fronted = 0, daySpent = 0, fundSpent = sent;
     state.players.forEach(p => {
       const c = playerCalc(state, p, stats, fmt, tour);
       collected += c.paid;
@@ -118,6 +121,8 @@
       daySpent: round2(daySpent),
       spent: round2(daySpent + tour.fee),
       fronted: round2(fronted),
+      sentToManagement: sent,
+      managementDue: round2(Math.max(tour.fee - sent, 0)),
       cashInHand: round2(collected - fundSpent),
       payBack: round2(payBack),
       owed: round2(owed)

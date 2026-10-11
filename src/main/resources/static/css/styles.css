@@ -396,6 +396,22 @@ h1, h2, h3 { margin: 0; font-weight: 400; }
 .me-pick h3 { font-family: var(--head-font); font-size: 22px; }
 .me-pick .select { max-width: 320px; }
 
+/* League block (Summary): fee vs. money sent to management, and what's left in the account */
+.panel.league { margin-bottom: 18px; border-color: rgba(226, 182, 92, .3); background: linear-gradient(120deg, rgba(226, 182, 92, .1), var(--card) 55%); }
+.league-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.league-head .day-kind { color: var(--gold); }
+.league-head h3 { font-family: var(--head-font); font-size: 26px; }
+.league-pct { color: var(--gold-light); font-weight: 700; font-size: 14px; }
+.league-bar { height: 8px; margin: 12px 0 16px; border-radius: var(--pill); background: rgba(255, 255, 255, .08); overflow: hidden; }
+.league-bar span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--gold-deep), var(--gold)); }
+.league-figs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.league-figs > div { display: flex; flex-direction: column; padding: 12px 14px; border-radius: 12px; background: rgba(0, 0, 0, .22); border: 1px solid var(--line); min-width: 0; }
+.league-figs span { font-size: 12px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); font-weight: 700; }
+.league-figs strong { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.league-figs small { color: var(--muted); font-size: 12px; }
+.league-sub { margin: 18px 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); font-weight: 800; }
+.league-name { max-width: 420px; margin: 4px 0 2px; font-family: var(--head-font); font-size: 20px; }
+
 /* Payment rows (player sheet) */
 .pay-row {
   display: grid; grid-template-columns: 160px 140px minmax(0, 1fr) 44px; gap: 8px; align-items: center;
@@ -657,6 +673,7 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
   .exp-row { grid-template-columns: minmax(0, 1fr) 130px; padding: 10px; border-radius: 14px; border: 1px solid var(--line); background: rgba(255, 255, 255, .02); }
   .exp-row .select { grid-column: 1; }
   .exp-row .icon-btn { grid-column: 2; justify-self: end; }
+  .league-figs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .pay-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px; grid-template-areas: "date amount del" "method method del" "note note del"; }
   .me-actions { width: 100%; }
   .me-actions .btn-gold { flex: 1; }

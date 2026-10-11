@@ -6,11 +6,13 @@ import com.redfalcons.ledger.model.Payment;
 import com.redfalcons.ledger.model.Player;
 import com.redfalcons.ledger.model.Setting;
 import com.redfalcons.ledger.model.Training;
+import com.redfalcons.ledger.model.TournamentPayment;
 import com.redfalcons.ledger.repo.DayAmountRepository;
 import com.redfalcons.ledger.repo.ExpenseRepository;
 import com.redfalcons.ledger.repo.PaymentRepository;
 import com.redfalcons.ledger.repo.PlayerRepository;
 import com.redfalcons.ledger.repo.SettingRepository;
+import com.redfalcons.ledger.repo.TournamentPaymentRepository;
 import com.redfalcons.ledger.repo.TrainingRepository;
 import com.redfalcons.ledger.web.LedgerDto;
 import com.redfalcons.ledger.web.LedgerDto.ExpenseDto;
@@ -35,6 +37,7 @@ public class LedgerService {
     private static final Set<String> CURRENCIES = Set.of("Rs ", "PKR ", "₹", "$", "£");
     private static final Sort BY_POSITION = Sort.by("position");
     private static final String TOURNAMENT_FEE = "tournamentFee";
+    private static final String TOURNAMENT_NAME = "tournamentName";
     /** Item name used when a legacy per-day amount is turned into an expense. */
     private static final String LEGACY_ITEM = "Amount spent";
     /** Note on the payment created from a "paid" total recorded before payments were itemised. */
@@ -46,15 +49,18 @@ public class LedgerService {
     private final DayAmountRepository legacyAmounts;
     private final ExpenseRepository expenses;
     private final PaymentRepository payments;
+    private final TournamentPaymentRepository tournamentPayments;
     private final SettingRepository settings;
 
     public LedgerService(PlayerRepository players, TrainingRepository trainings, DayAmountRepository legacyAmounts,
-                         ExpenseRepository expenses, PaymentRepository payments, SettingRepository settings) {
+                         ExpenseRepository expenses, PaymentRepository payments,
+                         TournamentPaymentRepository tournamentPayments, SettingRepository settings) {
         this.players = players;
         this.trainings = trainings;
         this.legacyAmounts = legacyAmounts;
         this.expenses = expenses;
         this.payments = payments;
+        this.tournamentPayments = tournamentPayments;
         this.settings = settings;
     }
 
@@ -103,7 +109,11 @@ public class LedgerService {
 
         return new LedgerDto("cricket-ledger", 3, Instant.now().toString(), playerDtos,
                 dayTotals(expenseMap), trainingDtos, expenseMap,
-                new TournamentDto(s.getOrDefault(TOURNAMENT_FEE, "")), settingsDto);
+                new TournamentDto(s.getOrDefault(TOURNAMENT_NAME, ""), s.getOrDefault(TOURNAMENT_FEE, ""),
+                        tournamentPayments.findAll(BY_POSITION).stream()
+                                .map(x -> new PaymentDto(x.getId(), x.getDate(), x.getAmount(), x.getMethod(), x.getNote()))
+                                .toList()),
+                settingsDto);
     }
 
     /** Replaces the whole ledger with the given state (admin only). */
@@ -144,8 +154,7 @@ public class LedgerService {
             List<String> amounts = new ArrayList<>();
             for (PaymentDto x : paymentIn) {
                 if (x == null || blank(x.id()) || !paymentIds.add(x.id())) continue;
-                String date = ISO_DATE.matcher(nz(x.date())).matches() ? x.date() : "";
-                newPayments.add(new Payment(x.id(), p.id(), newPayments.size(), date, numeric(x.amount()),
+                newPayments.add(new Payment(x.id(), p.id(), newPayments.size(), isoDate(x.date()), numeric(x.amount()),
                         clip(x.method(), 40), clip(x.note(), 200)));
                 amounts.add(numeric(x.amount()));
             }
@@ -170,6 +179,7 @@ public class LedgerService {
         trainings.deleteAllInBatch();
         expenses.deleteAllInBatch();
         payments.deleteAllInBatch();
+        tournamentPayments.deleteAllInBatch();
         legacyAmounts.deleteAllInBatch();
         players.flush();
 
@@ -178,8 +188,19 @@ public class LedgerService {
         expenses.saveAll(newExpenses);
         payments.saveAll(newPayments);
 
-        String fee = in.tournament() == null ? "" : numeric(in.tournament().fee());
-        settings.save(new Setting(TOURNAMENT_FEE, fee));
+        TournamentDto tour = in.tournament();
+        settings.save(new Setting(TOURNAMENT_FEE, tour == null ? "" : numeric(tour.fee())));
+        settings.save(new Setting(TOURNAMENT_NAME, tour == null ? "" : clip(tour.name(), 80)));
+        List<TournamentPayment> sent = new ArrayList<>();
+        Set<String> sentIds = new HashSet<>();
+        if (tour != null && tour.payments() != null) {
+            for (PaymentDto x : tour.payments()) {
+                if (x == null || blank(x.id()) || !sentIds.add(x.id())) continue;
+                sent.add(new TournamentPayment(x.id(), sent.size(), isoDate(x.date()), numeric(x.amount()),
+                        clip(x.method(), 40), clip(x.note(), 200)));
+            }
+        }
+        tournamentPayments.saveAll(sent);
 
         SettingsDto s = in.settings();
         if (s != null) {
@@ -206,6 +227,10 @@ public class LedgerService {
         BigDecimal total = amounts.filter(a -> a != null && !a.isEmpty()).map(BigDecimal::new)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         return total.signum() == 0 ? "" : total.stripTrailingZeros().toPlainString();
+    }
+
+    private static String isoDate(String s) {
+        return ISO_DATE.matcher(nz(s)).matches() ? s : "";
     }
 
     private static String clip(String s, int max) {

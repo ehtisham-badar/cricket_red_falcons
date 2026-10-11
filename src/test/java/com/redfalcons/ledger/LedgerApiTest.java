@@ -73,13 +73,22 @@ class LedgerApiTest {
                 """;
         assertThat(send("PUT", "/api/ledger", v3, token).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/ledger", null, null).body())
-                .contains("\"tournament\":{\"fee\":\"65000\"}")
+                .contains("\"tournament\":{\"name\":\"\",\"fee\":\"65000\",\"payments\":[]}")
                 .contains("\"name\":\"Rizwan\",\"role\":\"\",\"paid\":\"2000\",\"tournament\":false")
                 .contains("{\"id\":\"e1\",\"item\":\"Water\",\"amount\":\"500\",\"paidBy\":\"p2\"}")
                 // paidBy pointing at an unknown player falls back to the team fund
                 .contains("{\"id\":\"e2\",\"item\":\"Balls\",\"amount\":\"1000\",\"paidBy\":\"\"}")
                 .contains("\"amounts\":{\"t1\":\"1500\"}")
                 .doesNotContain("legacy-t1");
+
+        // League fee name and transfers to the tournament management round-trip.
+        String withManagement = """
+                {"players":[],"tournament":{"name":"Hundred Premier League","fee":"65000","payments":[
+                    {"id":"m1","date":"2026-10-05","amount":"20000","method":"Bank transfer","note":"First instalment"}]}}
+                """;
+        assertThat(send("PUT", "/api/ledger", withManagement, token).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains(
+                "\"tournament\":{\"name\":\"Hundred Premier League\",\"fee\":\"65000\",\"payments\":[{\"id\":\"m1\",\"date\":\"2026-10-05\",\"amount\":\"20000\",\"method\":\"Bank transfer\",\"note\":\"First instalment\"}]}");
 
         // Payments: the player's paid total is their sum; a bare "paid" (older files) becomes one undated payment.
         String withPayments = """

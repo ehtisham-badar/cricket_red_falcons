@@ -31,7 +31,8 @@ public record LedgerDto(
     public record ExpenseDto(String id, String item, String amount, String paidBy) {
     }
 
-    public record TournamentDto(String fee) {
+    /** {@code payments} are transfers from the admin to the tournament management. */
+    public record TournamentDto(String name, String fee, List<PaymentDto> payments) {
     }
 
     public record TrainingDto(String id, String desc) {

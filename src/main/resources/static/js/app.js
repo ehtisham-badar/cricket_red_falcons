@@ -57,7 +57,7 @@
 
   function emptyState() {
     return {
-      players: [], trainings: [{ id: 't1', desc: '' }], expenses: {}, tournament: { fee: '' },
+      players: [], trainings: [{ id: 't1', desc: '' }], expenses: {}, tournament: { name: '', fee: '', payments: [] },
       settings: { currency: 'Rs ', maxPerMatch: 11, roundUp: false }
     };
   }
@@ -109,7 +109,11 @@
       players,
       trainings: d.trainings && d.trainings.length ? d.trainings.map(t => ({ id: t.id, desc: t.desc || '' })) : [{ id: 't1', desc: '' }],
       expenses,
-      tournament: { fee: d.tournament && d.tournament.fee != null ? String(d.tournament.fee) : '' },
+      tournament: {
+        name: (d.tournament && d.tournament.name) || '',
+        fee: d.tournament && d.tournament.fee != null ? String(d.tournament.fee) : '',
+        payments: paymentsFrom(null, { payments: (d.tournament && d.tournament.payments) || [] })
+      },
       settings: {
         currency: CURRENCIES.includes(s.currency) ? s.currency : 'Rs ',
         maxPerMatch: s.maxPerMatch > 0 ? s.maxPerMatch : 11,
@@ -474,6 +478,34 @@
     </section>`;
   }
 
+  function leagueName() {
+    return state.tournament.name.trim() || 'Tournament';
+  }
+
+  function leagueBlock() {
+    const t = C.totals(state, fmt);
+    const admin = isAdmin();
+    if (!(t.tournamentFee > 0) && !state.tournament.payments.length && !admin) return '';
+    const pct = t.tournamentFee > 0 ? Math.min(100, Math.round(t.sentToManagement / t.tournamentFee * 100)) : 0;
+    return `<section class="panel league">
+      <div class="league-head">
+        <div><span class="day-kind">League</span><h3>${esc(leagueName())}</h3></div>
+        ${t.tournamentFee > 0 ? `<span class="league-pct">${pct}% paid to management</span>` : ''}
+      </div>
+      ${t.tournamentFee > 0 ? `<div class="league-bar"><span style="width:${pct}%"></span></div>` : ''}
+      <div class="league-figs">
+        <div><span>League fee</span><strong>${t.tournamentFee > 0 ? fmt(t.tournamentFee) : '—'}</strong>
+          ${t.tournamentFee > 0 ? '' : `<small>${admin ? 'Set it on the Days tab' : 'Not set'}</small>`}</div>
+        <div><span>${admin ? 'I have paid management' : 'Paid to management'}</span><strong class="pos">${fmt(t.sentToManagement)}</strong></div>
+        <div><span>Still owed to management</span><strong class="${t.managementDue > 0 ? 'neg' : ''}">${fmt(t.managementDue)}</strong></div>
+        <div><span>${admin ? 'In my account' : 'With the manager'}</span><strong class="${t.cashInHand < 0 ? 'neg' : ''}">${fmtNet(t.cashInHand).replace(/^\+/, '')}</strong>
+          <small>Collected ${fmt(t.collected)} − sent ${fmt(t.sentToManagement)}${t.daySpent - t.fronted > 0 ? ` − expenses ${fmt(t.daySpent - t.fronted)}` : ''}</small></div>
+      </div>
+      <h4 class="league-sub">Payments to management</h4>
+      ${paymentEditor(MGMT, state.tournament.payments, '+ Add payment to management')}
+    </section>`;
+  }
+
   function viewSummary() {
     const t = C.totals(state, fmt);
     const stats = C.allStats(state);
@@ -482,9 +514,9 @@
     const admin = isAdmin();
     const cards = [
       { label: 'Collected', value: fmt(t.collected), cls: '', note: 'Paid in by players' },
-      { label: 'Tournament fee', value: t.tournamentFee > 0 ? fmt(t.tournamentFee) : '—', cls: '', note: tour.n ? `${fmt(tour.share)} each · ${tour.n} players` : 'Not set' },
+      { label: 'League fee', value: t.tournamentFee > 0 ? fmt(t.tournamentFee) : '—', cls: '', note: tour.n ? `${fmt(tour.share)} each · ${tour.n} players` : 'Not set' },
       { label: 'Day expenses', value: fmt(t.daySpent), cls: '', note: t.fronted > 0 ? `${fmt(t.fronted)} bought by players` : 'Trainings & matches' },
-      { label: 'Cash in hand', value: fmtNet(t.cashInHand).replace(/^\+/, ''), cls: t.cashInHand < 0 ? 'neg' : '', note: 'Collected − fund spending' },
+      { label: admin ? 'In my account' : 'With the manager', value: fmtNet(t.cashInHand).replace(/^\+/, ''), cls: t.cashInHand < 0 ? 'neg' : '', note: 'Collected − sent to management − expenses' },
       { label: admin ? 'You pay back' : 'To be paid back', value: fmt(t.payBack), cls: 'pos', note: 'Players in credit' },
       { label: admin ? 'Still owed to you' : 'Balance due', value: fmt(t.owed), cls: 'neg', note: 'Players still to pay' }
     ];
@@ -534,6 +566,7 @@
           <button class="btn btn-whatsapp" data-action="share-team">${WA_ICON} Send as text</button>
           <button class="btn btn-ghost" data-action="copy-team">${COPY_ICON} Copy</button></div>` : '')}
       ${myBalance()}
+      ${leagueBlock()}
       <div class="stats">${cards.map(c => `<div class="stat ${c.cls}"><span>${c.label}</span><strong>${c.value}</strong><small>${esc(c.note)}</small></div>`).join('')}</div>
       ${warningBanner()}
       <div class="summary-grid">
@@ -560,8 +593,10 @@
     const out = state.players.length - tour.n;
     return `<section class="tour-panel">
       <div class="tour-text">
-        <span class="day-kind">Whole series</span>
-        <h3>Tournament fee</h3>
+        <span class="day-kind">Whole series · league fee</span>
+        ${isAdmin()
+          ? `<input class="field league-name" type="text" placeholder="League name (e.g. Hundred Premier League)" value="${esc(state.tournament.name)}" maxlength="80" data-input="tournament-name" data-focus="tour-name" aria-label="League name">`
+          : `<h3>${esc(leagueName())}</h3>`}
         <p class="muted">Split equally among players taking part${out ? ` (${out} left out — change this on the Players page)` : '. Leave someone out on the Players page'}.</p>
       </div>
       <div class="tour-figs">
@@ -786,7 +821,20 @@
 
   const today = () => new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD in local time
 
+  // Payments made by a player, or (owner MGMT) sent by the admin to the tournament management.
+  const MGMT = '__mgmt';
+  function paymentsOf(ownerId) {
+    if (ownerId === MGMT) return state.tournament.payments;
+    const p = findPlayer(ownerId);
+    return p ? p.payments : null;
+  }
+
   function paymentRows(p) {
+    return paymentEditor(p.id, p.payments, '+ Add payment');
+  }
+
+  function paymentEditor(ownerId, list, addLabel) {
+    const p = { id: ownerId, payments: list };
     if (!isAdmin()) {
       if (!p.payments.length) return '<p class="muted">No payments yet.</p>';
       return `<ul class="exp-list">${p.payments.map(x => `<li><span><strong>${formatDate(x.date) || 'Earlier'}</strong>
@@ -808,7 +856,7 @@
         <button class="icon-btn danger" data-action="remove-payment" ${attrs(x)} aria-label="Remove payment">${X_ICON}</button>
       </div>`).join('');
     return `${rows ? `<div class="exp-rows">${rows}</div>` : ''}
-      <button class="chip" data-action="add-payment" data-id="${esc(p.id)}">+ Add payment</button>`;
+      <button class="chip" data-action="add-payment" data-id="${esc(p.id)}">${addLabel}</button>`;
   }
 
   function sheetPlayer() {
@@ -938,8 +986,8 @@
   // ---------- events ----------
   function findPlayer(id) { return state.players.find(p => p.id === id); }
   function findPayment(el) {
-    const p = findPlayer(el.dataset.player);
-    return p && p.payments.find(x => x.id === el.dataset.id);
+    const list = paymentsOf(el.dataset.player);
+    return list && list.find(x => x.id === el.dataset.id);
   }
   function findExpense(el) { return (state.expenses[el.dataset.day] || []).find(e => e.id === el.dataset.id); }
 
@@ -1017,11 +1065,11 @@
     export() { exportBackup(); },
     import() { $('#import-file').click(); },
     async 'new-series'() {
-      const ok = await confirmDialog('Start a new series?', 'Keeps players, names and roles. Clears attendance, payments, expenses and the tournament fee, and resets trainings to just Training 1.', 'Start new series', true);
+      const ok = await confirmDialog('Start a new series?', 'Keeps players, names and roles. Clears attendance, payments, expenses, the league fee and payments to management, and resets trainings to just Training 1.', 'Start new series', true);
       if (!ok) return;
       state.players.forEach(p => { p.att = {}; p.payments = []; });
       state.expenses = {};
-      state.tournament = { fee: '' };
+      state.tournament = { name: '', fee: '', payments: [] };
       state.trainings = [{ id: 't1', desc: '' }];
       commit();
       toast('New series started.');
@@ -1043,23 +1091,25 @@
       commit();
     },
     'add-payment'(el) {
-      const p = findPlayer(el.dataset.id);
-      if (!p || !isAdmin()) return;
-      const x = { id: rid(), date: today(), amount: '', method: 'Cash', note: '' };
-      p.payments.push(x);
+      const list = paymentsOf(el.dataset.id);
+      if (!list || !isAdmin()) return;
+      const x = { id: rid(), date: today(), amount: '', method: el.dataset.id === MGMT ? 'Bank transfer' : 'Cash', note: '' };
+      list.push(x);
       commit();
       const target = document.querySelector(`[data-focus="pya-${x.id}"]`);
       if (target) target.focus();
     },
     async 'remove-payment'(el) {
-      const p = findPlayer(el.dataset.player);
-      const x = p && p.payments.find(y => y.id === el.dataset.id);
+      const owner = el.dataset.player;
+      const list = paymentsOf(owner);
+      const x = list && list.find(y => y.id === el.dataset.id);
       if (!x) return;
       if (C.num(x.amount) > 0) {
-        const ok = await confirmDialog('Remove this payment?', `${fmt(C.num(x.amount))}${x.date ? ' on ' + formatDate(x.date) : ''} will be removed from ${p.name}'s payments.`, 'Remove', true);
+        const whose = owner === MGMT ? 'the payments to management' : `${findPlayer(owner).name}'s payments`;
+        const ok = await confirmDialog('Remove this payment?', `${fmt(C.num(x.amount))}${x.date ? ' on ' + formatDate(x.date) : ''} will be removed from ${whose}.`, 'Remove', true);
         if (!ok) return;
       }
-      p.payments = p.payments.filter(y => y.id !== x.id);
+      list.splice(list.indexOf(x), 1);
       commit();
     },
     'share-player'(el) { const p = findPlayer(el.dataset.id); if (p) openWhatsApp(playerMessage(p)); },
@@ -1105,6 +1155,7 @@
     'exp-amount'(el) { el.value = cleanNumber(el.value); const e = findExpense(el); if (e) e.amount = el.value; },
     'exp-paidby'(el) { const e = findExpense(el); if (e) e.paidBy = el.value; },
     'tournament-fee'(el) { el.value = cleanNumber(el.value); state.tournament.fee = el.value; },
+    'tournament-name'(el) { state.tournament.name = el.value; },
     name(el) { const p = findPlayer(el.dataset.id); if (p) p.name = el.value; },
     'pay-date'(el) { const x = findPayment(el); if (x) x.date = el.value; },
     'pay-amount'(el) { el.value = cleanNumber(el.value); const x = findPayment(el); if (x) x.amount = el.value; },
