@@ -58,7 +58,10 @@
 
   /**
    * @param {object} o
-   * @param {{name: string, net: number}[]} o.rows   players in Sr. no. order
+   * @param {{name: string, net: number, cells?: {text: string, color: string}[]}[]} o.rows
+   *        players in Sr. no. order; cells fill the extra columns
+   * @param {{label: string, width: number}[]} [o.columns]  extra columns drawn left of the total
+   * @param {{label: string, value: string}[]} [o.payTo]   account details for paying, shown above the footer
    * @param {(n: number) => string} o.money           formats a positive amount, e.g. "Rs 3,129.55"
    * @param {string[]} o.chips                        short summary lines shown under the header
    * @param {{name: string, figures: {label: string, value: string, color: string}[]}} [o.league]
@@ -71,7 +74,9 @@
     const logo = await loadImage(o.logoSrc);
 
     // One column keeps names readable; switch to two only for big squads so the picture stays a sane height.
-    const twoCols = o.rows.length > 24;
+    // Extra columns need the full width, so they keep a single column.
+    const cols = o.columns || [];
+    const twoCols = !cols.length && o.rows.length > 24;
     const perCol = twoCols ? Math.ceil(o.rows.length / 2) : o.rows.length;
     const ROW_H = twoCols ? 76 : 84;
     const GAP = 10;
@@ -79,10 +84,13 @@
     const chipsH = o.chips.length ? 96 : 24;
     const LEAGUE_H = 190;
     const leagueTop = headerH + chipsH;
-    const listTop = leagueTop + (o.league ? LEAGUE_H : 0);
+    const COLHEAD_H = cols.length ? 48 : 0;
+    const colHeadTop = leagueTop + (o.league ? LEAGUE_H : 0);
+    const listTop = colHeadTop + COLHEAD_H;
     const listH = Math.max(perCol, 1) * (ROW_H + GAP);
+    const PAY_H = o.payTo && o.payTo.length ? 200 : 0;
     const footerH = 150;
-    const H = listTop + listH + footerH;
+    const H = listTop + listH + PAY_H + footerH;
 
     const canvas = document.createElement('canvas');
     canvas.width = W;
@@ -186,6 +194,20 @@
 
     // Player rows.
     const colW = twoCols ? (W - PAD * 2 - 24) / 2 : W - PAD * 2;
+    // Right edges of the extra columns, laid out leftwards from the total.
+    const TOTAL_W = 210;
+    const totalRight = PAD + colW - 24;
+    const colRights = [];
+    cols.reduceRight((edge, c, i) => { colRights[i] = edge; return edge - c.width; }, totalRight - TOTAL_W);
+    const namesEnd = cols.length ? colRights[0] - cols[0].width : null;
+    if (cols.length) {
+      ctx.fillStyle = C.muted;
+      ctx.font = `800 16px ${BODY}`;
+      const hy = colHeadTop + 18;
+      spaced(ctx, 'PLAYER', PAD + 86, hy, 2);
+      cols.forEach((c, i) => spaced(ctx, c.label.toUpperCase(), colRights[i], hy, 2, 'right'));
+      spaced(ctx, 'TOTAL DUE', totalRight, hy, 2, 'right');
+    }
     o.rows.forEach((r, i) => {
       const col = twoCols && i >= perCol ? 1 : 0;
       const idx = col ? i - perCol : i;
@@ -227,17 +249,48 @@
         ctx.font = `800 16px ${BODY}`;
         spaced(ctx, label, right, by + 21, 2, 'right');
       }
+      ctx.font = `800 26px ${BODY}`;
+      (r.cells || []).forEach((cell, ci) => {
+        ctx.fillStyle = cell.color;
+        ctx.fillText(cell.text, colRights[ci], by + 1);
+      });
       ctx.textAlign = 'left';
 
       // Name, truncated to the space left
       ctx.fillStyle = C.text;
       ctx.font = `700 ${twoCols ? 23 : 30}px ${BODY}`;
       const nameX = x + 86;
-      ctx.fillText(fit(ctx, r.name || 'Unnamed', right - amountW - 28 - nameX), nameX, by + 1);
+      const nameEnd = namesEnd !== null ? namesEnd - 20 : right - amountW - 28;
+      ctx.fillText(fit(ctx, r.name || 'Unnamed', nameEnd - nameX), nameX, by + 1);
     });
 
+    // Where to send the money.
+    if (PAY_H) {
+      const py = listTop + listH + 30;
+      roundRect(ctx, PAD, py, W - PAD * 2, PAY_H - 30, 18);
+      ctx.fillStyle = 'rgba(226,182,92,0.07)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(226,182,92,0.25)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = C.gold;
+      ctx.font = `800 20px ${BODY}`;
+      spaced(ctx, 'PAY TO', PAD + 28, py + 34, 3);
+      const n = o.payTo.length;
+      const cw = (W - PAD * 2 - 56) / n;
+      o.payTo.forEach((f, i) => {
+        const cx = PAD + 28 + i * cw;
+        ctx.fillStyle = C.muted;
+        ctx.font = `800 15px ${BODY}`;
+        spaced(ctx, f.label.toUpperCase(), cx, py + 78, 1.5);
+        ctx.fillStyle = C.text;
+        ctx.font = `800 30px ${BODY}`;
+        ctx.fillText(fit(ctx, f.value, cw - 20), cx, py + 120);
+      });
+    }
+
     // Footer
-    const fy = listTop + listH + 30;
+    const fy = listTop + listH + PAY_H + 30;
     ctx.fillStyle = C.line;
     ctx.fillRect(PAD, fy, W - PAD * 2, 2);
     ctx.textAlign = 'center';

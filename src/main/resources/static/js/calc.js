@@ -65,6 +65,13 @@
     return { fee, n, share: split(fee, n, state.settings.roundUp) };
   }
 
+  // Money already sent to management, split over the players taking part: the advance asked of
+  // players who have not paid anything yet.
+  function advanceShare(state) {
+    const sent = ((state.tournament && state.tournament.payments) || []).reduce((s, x) => s + num(x.amount), 0);
+    return split(sent, state.players.filter(inTournament).length, state.settings.roundUp);
+  }
+
   function playerCalc(state, player, stats, fmt, tour) {
     stats = stats || allStats(state);
     tour = tour || tournamentStats(state);
@@ -158,7 +165,7 @@
 
   const api = {
     MATCHES, days, num, round2, inTournament, paidTotal, dayExpenses, dayAmount, dayStats, allStats,
-    tournamentStats, playerCalc, totals, warnings, money, signedMoney, netLabel
+    tournamentStats, advanceShare, playerCalc, totals, warnings, money, signedMoney, netLabel
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.RFCalc = api;

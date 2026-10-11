@@ -349,13 +349,37 @@
   }
 
   // ---------- balances picture ----------
+  const MISC_PER_PLAYER = 500;
+  const PAY_TO = [
+    { label: 'Bank', value: 'NayaPay' },
+    { label: 'Account title', value: 'Ehtisham Badar' },
+    { label: 'Account #', value: '03084250469' }
+  ];
+
   async function balanceImage() {
     const t = C.totals(state, fmt);
     const tour = C.tournamentStats(state);
     const stats = C.allStats(state);
+    const advance = C.advanceShare(state);
+    // Total due adds the misc collection on top of the ledger balance; the advance is the part
+    // asked now from players who haven't paid anything yet.
+    const rows = state.players.map(p => {
+      const net = C.round2(C.playerCalc(state, p, stats, fmt, tour).net - MISC_PER_PLAYER);
+      const adv = advance > 0 && C.inTournament(p) && C.paidTotal(p) === 0 ? Math.min(advance, -net) : 0;
+      return {
+        name: p.name,
+        net,
+        cells: [
+          adv > 0 ? { text: fmt(adv), color: '#ff6b6b' } : { text: '—', color: '#8d8a85' },
+          { text: fmt(MISC_PER_PLAYER), color: '#f5eee2' }
+        ]
+      };
+    });
+    const owed = rows.reduce((s, r) => s + Math.max(-r.net, 0), 0);
+    const payBack = rows.reduce((s, r) => s + Math.max(r.net, 0), 0);
     const chips = [];
-    if (t.owed > 0) chips.push({ text: `Still to pay ${fmt(t.owed)}`, color: '#ff6b6b', bg: 'rgba(208,34,44,0.18)' });
-    if (t.payBack > 0) chips.push({ text: `To pay back ${fmt(t.payBack)}`, color: '#e2b65c', bg: 'rgba(226,182,92,0.14)' });
+    if (owed > 0) chips.push({ text: `Still to pay ${fmt(owed)}`, color: '#ff6b6b', bg: 'rgba(208,34,44,0.18)' });
+    if (payBack > 0) chips.push({ text: `To pay back ${fmt(payBack)}`, color: '#e2b65c', bg: 'rgba(226,182,92,0.14)' });
     if (tour.fee > 0 && tour.n) chips.push({ text: `Tournament ${fmt(tour.share)} each`, color: '#f5eee2', bg: 'rgba(255,255,255,0.07)' });
     const league = t.tournamentFee > 0 || state.tournament.payments.length ? {
       name: leagueName(),
@@ -368,7 +392,9 @@
     } : null;
     return window.RFBalanceImage.render({
       league,
-      rows: state.players.map(p => ({ name: p.name, net: C.playerCalc(state, p, stats, fmt, tour).net })),
+      columns: [{ label: 'Advance', width: 170 }, { label: 'Misc', width: 130 }],
+      rows,
+      payTo: PAY_TO,
       money: fmt,
       chips,
       dateText: 'Updated ' + new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
