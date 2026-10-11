@@ -23,6 +23,15 @@ Then:
 Open http://localhost:8080. No Maven install needed; `mvnw` downloads it.
 The app refuses to start if no admin key is configured.
 
+To test locally with real data, add this to `config/application.properties`:
+
+```properties
+ledger.sync-from=https://ledger-production-7d2b.up.railway.app
+```
+
+Every local start then replaces the local data with a copy of the live ledger. It only reads from the
+live app and never writes to it, and local changes are lost on the next restart.
+
 ## Who can edit
 
 The start screen asks for a name.
@@ -37,7 +46,7 @@ It is never stored in git: set it in `config/application.properties` locally, or
 ## Data
 
 - Saved automatically to `./data/redfalcons.mv.db` (git-ignored). Set `LEDGER_DATA_DIR` to store it elsewhere.
-- **Settings → Save backup** downloads `cricket-ledger-YYYY-MM-DD.json`. Backups also store itemised expenses and the tournament fee, and still include per-day totals for older readers. Backups from the original HTML version open fine: each day's amount becomes one expense item.
+- **Settings → Save backup** downloads `cricket-ledger-YYYY-MM-DD.json`. Backups also store itemised expenses, the tournament fee and each player's payments, and still include per-day totals for older readers. Backups from the original HTML version open fine: each day's amount becomes one expense item.
 - **Open backup** restores one.
 
 ## Deploying (Railway + optional Vercel)

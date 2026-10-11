@@ -2,16 +2,19 @@ package com.redfalcons.ledger.service;
 
 import com.redfalcons.ledger.model.DayAmount;
 import com.redfalcons.ledger.model.Expense;
+import com.redfalcons.ledger.model.Payment;
 import com.redfalcons.ledger.model.Player;
 import com.redfalcons.ledger.model.Setting;
 import com.redfalcons.ledger.model.Training;
 import com.redfalcons.ledger.repo.DayAmountRepository;
 import com.redfalcons.ledger.repo.ExpenseRepository;
+import com.redfalcons.ledger.repo.PaymentRepository;
 import com.redfalcons.ledger.repo.PlayerRepository;
 import com.redfalcons.ledger.repo.SettingRepository;
 import com.redfalcons.ledger.repo.TrainingRepository;
 import com.redfalcons.ledger.web.LedgerDto;
 import com.redfalcons.ledger.web.LedgerDto.ExpenseDto;
+import com.redfalcons.ledger.web.LedgerDto.PaymentDto;
 import com.redfalcons.ledger.web.LedgerDto.PlayerDto;
 import com.redfalcons.ledger.web.LedgerDto.SettingsDto;
 import com.redfalcons.ledger.web.LedgerDto.TournamentDto;
@@ -23,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.*;
+import java.util.regex.Pattern;
 
 @Service
 public class LedgerService {
@@ -33,29 +37,41 @@ public class LedgerService {
     private static final String TOURNAMENT_FEE = "tournamentFee";
     /** Item name used when a legacy per-day amount is turned into an expense. */
     private static final String LEGACY_ITEM = "Amount spent";
+    /** Note on the payment created from a "paid" total recorded before payments were itemised. */
+    private static final String LEGACY_PAYMENT_NOTE = "Paid before payment history";
+    private static final Pattern ISO_DATE = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
 
     private final PlayerRepository players;
     private final TrainingRepository trainings;
     private final DayAmountRepository legacyAmounts;
     private final ExpenseRepository expenses;
+    private final PaymentRepository payments;
     private final SettingRepository settings;
 
     public LedgerService(PlayerRepository players, TrainingRepository trainings, DayAmountRepository legacyAmounts,
-                         ExpenseRepository expenses, SettingRepository settings) {
+                         ExpenseRepository expenses, PaymentRepository payments, SettingRepository settings) {
         this.players = players;
         this.trainings = trainings;
         this.legacyAmounts = legacyAmounts;
         this.expenses = expenses;
+        this.payments = payments;
         this.settings = settings;
     }
 
     @Transactional(readOnly = true)
     public LedgerDto load() {
+        Map<String, List<PaymentDto>> paymentsByPlayer = new HashMap<>();
+        payments.findAll(BY_POSITION).forEach(x -> paymentsByPlayer
+                .computeIfAbsent(x.getPlayerId(), k -> new ArrayList<>())
+                .add(new PaymentDto(x.getId(), x.getDate(), x.getAmount(), x.getMethod(), x.getNote())));
+
         List<PlayerDto> playerDtos = players.findAll(BY_POSITION).stream()
                 .map(p -> {
                     Map<String, Boolean> att = new LinkedHashMap<>();
                     p.getAttended().forEach(d -> att.put(d, true));
-                    return new PlayerDto(p.getId(), p.getName(), p.getRole(), p.getPaid(), p.isInTournament(), att);
+                    List<PaymentDto> paid = paymentsByPlayer.getOrDefault(p.getId(), legacyPayments(p.getId(), p.getPaid()));
+                    return new PlayerDto(p.getId(), p.getName(), p.getRole(), sum(paid.stream().map(PaymentDto::amount)),
+                            p.isInTournament(), att, paid);
                 })
                 .toList();
 
@@ -113,7 +129,9 @@ public class LedgerService {
         validDays.addAll(MATCH_IDS);
 
         List<Player> newPlayers = new ArrayList<>();
+        List<Payment> newPayments = new ArrayList<>();
         Set<String> playerIds = new HashSet<>();
+        Set<String> paymentIds = new HashSet<>();
         for (PlayerDto p : in.players()) {
             if (p == null || blank(p.id()) || !playerIds.add(p.id())) continue;
             Set<String> attended = new LinkedHashSet<>();
@@ -122,8 +140,17 @@ public class LedgerService {
                     if (Boolean.TRUE.equals(on) && validDays.contains(day)) attended.add(day);
                 });
             }
+            List<PaymentDto> paymentIn = p.payments() != null ? p.payments() : legacyPayments(p.id(), numeric(p.paid()));
+            List<String> amounts = new ArrayList<>();
+            for (PaymentDto x : paymentIn) {
+                if (x == null || blank(x.id()) || !paymentIds.add(x.id())) continue;
+                String date = ISO_DATE.matcher(nz(x.date())).matches() ? x.date() : "";
+                newPayments.add(new Payment(x.id(), p.id(), newPayments.size(), date, numeric(x.amount()),
+                        clip(x.method(), 40), clip(x.note(), 200)));
+                amounts.add(numeric(x.amount()));
+            }
             newPlayers.add(new Player(p.id(), newPlayers.size(), nz(p.name()).trim(), nz(p.role()),
-                    numeric(p.paid()), !Boolean.FALSE.equals(p.tournament()), attended));
+                    sum(amounts.stream()), !Boolean.FALSE.equals(p.tournament()), attended));
         }
 
         List<Expense> newExpenses = new ArrayList<>();
@@ -142,12 +169,14 @@ public class LedgerService {
         players.deleteAll(); // not InBatch, so Hibernate also removes the player_attendance rows
         trainings.deleteAllInBatch();
         expenses.deleteAllInBatch();
+        payments.deleteAllInBatch();
         legacyAmounts.deleteAllInBatch();
         players.flush();
 
         trainings.saveAll(newTrainings);
         players.saveAll(newPlayers);
         expenses.saveAll(newExpenses);
+        payments.saveAll(newPayments);
 
         String fee = in.tournament() == null ? "" : numeric(in.tournament().fee());
         settings.save(new Setting(TOURNAMENT_FEE, fee));
@@ -165,6 +194,23 @@ public class LedgerService {
             }
         }
         return load();
+    }
+
+    /** A "paid" total from before payments were itemised becomes one undated payment. */
+    private static List<PaymentDto> legacyPayments(String playerId, String paid) {
+        if (paid == null || paid.isEmpty()) return List.of();
+        return List.of(new PaymentDto("legacy-pay-" + playerId, "", paid, "", LEGACY_PAYMENT_NOTE));
+    }
+
+    private static String sum(java.util.stream.Stream<String> amounts) {
+        BigDecimal total = amounts.filter(a -> a != null && !a.isEmpty()).map(BigDecimal::new)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return total.signum() == 0 ? "" : total.stripTrailingZeros().toPlainString();
+    }
+
+    private static String clip(String s, int max) {
+        String t = nz(s).trim();
+        return t.length() > max ? t.substring(0, max) : t;
     }
 
     /** Version 2 files only have a total per day; treat each as a single fund-paid expense. */

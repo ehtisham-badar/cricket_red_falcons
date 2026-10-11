@@ -5,8 +5,11 @@
   const API = (window.RF_API_BASE || '').replace(/\/$/, '');
   const ROLES = ['', 'Batsman', 'Batsman + Captain', 'Bowler', 'All-rounder', 'Wicket-keeper'];
   const CURRENCIES = ['Rs ', 'PKR ', '₹', '$', '£'];
+  const PAYMENT_METHODS = ['Cash', 'JazzCash', 'Easypaisa', 'Bank transfer', 'Other'];
   const SESSION_KEY = 'rf.session';
   const TAB_KEY = 'rf.tab';
+  const ME_KEY = 'rf.me';                     // viewer's chosen player id, or NOT_ME to show the picker
+  const NOT_ME = '__none';
   const POLL_MS = 15000;
 
   const TABS = [
@@ -48,6 +51,9 @@
   const icon = (paths, size = 20) =>
     `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
   const X_ICON = icon('<path d="M18 6 6 18M6 6l12 12"/>', 18);
+  const IMAGE_ICON = icon('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>', 18);
+  const COPY_ICON = icon('<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>', 18);
+  const WA_ICON = icon('<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>', 18);
 
   function emptyState() {
     return {
@@ -75,12 +81,27 @@
     return out;
   }
 
+  // Older data has a single "paid" total; it becomes one undated payment.
+  function paymentsFrom(playerId, p) {
+    if (Array.isArray(p.payments)) {
+      return p.payments.map(x => ({
+        id: x.id || rid(), date: x.date || '', amount: x.amount == null ? '' : String(x.amount),
+        method: x.method || '', note: x.note || ''
+      }));
+    }
+    const paid = p.paid == null ? '' : String(p.paid);
+    return paid ? [{ id: 'legacy-pay-' + playerId, date: '', amount: paid, method: '', note: 'Paid before payment history' }] : [];
+  }
+
   function normalize(d) {
     const s = d.settings || {};
-    const players = (d.players || []).map(p => ({
-      id: p.id || rid(), name: p.name || '', role: p.role || '', paid: p.paid == null ? '' : String(p.paid),
-      tournament: p.tournament !== false, att: p.att || {}
-    }));
+    const players = (d.players || []).map(p => {
+      const id = p.id || rid();
+      return {
+        id, name: p.name || '', role: p.role || '', tournament: p.tournament !== false, att: p.att || {},
+        payments: paymentsFrom(id, p)
+      };
+    });
     const ids = new Set(players.map(p => p.id));
     const expenses = expensesFrom(d);
     Object.values(expenses).forEach(list => list.forEach(e => { if (!ids.has(e.paidBy)) e.paidBy = ''; }));
@@ -201,6 +222,7 @@
       const r = await api('POST', '/api/login', { name });
       session = { name: r.name, admin: r.admin, token: r.token };
       writeStore(SESSION_KEY, session);
+      writeStore(ME_KEY, null); // a new name may be a different person on this device
       await enterApp();
     } catch (e) {
       err.textContent = 'Could not reach the server. Is it running?';
@@ -274,6 +296,184 @@
     return 'Settled';
   }
 
+  // ---------- WhatsApp messages (WhatsApp shows *text* as bold) ----------
+  function playerMessage(p) {
+    const c = C.playerCalc(state, p, null, fmt);
+    const out = [`*Red Falcons CC* — ${p.name || 'Player'}`, ''];
+    out.push('*Cost*');
+    if (c.lines.length) c.lines.forEach(l => out.push('• ' + l.text)); else out.push('• No cost yet');
+    out.push(`Total: ${fmt(c.cost)}`, '');
+    out.push('*Paid*');
+    if (p.payments.length) {
+      p.payments.forEach(x => out.push(`• ${formatDate(x.date) || 'Earlier'}${x.method ? ' (' + x.method + ')' : ''}: ${fmt(C.num(x.amount))}`));
+    } else {
+      out.push('• Nothing yet');
+    }
+    out.push(`Total: ${fmt(c.paid)}`);
+    if (c.creditLines.length) {
+      out.push('', '*Bought for the team*');
+      c.creditLines.forEach(l => out.push('• ' + l.text));
+    }
+    out.push('');
+    if (c.net < 0) out.push(`*Balance due: ${fmt(-c.net)}*`);
+    else if (c.net > 0) out.push(`*To be paid back to you: ${fmt(c.net)}*`);
+    else out.push('*All settled ✅*');
+    out.push('', `Full ledger: ${location.origin}`);
+    return out.join('\n');
+  }
+
+  function teamMessage() {
+    const stats = C.allStats(state);
+    const tour = C.tournamentStats(state);
+    const rows = state.players.map(p => ({ p, net: C.playerCalc(state, p, stats, fmt, tour).net }));
+    const due = rows.filter(r => r.net < 0).sort((a, b) => a.net - b.net);
+    const back = rows.filter(r => r.net > 0);
+    const settled = rows.filter(r => r.net === 0);
+    const out = ['*Red Falcons CC — balances*'];
+    if (tour.fee > 0) out.push(`Tournament fee ${fmt(tour.fee)} (${fmt(tour.share)} each)`);
+    if (due.length) {
+      out.push('', '*Still to pay*');
+      due.forEach((r, i) => out.push(`${i + 1}. ${r.p.name} — ${fmt(-r.net)}`));
+    }
+    if (back.length) {
+      out.push('', '*To be paid back*');
+      back.forEach(r => out.push(`• ${r.p.name} — ${fmt(r.net)}`));
+    }
+    if (settled.length) out.push('', `Settled ✅ ${settled.map(r => r.p.name).join(', ')}`);
+    out.push('', `Your full breakdown: ${location.origin}`);
+    return out.join('\n');
+  }
+
+  // ---------- balances picture ----------
+  async function balanceImage() {
+    const t = C.totals(state, fmt);
+    const tour = C.tournamentStats(state);
+    const stats = C.allStats(state);
+    const chips = [];
+    if (t.owed > 0) chips.push({ text: `Still to pay ${fmt(t.owed)}`, color: '#ff6b6b', bg: 'rgba(208,34,44,0.18)' });
+    if (t.payBack > 0) chips.push({ text: `To pay back ${fmt(t.payBack)}`, color: '#e2b65c', bg: 'rgba(226,182,92,0.14)' });
+    if (tour.fee > 0 && tour.n) chips.push({ text: `Tournament ${fmt(tour.share)} each`, color: '#f5eee2', bg: 'rgba(255,255,255,0.07)' });
+    return window.RFBalanceImage.render({
+      rows: state.players.map(p => ({ name: p.name, net: C.playerCalc(state, p, stats, fmt, tour).net })),
+      money: fmt,
+      chips,
+      dateText: 'Updated ' + new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
+      link: location.host,
+      logoSrc: 'img/logo.jpeg'
+    });
+  }
+
+  function imageFileName() {
+    return `red-falcons-balances-${today()}.png`;
+  }
+
+  // Preview with Share (phones: straight into WhatsApp), Download and Copy.
+  function showImageDialog(blob) {
+    const file = new File([blob], imageFileName(), { type: 'image/png' });
+    const canShare = !!(navigator.canShare && navigator.canShare({ files: [file] }));
+    const canCopy = !!(navigator.clipboard && window.ClipboardItem);
+    const url = URL.createObjectURL(blob);
+    const root = $('#dialog-root');
+    root.innerHTML = `<div class="dialog-backdrop"></div>
+      <div class="dialog image-dialog" role="dialog" aria-modal="true" aria-labelledby="img-title">
+        <h3 id="img-title">Balances picture</h3>
+        <div class="image-preview"><img src="${url}" alt="Team balances"></div>
+        <div class="dialog-actions">
+          <button class="btn btn-ghost" data-img="close">Close</button>
+          ${canCopy ? `<button class="btn btn-ghost" data-img="copy">${COPY_ICON} Copy image</button>` : ''}
+          <button class="btn ${canShare ? 'btn-ghost' : 'btn-primary'}" data-img="download">Download</button>
+          ${canShare ? `<button class="btn btn-whatsapp" data-img="share">${WA_ICON} Share</button>` : ''}
+        </div>
+      </div>`;
+    const close = () => { root.innerHTML = ''; URL.revokeObjectURL(url); document.removeEventListener('keydown', onKey); };
+    const onKey = e => { if (e.key === 'Escape') close(); };
+    document.addEventListener('keydown', onKey);
+    root.querySelector('.dialog-backdrop').addEventListener('click', close);
+    root.querySelector('[data-img="close"]').addEventListener('click', close);
+    root.querySelector('[data-img="download"]').addEventListener('click', () => {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = imageFileName();
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    });
+    const copyBtn = root.querySelector('[data-img="copy"]');
+    if (copyBtn) copyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        toast('Image copied — paste it into WhatsApp.');
+      } catch {
+        toast('Copy isn’t allowed here — use Download instead.');
+      }
+    });
+    const shareBtn = root.querySelector('[data-img="share"]');
+    if (shareBtn) shareBtn.addEventListener('click', () => {
+      navigator.share({ files: [file], title: 'Red Falcons balances' }).catch(() => { /* user cancelled */ });
+    });
+  }
+
+  function openWhatsApp(text) {
+    window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank', 'noopener');
+  }
+
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    toast('Copied — paste it into WhatsApp.');
+  }
+
+  // ---------- "My balance" for viewers ----------
+  const norm = s => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+  // The player this viewer is: their own pick, else a unique match on full name or first name.
+  function myPlayer() {
+    if (isAdmin()) return null;
+    const chosen = readStore(ME_KEY);
+    if (chosen === NOT_ME) return null;
+    if (chosen && findPlayer(chosen)) return findPlayer(chosen);
+    const n = norm(session.name);
+    const full = state.players.filter(p => norm(p.name) === n);
+    if (full.length === 1) return full[0];
+    const first = state.players.filter(p => norm(p.name).split(' ')[0] === n);
+    return first.length === 1 ? first[0] : null;
+  }
+
+  function myBalance() {
+    if (isAdmin() || !state.players.length) return '';
+    const me = myPlayer();
+    if (!me) {
+      return `<section class="me-card me-pick">
+        <div><span class="day-kind">Your balance</span><h3>Which player are you?</h3></div>
+        <select class="field select" data-input="pick-me" aria-label="Choose your name">
+          <option value="">Choose your name…</option>
+          ${state.players.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}
+        </select>
+      </section>`;
+    }
+    const c = C.playerCalc(state, me, null, fmt);
+    return `<section class="me-card ${netClass(c.net)}">
+      <div class="me-text">
+        <span class="day-kind">Your balance · ${esc(me.name)}</span>
+        <strong class="me-net">${c.net < 0 ? fmt(-c.net) : fmt(c.net)}</strong>
+        <span class="me-label">${c.net < 0 ? 'Still to pay' : c.net > 0 ? 'To be paid back to you' : 'All settled'}</span>
+        <small class="muted">Paid ${fmt(c.paid)}${c.credit > 0 ? ` + bought ${fmt(c.credit)}` : ''} · Cost ${fmt(c.cost)}</small>
+      </div>
+      <div class="me-actions">
+        <button class="btn btn-gold" data-action="open-player" data-id="${esc(me.id)}">See breakdown</button>
+        <button class="btn btn-ghost small" data-action="not-me">Not you?</button>
+      </div>
+    </section>`;
+  }
+
   function viewSummary() {
     const t = C.totals(state, fmt);
     const stats = C.allStats(state);
@@ -328,7 +528,12 @@
       </section>` : '';
 
     return `
-      ${pageHead('Summary', `${state.players.length} player${state.players.length === 1 ? '' : 's'} · ${state.trainings.length} training${state.trainings.length === 1 ? '' : 's'} · 5 matches`)}
+      ${pageHead('Summary', `${state.players.length} player${state.players.length === 1 ? '' : 's'} · ${state.trainings.length} training${state.trainings.length === 1 ? '' : 's'} · 5 matches`,
+        admin && state.players.length ? `<div class="share-row">
+          <button class="btn btn-gold" data-action="share-image">${IMAGE_ICON} Share as image</button>
+          <button class="btn btn-whatsapp" data-action="share-team">${WA_ICON} Send as text</button>
+          <button class="btn btn-ghost" data-action="copy-team">${COPY_ICON} Copy</button></div>` : '')}
+      ${myBalance()}
       <div class="stats">${cards.map(c => `<div class="stat ${c.cls}"><span>${c.label}</span><strong>${c.value}</strong><small>${esc(c.note)}</small></div>`).join('')}</div>
       ${warningBanner()}
       <div class="summary-grid">
@@ -573,6 +778,39 @@
       </div>`;
   }
 
+  function formatDate(iso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+    if (!m) return '';
+    return new Date(+m[1], m[2] - 1, +m[3]).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  const today = () => new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD in local time
+
+  function paymentRows(p) {
+    if (!isAdmin()) {
+      if (!p.payments.length) return '<p class="muted">No payments yet.</p>';
+      return `<ul class="exp-list">${p.payments.map(x => `<li><span><strong>${formatDate(x.date) || 'Earlier'}</strong>
+        <small>${[x.method, x.note].filter(Boolean).map(esc).join(' · ') || '—'}</small></span>
+        <span class="amt">${fmt(C.num(x.amount))}</span></li>`).join('')}</ul>`;
+    }
+    const attrs = x => `data-player="${esc(p.id)}" data-id="${esc(x.id)}"`;
+    const rows = p.payments.map(x => `
+      <div class="pay-row">
+        <input class="field" type="date" value="${esc(x.date)}" max="${today()}" data-input="pay-date" ${attrs(x)} aria-label="Date">
+        <span class="money-input"><em>${esc(cur().trim())}</em><input type="text" inputmode="decimal" placeholder="0" value="${esc(x.amount)}"
+          data-input="pay-amount" ${attrs(x)} data-focus="pya-${esc(x.id)}" aria-label="Amount"></span>
+        <select class="field select" data-input="pay-method" ${attrs(x)} aria-label="Method">
+          ${x.method ? '' : '<option value="" selected>Method</option>'}
+          ${PAYMENT_METHODS.map(m => `<option ${m === x.method ? 'selected' : ''}>${m}</option>`).join('')}
+        </select>
+        <input class="field note" type="text" placeholder="Note (optional)" value="${esc(x.note)}" maxlength="200"
+          data-input="pay-note" ${attrs(x)} data-focus="pyn-${esc(x.id)}" aria-label="Note">
+        <button class="icon-btn danger" data-action="remove-payment" ${attrs(x)} aria-label="Remove payment">${X_ICON}</button>
+      </div>`).join('');
+    return `${rows ? `<div class="exp-rows">${rows}</div>` : ''}
+      <button class="chip" data-action="add-payment" data-id="${esc(p.id)}">+ Add payment</button>`;
+  }
+
   function sheetPlayer() {
     const idx = state.players.findIndex(x => x.id === sheet.id);
     const p = state.players[idx];
@@ -587,11 +825,10 @@
       <div class="form-grid">
         <label><span>Name</span><input class="field" type="text" value="${esc(p.name)}" data-input="name" data-id="${esc(p.id)}" data-focus="pname-${esc(p.id)}" maxlength="60"></label>
         <label><span>Role</span><select class="field select" data-input="role" data-id="${esc(p.id)}">${ROLES.map(r => `<option value="${esc(r)}" ${r === p.role ? 'selected' : ''}>${r || 'No role'}</option>`).join('')}</select></label>
-        <label><span>Paid</span><span class="money-input"><em>${esc(cur().trim())}</em><input type="text" inputmode="decimal" placeholder="0" value="${esc(p.paid)}" data-input="paid" data-id="${esc(p.id)}" data-focus="paid-${esc(p.id)}"></span></label>
         <div class="form-row"><span>Tournament</span>
           <span class="tour-row">${tourToggle(p)}<small class="muted">${inTour ? 'Shares the tournament fee' : 'Not charged the tournament fee'}</small></span></div>
       </div>` : `
-      <dl class="kv"><dt>Role</dt><dd>${esc(p.role) || '—'}</dd><dt>Paid</dt><dd>${fmt(c.paid)}</dd>
+      <dl class="kv"><dt>Role</dt><dd>${esc(p.role) || '—'}</dd>
         <dt>Tournament</dt><dd>${inTour ? 'Taking part' : 'Not taking part'}</dd></dl>`;
 
     const sumLine = `Paid ${fmt(c.paid)}${c.credit > 0 ? ` + Bought ${fmt(c.credit)}` : ''} − Cost ${fmt(c.cost)}`;
@@ -607,7 +844,13 @@
           <strong>${fmtNet(c.net)}</strong>
           <small>${sumLine}</small>
         </div>
+        ${admin ? `<div class="share-row">
+          <button class="btn btn-whatsapp" data-action="share-player" data-id="${esc(p.id)}">${WA_ICON} Send on WhatsApp</button>
+          <button class="btn btn-ghost" data-action="copy-player" data-id="${esc(p.id)}">${COPY_ICON} Copy</button>
+        </div>` : ''}
         ${fields}
+        <h3 class="sub">Payments <span class="muted">${fmt(c.paid)}</span></h3>
+        ${paymentRows(p)}
         <h3 class="sub">Attendance</h3>
         <div class="att-grid">
           ${days.map(d => `<div class="att-cell ${d.type}"><span>${d.label}</span>${toggleButton(p, d, stats)}</div>`).join('')}
@@ -657,7 +900,9 @@
       app: 'cricket-ledger',
       version: 3,
       savedAt: new Date().toISOString(),
-      players: state.players.map(p => ({ id: p.id, name: p.name, role: p.role, paid: p.paid, tournament: p.tournament, att: p.att })),
+      players: state.players.map(p => ({
+        id: p.id, name: p.name, role: p.role, paid: String(C.paidTotal(p) || ''), tournament: p.tournament, att: p.att, payments: p.payments
+      })),
       amounts,
       trainings: state.trainings,
       expenses: state.expenses,
@@ -692,6 +937,10 @@
 
   // ---------- events ----------
   function findPlayer(id) { return state.players.find(p => p.id === id); }
+  function findPayment(el) {
+    const p = findPlayer(el.dataset.player);
+    return p && p.payments.find(x => x.id === el.dataset.id);
+  }
   function findExpense(el) { return (state.expenses[el.dataset.day] || []).find(e => e.id === el.dataset.id); }
 
   const actions = {
@@ -705,6 +954,7 @@
       if (saveTimer) { clearTimeout(saveTimer); await flushSave(); }
       session = null;
       writeStore(SESSION_KEY, null);
+      writeStore(ME_KEY, null);
       sheet = null;
       showSplash();
     },
@@ -747,7 +997,7 @@
       const ta = $('#add-names');
       const names = ta.value.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
       if (!names.length) { toast('Type or paste at least one name.'); return; }
-      names.forEach(name => state.players.push({ id: rid(), name, role: '', paid: '', tournament: true, att: {} }));
+      names.forEach(name => state.players.push({ id: rid(), name, role: '', tournament: true, att: {}, payments: [] }));
       draftNames = '';
       commit();
       toast(`${names.length} player${names.length === 1 ? '' : 's'} added.`);
@@ -769,7 +1019,7 @@
     async 'new-series'() {
       const ok = await confirmDialog('Start a new series?', 'Keeps players, names and roles. Clears attendance, payments, expenses and the tournament fee, and resets trainings to just Training 1.', 'Start new series', true);
       if (!ok) return;
-      state.players.forEach(p => { p.att = {}; p.paid = ''; });
+      state.players.forEach(p => { p.att = {}; p.payments = []; });
       state.expenses = {};
       state.tournament = { fee: '' };
       state.trainings = [{ id: 't1', desc: '' }];
@@ -792,6 +1042,44 @@
       p.tournament = !C.inTournament(p);
       commit();
     },
+    'add-payment'(el) {
+      const p = findPlayer(el.dataset.id);
+      if (!p || !isAdmin()) return;
+      const x = { id: rid(), date: today(), amount: '', method: 'Cash', note: '' };
+      p.payments.push(x);
+      commit();
+      const target = document.querySelector(`[data-focus="pya-${x.id}"]`);
+      if (target) target.focus();
+    },
+    async 'remove-payment'(el) {
+      const p = findPlayer(el.dataset.player);
+      const x = p && p.payments.find(y => y.id === el.dataset.id);
+      if (!x) return;
+      if (C.num(x.amount) > 0) {
+        const ok = await confirmDialog('Remove this payment?', `${fmt(C.num(x.amount))}${x.date ? ' on ' + formatDate(x.date) : ''} will be removed from ${p.name}'s payments.`, 'Remove', true);
+        if (!ok) return;
+      }
+      p.payments = p.payments.filter(y => y.id !== x.id);
+      commit();
+    },
+    'share-player'(el) { const p = findPlayer(el.dataset.id); if (p) openWhatsApp(playerMessage(p)); },
+    'copy-player'(el) { const p = findPlayer(el.dataset.id); if (p) copyText(playerMessage(p)); },
+    'share-team'() { openWhatsApp(teamMessage()); },
+    async 'share-image'(el) {
+      const label = el.innerHTML;
+      el.disabled = true;
+      el.textContent = 'Creating…';
+      try {
+        showImageDialog(await balanceImage());
+      } catch (e) {
+        toast('Could not create the picture.');
+      } finally {
+        el.disabled = false;
+        el.innerHTML = label;
+      }
+    },
+    'copy-team'() { copyText(teamMessage()); },
+    'not-me'() { writeStore(ME_KEY, NOT_ME); render(); },
     'add-expense'(el) {
       if (!isAdmin()) return;
       const day = el.dataset.day;
@@ -818,7 +1106,10 @@
     'exp-paidby'(el) { const e = findExpense(el); if (e) e.paidBy = el.value; },
     'tournament-fee'(el) { el.value = cleanNumber(el.value); state.tournament.fee = el.value; },
     name(el) { const p = findPlayer(el.dataset.id); if (p) p.name = el.value; },
-    paid(el) { el.value = cleanNumber(el.value); const p = findPlayer(el.dataset.id); if (p) p.paid = el.value; },
+    'pay-date'(el) { const x = findPayment(el); if (x) x.date = el.value; },
+    'pay-amount'(el) { el.value = cleanNumber(el.value); const x = findPayment(el); if (x) x.amount = el.value; },
+    'pay-method'(el) { const x = findPayment(el); if (x) x.method = el.value; },
+    'pay-note'(el) { const x = findPayment(el); if (x) x.note = el.value; },
     role(el) { const p = findPlayer(el.dataset.id); if (p) p.role = el.value; },
     currency(el) { state.settings.currency = el.value; },
     max(el) {
@@ -840,6 +1131,7 @@
       const el = e.target;
       const fn = el.dataset && inputs[el.dataset.input];
       if (el.id === 'add-names') { draftNames = el.value; return; }
+      if (el.dataset && el.dataset.input === 'pick-me') { writeStore(ME_KEY, el.value || NOT_ME); render(); return; }
       if (!fn || !isAdmin()) return;
       fn(el);
       commit();

@@ -5,6 +5,7 @@
 //    paidBy '' means the team fund paid it; otherwise it is the id of the player who paid out of pocket.
 //  - A player who paid for an expense gets that amount credited to their balance.
 //  - A series-wide tournament fee is split equally among players taking part (player.tournament !== false).
+//  - A player's payments ({ id, date, amount, method, note }) add up to what they have paid.
 (function (root) {
   const MATCHES = [1, 2, 3, 4, 5].map(i => ({ id: 'm' + i, label: 'Match ' + i, short: 'M' + i, type: 'match' }));
 
@@ -30,6 +31,11 @@
   }
 
   const inTournament = p => p.tournament !== false;
+
+  function paidTotal(player) {
+    if (!player.payments) return num(player.paid);
+    return round2(player.payments.reduce((s, x) => s + num(x.amount), 0));
+  }
 
   function dayExpenses(state, dayId) {
     return (state.expenses && state.expenses[dayId]) || [];
@@ -86,7 +92,7 @@
 
     cost = round2(cost);
     credit = round2(credit);
-    const paid = num(player.paid);
+    const paid = paidTotal(player);
     const net = round2(paid + credit - cost);
     return { cost, paid, credit, net, lines, creditLines };
   }
@@ -146,7 +152,7 @@
   }
 
   const api = {
-    MATCHES, days, num, round2, inTournament, dayExpenses, dayAmount, dayStats, allStats,
+    MATCHES, days, num, round2, inTournament, paidTotal, dayExpenses, dayAmount, dayStats, allStats,
     tournamentStats, playerCalc, totals, warnings, money, signedMoney, netLabel
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

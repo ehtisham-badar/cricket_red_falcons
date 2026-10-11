@@ -149,6 +149,12 @@ h1, h2, h3 { margin: 0; font-weight: 400; }
 .btn-danger { background: transparent; border-color: rgba(255, 107, 107, .5); color: var(--red-soft); }
 .btn-danger:hover { background: rgba(208, 34, 44, .15); }
 .btn-block { width: 100%; }
+.btn.small { min-height: 40px; padding: 0 16px; font-size: 14px; }
+.btn-whatsapp { background: #1fa855; color: #fff; box-shadow: 0 6px 18px rgba(31, 168, 85, .3); }
+.btn-whatsapp:hover { filter: brightness(1.08); }
+.share-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.sheet .share-row { margin-bottom: 18px; }
+.sheet .share-row .btn-whatsapp { flex: 1; }
 .icon-btn {
   display: inline-grid; place-items: center;
   width: 44px; height: 44px; flex: none;
@@ -368,6 +374,42 @@ h1, h2, h3 { margin: 0; font-weight: 400; }
 .mini-items li.more { color: var(--muted); font-size: 13px; }
 .mini-empty { margin: 0; font-size: 14px; }
 
+/* "My balance" card for viewers */
+.me-card {
+  display: flex; align-items: center; justify-content: space-between; gap: 18px; flex-wrap: wrap;
+  margin-bottom: 18px; padding: 20px 22px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line-2);
+  background: linear-gradient(110deg, var(--card-2), var(--card));
+  box-shadow: var(--shadow);
+}
+.me-card.neg { border-color: rgba(255, 107, 107, .45); background: linear-gradient(110deg, rgba(208, 34, 44, .22), var(--card) 70%); }
+.me-card.pos { border-color: rgba(226, 182, 92, .45); background: linear-gradient(110deg, rgba(226, 182, 92, .16), var(--card) 70%); }
+.me-text { display: flex; flex-direction: column; min-width: 0; }
+.me-text .day-kind { color: var(--gold); }
+.me-net { font-size: clamp(32px, 5vw, 44px); font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.me-card.neg .me-net, .me-card.neg .me-label { color: var(--neg); }
+.me-card.pos .me-net, .me-card.pos .me-label { color: var(--pos); }
+.me-label { font-weight: 800; text-transform: uppercase; letter-spacing: .08em; font-size: 13px; }
+.me-text small { margin-top: 4px; font-size: 14px; }
+.me-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.me-pick h3 { font-family: var(--head-font); font-size: 22px; }
+.me-pick .select { max-width: 320px; }
+
+/* Payment rows (player sheet) */
+.pay-row {
+  display: grid; grid-template-columns: 160px 140px minmax(0, 1fr) 44px; gap: 8px; align-items: center;
+  grid-template-areas: "date amount method del" "note note note del";
+  padding: 10px; border-radius: 14px; border: 1px solid var(--line); background: rgba(255, 255, 255, .02);
+}
+.pay-row > input[type="date"] { grid-area: date; color-scheme: dark; padding: 0 12px; }
+.pay-row > .money-input { grid-area: amount; width: 100%; }
+.pay-row > .money-input input { width: 100%; min-width: 0; }
+.pay-row > .select { grid-area: method; }
+.pay-row > .note { grid-area: note; }
+.pay-row > .icon-btn { grid-area: del; align-self: start; }
+.sheet .chip { margin-bottom: 4px; }
+
 /* Expense editor (day sheet) */
 .exp-rows { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
 .exp-head, .exp-row { display: grid; grid-template-columns: minmax(0, 1fr) 130px 200px 44px; gap: 8px; align-items: center; }
@@ -561,6 +603,9 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
 .dialog h3 { font-family: var(--head-font); font-size: 22px; color: var(--gold); }
 .dialog p { color: var(--muted); margin: 10px 0 20px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+.image-dialog { width: min(560px, calc(100% - 32px)); max-height: calc(100dvh - 32px); display: flex; flex-direction: column; }
+.image-preview { flex: 1; min-height: 0; overflow: auto; margin: 14px 0 18px; border-radius: 14px; border: 1px solid var(--line-2); background: #000; }
+.image-preview img { display: block; width: 100%; height: auto; }
 .toast {
   position: fixed; z-index: 70; left: 50%; bottom: 24px;
   transform: translate(-50%, 20px);
@@ -612,6 +657,9 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
   .exp-row { grid-template-columns: minmax(0, 1fr) 130px; padding: 10px; border-radius: 14px; border: 1px solid var(--line); background: rgba(255, 255, 255, .02); }
   .exp-row .select { grid-column: 1; }
   .exp-row .icon-btn { grid-column: 2; justify-self: end; }
+  .pay-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px; grid-template-areas: "date amount del" "method method del" "note note del"; }
+  .me-actions { width: 100%; }
+  .me-actions .btn-gold { flex: 1; }
   .toast { bottom: 90px; }
   .sheet { width: 100%; top: auto; height: 92dvh; border-left: 0; border-top: 1px solid var(--line-2); border-radius: 22px 22px 0 0; animation-name: slide-up; }
   @keyframes slide-up { from { transform: translateY(40px); opacity: 0; } }

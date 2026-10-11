@@ -13,7 +13,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "spring.datasource.url=jdbc:h2:mem:test",
-        "ledger.admin-key=test-key"
+        "ledger.admin-key=test-key",
+        "ledger.sync-from=" // never copy live data into tests, even if config/ enables it locally
 })
 class LedgerApiTest {
 
@@ -79,6 +80,20 @@ class LedgerApiTest {
                 .contains("{\"id\":\"e2\",\"item\":\"Balls\",\"amount\":\"1000\",\"paidBy\":\"\"}")
                 .contains("\"amounts\":{\"t1\":\"1500\"}")
                 .doesNotContain("legacy-t1");
+
+        // Payments: the player's paid total is their sum; a bare "paid" (older files) becomes one undated payment.
+        String withPayments = """
+                {"players":[{"id":"p1","name":"Babar","att":{},"payments":[
+                                {"id":"x1","date":"2026-10-12","amount":"1500","method":"Cash","note":"first"},
+                                {"id":"x2","date":"not-a-date","amount":"500.5","method":"JazzCash","note":""}]},
+                            {"id":"p2","name":"Rizwan","paid":"2000","att":{}}]}
+                """;
+        assertThat(send("PUT", "/api/ledger", withPayments, token).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/ledger", null, null).body())
+                .contains("\"paid\":\"2000.5\"")
+                .contains("{\"id\":\"x1\",\"date\":\"2026-10-12\",\"amount\":\"1500\",\"method\":\"Cash\",\"note\":\"first\"}")
+                .contains("{\"id\":\"x2\",\"date\":\"\",\"amount\":\"500.5\"")
+                .contains("\"payments\":[{\"id\":\"legacy-pay-p2\",\"date\":\"\",\"amount\":\"2000\",\"method\":\"\",\"note\":\"Paid before payment history\"}]");
 
         // Replacing again with fewer players removes the old ones and their attendance.
         assertThat(send("PUT", "/api/ledger", "{\"players\":[]}", token).statusCode()).isEqualTo(200);
