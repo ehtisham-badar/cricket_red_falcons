@@ -215,6 +215,7 @@
       }
       state = await fetchLedger();
     } catch (e) {
+      showSplash();
       $('#login-error').textContent = 'Could not load the ledger. Is the server running?';
       return;
     }
@@ -865,5 +866,6 @@
   }
 
   wireEvents();
-  showSplash();
+  // Returning visitors go straight back in; the name screen is only for first visits and "Switch user".
+  if (session) enterApp(); else showSplash();
 })();
