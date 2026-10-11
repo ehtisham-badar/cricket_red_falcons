@@ -1,4 +1,5 @@
-// Where the API lives. Empty = same server that serves this page (local Spring Boot).
-// When the UI is hosted separately (e.g. Netlify), set this to the backend URL,
-// e.g. 'https://red-falcons-api.onrender.com'.
-window.RF_API_BASE = '';
+// Where the API lives. Locally the Spring Boot app serves both the page and the API, so use the
+// same origin. Everywhere else (Railway itself, or the Vercel-hosted frontend) talk to Railway.
+window.RF_API_BASE = ['localhost', '127.0.0.1'].includes(location.hostname)
+  ? ''
+  : 'https://ledger-production-7d2b.up.railway.app';

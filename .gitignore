@@ -4,3 +4,5 @@ data/
 *.iml
 .DS_Store
 config/
+.vercel/
+.env*.local

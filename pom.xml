@@ -42,6 +42,16 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <!-- Vercel CLI files for the static frontend; must never be bundled and served. -->
+                <excludes>
+                    <exclude>static/.vercel/**</exclude>
+                    <exclude>static/.env*</exclude>
+                </excludes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
