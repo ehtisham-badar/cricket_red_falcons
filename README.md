@@ -8,11 +8,20 @@ Built from [`Cricket Ledger App Spec.md`](Cricket%20Ledger%20App%20Spec.md).
 
 ## Run locally
 
+Create `config/application.properties` (git-ignored) with your admin key:
+
+```properties
+ledger.admin-key=your-secret-key
+```
+
+Then:
+
 ```bash
 ./mvnw spring-boot:run
 ```
 
 Open http://localhost:8080. No Maven install needed; `mvnw` downloads it.
+The app refuses to start if no admin key is configured.
 
 ## Who can edit
 
@@ -22,30 +31,31 @@ The start screen asks for a name.
 - Typing any other name gives **view-only** access. The page refreshes every 15 seconds.
 
 The key is checked on the server, so viewers can't unlock editing from the browser.
-The default key is in `src/main/resources/application.properties`
-(`ledger.admin-key`). Change it there, or override it without editing the file:
-
-```bash
-LEDGER_ADMIN_KEY=my-secret ./mvnw spring-boot:run
-```
-
-Changing the key logs out any existing admin sessions.
+It is never stored in git: set it in `config/application.properties` locally, or with the
+`LEDGER_ADMIN_KEY` environment variable on a server. Changing the key logs out any existing admin sessions.
 
 ## Data
 
-- Saved automatically to `./data/redfalcons.mv.db` (git-ignored).
+- Saved automatically to `./data/redfalcons.mv.db` (git-ignored). Set `LEDGER_DATA_DIR` to store it elsewhere.
 - **Settings → Save backup** downloads `cricket-ledger-YYYY-MM-DD.json`, which uses the same format as the original HTML version.
 - **Open backup** restores one.
 
-## Deploying later
+## Deploying (Railway + optional Vercel)
 
-Netlify only hosts static files and JS/Go functions, so it **cannot run this Java backend**.
-Options:
+**Railway** runs the server, and it also serves the pages, so this alone is a complete deployment.
 
-1. **Everything on one Java host** (simplest): deploy the jar (`./mvnw package` → `target/cricket-ledger-1.0.0.jar`)
-   to Render, Railway or Fly.io. Point the database at a hosted Postgres, because their disks reset on redeploy.
-2. **UI on Netlify, API elsewhere:** deploy `src/main/resources/static/` to Netlify. In `js/config.js`, set
-   `window.RF_API_BASE` to the backend URL. On the backend, set `LEDGER_ALLOWED_ORIGINS=https://your-site.netlify.app`.
+1. Create a Railway project from this GitHub repo. It builds with Maven and uses Railway's `PORT`.
+2. Add a **Volume** (e.g. mounted at `/data`). Without one, Railway wipes the database on every redeploy.
+3. Set these variables:
+   - `LEDGER_ADMIN_KEY`: your secret admin key
+   - `LEDGER_DATA_DIR`: the Volume mount path, e.g. `/data`
+4. If the build picks the wrong Java version, pin Java 21 in the Railway service settings.
+
+**Vercel** (optional, if you want the pages served from Vercel):
+
+1. Deploy `src/main/resources/static/` as a static site, with no build step.
+2. In `js/config.js`, set `window.RF_API_BASE` to the Railway URL.
+3. On Railway, set `LEDGER_ALLOWED_ORIGINS=https://<your-app>.vercel.app`.
 
 ## Tests
 

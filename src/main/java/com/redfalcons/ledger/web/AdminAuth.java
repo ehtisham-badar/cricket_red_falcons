@@ -23,7 +23,8 @@ public class AdminAuth {
 
     public AdminAuth(@Value("${ledger.admin-key}") String adminKey) {
         if (adminKey == null || adminKey.isBlank()) {
-            throw new IllegalStateException("ledger.admin-key must be set");
+            throw new IllegalStateException("No admin key configured. Set the LEDGER_ADMIN_KEY environment variable, "
+                    + "or add ledger.admin-key=... to config/application.properties for local runs.");
         }
         this.adminKey = adminKey.trim().getBytes(StandardCharsets.UTF_8);
         this.token = hmac(this.adminKey, "red-falcons-admin");
