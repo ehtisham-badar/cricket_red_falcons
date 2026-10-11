@@ -58,6 +58,8 @@ class LedgerApiTest {
                 .contains("\"m1\":true")
                 .doesNotContain("\"zz\"")
                 .contains("\"currency\":\"PKR \"")
+                // Payment account details stay null until the admin sets them.
+                .contains("\"payBank\":null,\"payTitle\":null,\"payAccount\":null")
                 .contains("\"desc\":\"Nets\"");
 
         // A version 2 file (amounts only) is read as one fund-paid expense per day.
@@ -73,7 +75,7 @@ class LedgerApiTest {
                 """;
         assertThat(send("PUT", "/api/ledger", v3, token).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/ledger", null, null).body())
-                .contains("\"tournament\":{\"name\":\"\",\"fee\":\"65000\",\"payments\":[]}")
+                .contains("\"tournament\":{\"name\":\"\",\"fee\":\"65000\",\"advance\":\"\",\"payments\":[]}")
                 .contains("\"name\":\"Rizwan\",\"role\":\"\",\"paid\":\"2000\",\"tournament\":false")
                 .contains("{\"id\":\"e1\",\"item\":\"Water\",\"amount\":\"500\",\"paidBy\":\"p2\"}")
                 // paidBy pointing at an unknown player falls back to the team fund
@@ -81,14 +83,16 @@ class LedgerApiTest {
                 .contains("\"amounts\":{\"t1\":\"1500\"}")
                 .doesNotContain("legacy-t1");
 
-        // League fee name and transfers to the tournament management round-trip.
+        // League fee name, advance, transfers to the tournament management and the payment account round-trip.
         String withManagement = """
-                {"players":[],"tournament":{"name":"Hundred Premier League","fee":"65000","payments":[
-                    {"id":"m1","date":"2026-10-05","amount":"20000","method":"Bank transfer","note":"First instalment"}]}}
+                {"players":[],"tournament":{"name":"Hundred Premier League","fee":"65000","advance":"1200","payments":[
+                    {"id":"m1","date":"2026-10-05","amount":"20000","method":"Bank transfer","note":"First instalment"}]},
+                 "settings":{"payBank":"NayaPay","payTitle":"Team Admin","payAccount":"03001234567"}}
                 """;
         assertThat(send("PUT", "/api/ledger", withManagement, token).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/ledger", null, null).body()).contains(
-                "\"tournament\":{\"name\":\"Hundred Premier League\",\"fee\":\"65000\",\"payments\":[{\"id\":\"m1\",\"date\":\"2026-10-05\",\"amount\":\"20000\",\"method\":\"Bank transfer\",\"note\":\"First instalment\"}]}");
+                "\"tournament\":{\"name\":\"Hundred Premier League\",\"fee\":\"65000\",\"advance\":\"1200\",\"payments\":[{\"id\":\"m1\",\"date\":\"2026-10-05\",\"amount\":\"20000\",\"method\":\"Bank transfer\",\"note\":\"First instalment\"}]}")
+                .contains("\"payBank\":\"NayaPay\",\"payTitle\":\"Team Admin\",\"payAccount\":\"03001234567\"");
 
         // Payments: the player's paid total is their sum; a bare "paid" (older files) becomes one undated payment.
         String withPayments = """

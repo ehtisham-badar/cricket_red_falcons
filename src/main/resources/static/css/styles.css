@@ -704,3 +704,18 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* Advance and reminders */
+.prow-wrap { display: flex; align-items: center; gap: 6px; }
+.prow-wrap .prow { flex: 1; min-width: 0; }
+.icon-btn.wa { color: #1fa855; border-color: rgba(31, 168, 85, .35); }
+.icon-btn.wa:hover { color: #fff; background: #1fa855; border-color: #1fa855; }
+.adv-due { color: var(--neg); font-weight: 700; }
+.pay-to-line { color: var(--gold); font-weight: 600; }
+.adv-status { margin: 0 0 16px; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255, 255, 255, .03); font-size: 14px; text-align: center; color: var(--pos); }
+.adv-status.due { color: var(--neg); border-color: rgba(255, 107, 107, .35); background: rgba(208, 34, 44, .1); }
+.tour-advance { display: flex; align-items: center; gap: 10px; margin-top: 6px; color: var(--muted); font-size: 14px; }
+.tour-advance .money-input input { width: 110px; }
+.tour-figs > small { font-size: 12px; }
+.pref > label { flex: none; }
+.pref > input.field { max-width: 230px; }

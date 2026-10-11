@@ -31,13 +31,18 @@ public record LedgerDto(
     public record ExpenseDto(String id, String item, String amount, String paidBy) {
     }
 
-    /** {@code payments} are transfers from the admin to the tournament management. */
-    public record TournamentDto(String name, String fee, List<PaymentDto> payments) {
+    /**
+     * {@code payments} are transfers from the admin to the tournament management; {@code advance} is the
+     * amount asked per player up front ('' means the money sent so far, split across the players).
+     */
+    public record TournamentDto(String name, String fee, String advance, List<PaymentDto> payments) {
     }
 
     public record TrainingDto(String id, String desc) {
     }
 
-    public record SettingsDto(String currency, Integer maxPerMatch, Boolean roundUp) {
+    /** The pay* fields are the account players send money to; null means never set. */
+    public record SettingsDto(String currency, Integer maxPerMatch, Boolean roundUp,
+                              String payBank, String payTitle, String payAccount) {
     }
 }

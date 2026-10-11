@@ -55,10 +55,13 @@
   const COPY_ICON = icon('<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>', 18);
   const WA_ICON = icon('<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>', 18);
 
+  // Pre-fills the payment account for ledgers saved before it was a setting.
+  const DEFAULT_PAY_TO = { payBank: 'NayaPay', payTitle: 'Ehtisham Badar', payAccount: '03084250469' };
+
   function emptyState() {
     return {
-      players: [], trainings: [{ id: 't1', desc: '' }], expenses: {}, tournament: { name: '', fee: '', payments: [] },
-      settings: { currency: 'Rs ', maxPerMatch: 11, roundUp: false }
+      players: [], trainings: [{ id: 't1', desc: '' }], expenses: {}, tournament: { name: '', fee: '', advance: '', payments: [] },
+      settings: { currency: 'Rs ', maxPerMatch: 11, roundUp: false, ...DEFAULT_PAY_TO }
     };
   }
 
@@ -112,12 +115,16 @@
       tournament: {
         name: (d.tournament && d.tournament.name) || '',
         fee: d.tournament && d.tournament.fee != null ? String(d.tournament.fee) : '',
+        advance: d.tournament && d.tournament.advance != null ? String(d.tournament.advance) : '',
         payments: paymentsFrom(null, { payments: (d.tournament && d.tournament.payments) || [] })
       },
       settings: {
         currency: CURRENCIES.includes(s.currency) ? s.currency : 'Rs ',
         maxPerMatch: s.maxPerMatch > 0 ? s.maxPerMatch : 11,
-        roundUp: !!s.roundUp
+        roundUp: !!s.roundUp,
+        payBank: s.payBank != null ? s.payBank : DEFAULT_PAY_TO.payBank,
+        payTitle: s.payTitle != null ? s.payTitle : DEFAULT_PAY_TO.payTitle,
+        payAccount: s.payAccount != null ? s.payAccount : DEFAULT_PAY_TO.payAccount
       }
     };
   }
@@ -301,6 +308,26 @@
   }
 
   // ---------- WhatsApp messages (WhatsApp shows *text* as bold) ----------
+  // The account players send money to, as label/value pairs; empty when none is set.
+  function payTo() {
+    const s = state.settings;
+    return [
+      { label: 'Bank', value: s.payBank.trim() },
+      { label: 'Account title', value: s.payTitle.trim() },
+      { label: 'Account #', value: s.payAccount.trim() }
+    ].filter(f => f.value);
+  }
+
+  function payToLines() {
+    const f = payTo();
+    return f.length ? ['', '*Pay to*', ...f.map(x => `${x.label}: ${x.value}`)] : [];
+  }
+
+  // The part of a player's balance due to ask for now: their unpaid advance, capped at what they owe.
+  function advanceNow(p, net) {
+    return Math.min(C.advanceDue(state, p), Math.max(-net, 0));
+  }
+
   function playerMessage(p) {
     const c = C.playerCalc(state, p, null, fmt);
     const out = [`*Red Falcons CC* — ${p.name || 'Player'}`, ''];
@@ -322,6 +349,9 @@
     if (c.net < 0) out.push(`*Balance due: ${fmt(-c.net)}*`);
     else if (c.net > 0) out.push(`*To be paid back to you: ${fmt(c.net)}*`);
     else out.push('*All settled ✅*');
+    const adv = advanceNow(p, c.net);
+    if (adv > 0) out.push(`*Advance to pay now: ${fmt(adv)}*`);
+    if (c.net < 0) out.push(...payToLines());
     out.push('', `Full ledger: ${location.origin}`);
     return out.join('\n');
   }
@@ -335,41 +365,38 @@
     const settled = rows.filter(r => r.net === 0);
     const out = ['*Red Falcons CC — balances*'];
     if (tour.fee > 0) out.push(`Tournament fee ${fmt(tour.fee)} (${fmt(tour.share)} each)`);
+    const advance = C.advancePerPlayer(state);
+    if (advance > 0) out.push(`Advance ${fmt(advance)} each, to pay now`);
     if (due.length) {
       out.push('', '*Still to pay*');
-      due.forEach((r, i) => out.push(`${i + 1}. ${r.p.name} — ${fmt(-r.net)}`));
+      due.forEach((r, i) => {
+        const adv = advanceNow(r.p, r.net);
+        out.push(`${i + 1}. ${r.p.name} — ${fmt(-r.net)}${adv > 0 ? ` (advance ${fmt(adv)} now)` : ''}`);
+      });
     }
     if (back.length) {
       out.push('', '*To be paid back*');
       back.forEach(r => out.push(`• ${r.p.name} — ${fmt(r.net)}`));
     }
     if (settled.length) out.push('', `Settled ✅ ${settled.map(r => r.p.name).join(', ')}`);
+    if (due.length) out.push(...payToLines());
     out.push('', `Your full breakdown: ${location.origin}`);
     return out.join('\n');
   }
 
   // ---------- balances picture ----------
-  const PAY_TO = [
-    { label: 'Bank', value: 'NayaPay' },
-    { label: 'Account title', value: 'Ehtisham Badar' },
-    { label: 'Account #', value: '03084250469' }
-  ];
-
   async function balanceImage() {
     const t = C.totals(state, fmt);
     const tour = C.tournamentStats(state);
     const stats = C.allStats(state);
-    const advance = C.advanceShare(state);
-    // The advance is the part of the total due asked now from players who haven't paid anything yet.
+    const showAdvance = C.advancePerPlayer(state) > 0;
     const rows = state.players.map(p => {
       const net = C.playerCalc(state, p, stats, fmt, tour).net;
-      const adv = advance > 0 && C.inTournament(p) && C.paidTotal(p) === 0 ? Math.min(advance, -net) : 0;
+      const adv = advanceNow(p, net);
       return {
         name: p.name,
         net,
-        cells: [
-          adv > 0 ? { text: fmt(adv), color: '#ff6b6b' } : { text: '—', color: '#8d8a85' }
-        ]
+        cells: showAdvance ? [adv > 0 ? { text: fmt(adv), color: '#ff6b6b' } : { text: '—', color: '#8d8a85' }] : []
       };
     });
     const chips = [];
@@ -387,9 +414,9 @@
     } : null;
     return window.RFBalanceImage.render({
       league,
-      columns: [{ label: 'Advance', width: 170 }],
+      columns: showAdvance ? [{ label: 'Advance', width: 170 }] : [],
       rows,
-      payTo: PAY_TO,
+      payTo: payTo(),
       money: fmt,
       chips,
       dateText: 'Updated ' + new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
@@ -501,6 +528,8 @@
         <strong class="me-net">${c.net < 0 ? fmt(-c.net) : fmt(c.net)}</strong>
         <span class="me-label">${c.net < 0 ? 'Still to pay' : c.net > 0 ? 'To be paid back to you' : 'All settled'}</span>
         <small class="muted">Paid ${fmt(c.paid)}${c.credit > 0 ? ` + bought ${fmt(c.credit)}` : ''} · Cost ${fmt(c.cost)}</small>
+        ${advanceNow(me, c.net) > 0 ? `<small class="adv-due">Advance to pay now: ${fmt(advanceNow(me, c.net))}</small>` : ''}
+        ${c.net < 0 && payTo().length ? `<small class="pay-to-line">Pay to ${payTo().map(f => esc(f.value)).join(' · ')}</small>` : ''}
       </div>
       <div class="me-actions">
         <button class="btn btn-gold" data-action="open-player" data-id="${esc(me.id)}">See breakdown</button>
@@ -554,11 +583,15 @@
 
     const rows = state.players.map((p, i) => {
       const c = C.playerCalc(state, p, stats, fmt, tour);
-      return `<button class="prow" data-action="open-player" data-id="${esc(p.id)}">
+      const adv = advanceNow(p, c.net);
+      const row = `<button class="prow" data-action="open-player" data-id="${esc(p.id)}">
         <span class="sr">${i + 1}</span>
-        <span class="pname"><strong>${esc(p.name) || '<em>Unnamed</em>'}</strong><small>${esc(p.role) || '—'}${C.inTournament(p) ? '' : ' · not in tournament'}</small></span>
+        <span class="pname"><strong>${esc(p.name) || '<em>Unnamed</em>'}</strong><small>${esc(p.role) || '—'}${C.inTournament(p) ? '' : ' · not in tournament'}${adv > 0 ? ` · <span class="adv-due">advance ${fmt(adv)}</span>` : ''}</small></span>
         <span class="pnet ${netClass(c.net)}"><strong>${fmtNet(c.net)}</strong><small>${netText(c.net)}</small></span>
       </button>`;
+      return admin && c.net < 0
+        ? `<div class="prow-wrap">${row}<button class="icon-btn wa" data-action="share-player" data-id="${esc(p.id)}" aria-label="Send ${esc(p.name)} a reminder on WhatsApp" title="Send reminder on WhatsApp">${WA_ICON}</button></div>`
+        : row;
     }).join('');
 
     const table = state.players.length ? `
@@ -635,8 +668,24 @@
           ? `<span class="money-input big"><em>${esc(cur().trim())}</em><input type="text" inputmode="decimal" placeholder="e.g. 65000" value="${esc(state.tournament.fee)}" data-input="tournament-fee" data-focus="tour-fee" aria-label="Tournament fee"></span>`
           : `<strong class="tour-fee">${tour.fee > 0 ? fmt(tour.fee) : '—'}</strong>`}
         <span class="tour-share">${tour.fee > 0 && tour.n ? `<strong>${fmt(tour.share)}</strong> each · ${tour.n} player${tour.n === 1 ? '' : 's'}` : `${tour.n} player${tour.n === 1 ? '' : 's'} taking part`}</span>
+        ${advanceField()}
       </div>
     </section>`;
+  }
+
+  // Advance asked of each player up front; left empty it follows the money sent to management.
+  function advanceField() {
+    const advance = C.advancePerPlayer(state);
+    const pending = state.players.filter(p => advanceNow(p, C.playerCalc(state, p, null, fmt).net) > 0).length;
+    const status = advance > 0 ? (pending ? `${pending} still to pay it` : 'everyone has paid it') : '';
+    if (!isAdmin()) {
+      return advance > 0 ? `<span class="tour-share">Advance <strong>${fmt(advance)}</strong> each · ${status}</span>` : '';
+    }
+    const suggested = C.advanceShare(state);
+    return `<label class="tour-advance"><span>Advance each</span>
+        <span class="money-input"><em>${esc(cur().trim())}</em><input type="text" inputmode="decimal" placeholder="${suggested > 0 ? suggested : '0'}" value="${esc(state.tournament.advance)}" data-input="tournament-advance" data-focus="tour-adv" aria-label="Advance per player"></span>
+      </label>
+      <small class="muted">${state.tournament.advance === '' ? 'Empty = paid to management ÷ players' : 'Clear it to follow paid to management ÷ players'}${status ? ` · ${status}` : ''}</small>`;
   }
 
   function viewDays() {
@@ -748,9 +797,21 @@
         <dl class="kv"><dt>Currency</dt><dd>${esc(s.currency.trim())}</dd><dt>Max players per match</dt><dd>${s.maxPerMatch}</dd><dt>Round shares up</dt><dd>${s.roundUp ? 'On' : 'Off'}</dd></dl>
       </section>`;
 
+    const field = (label, key, input, placeholder) => admin
+      ? `<div class="pref"><label for="pay-${input}">${label}</label>
+          <input id="pay-${input}" class="field" type="text" value="${esc(s[key])}" placeholder="${placeholder}" maxlength="60" data-input="pay-${input}" data-focus="pay-${input}"></div>`
+      : `<dt>${label}</dt><dd>${esc(s[key]) || '—'}</dd>`;
+    const fields = [['Bank / wallet', 'payBank', 'bank', 'e.g. NayaPay'], ['Account title', 'payTitle', 'title', 'Name on the account'],
+      ['Account #', 'payAccount', 'account', 'Account or IBAN']].map(f => field(...f)).join('');
+    const payPanel = `
+      <section class="panel">
+        <div class="panel-head"><h3>Payment account</h3><p class="muted">${admin ? 'Shown on the balances picture and in WhatsApp reminders.' : 'Where to send your payments.'}</p></div>
+        ${admin ? fields : `<dl class="kv">${fields}</dl>`}
+      </section>`;
+
     return `
       ${pageHead('Settings', '')}
-      <div class="settings-grid">${dataPanel}${prefs}
+      <div class="settings-grid">${dataPanel}${payPanel}${prefs}
         <section class="panel">
           <div class="panel-head"><h3>Signed in as ${isAdmin() ? 'Admin' : esc(session.name)}</h3></div>
           <button class="btn btn-ghost" data-action="logout">Switch user</button>
@@ -890,6 +951,15 @@
       <button class="chip" data-action="add-payment" data-id="${esc(p.id)}">${addLabel}</button>`;
   }
 
+  function advanceStatus(p, net) {
+    const advance = C.advancePerPlayer(state);
+    if (!(advance > 0) || !C.inTournament(p)) return '';
+    const now = advanceNow(p, net);
+    return now > 0
+      ? `<p class="adv-status due">Advance: <strong>${fmt(now)}</strong> to pay now (of ${fmt(advance)})</p>`
+      : `<p class="adv-status">Advance of ${fmt(advance)} paid ✓</p>`;
+  }
+
   function sheetPlayer() {
     const idx = state.players.findIndex(x => x.id === sheet.id);
     const p = state.players[idx];
@@ -923,8 +993,9 @@
           <strong>${fmtNet(c.net)}</strong>
           <small>${sumLine}</small>
         </div>
+        ${advanceStatus(p, c.net)}
         ${admin ? `<div class="share-row">
-          <button class="btn btn-whatsapp" data-action="share-player" data-id="${esc(p.id)}">${WA_ICON} Send on WhatsApp</button>
+          <button class="btn btn-whatsapp" data-action="share-player" data-id="${esc(p.id)}">${WA_ICON} ${c.net < 0 ? 'Send reminder' : 'Send on WhatsApp'}</button>
           <button class="btn btn-ghost" data-action="copy-player" data-id="${esc(p.id)}">${COPY_ICON} Copy</button>
         </div>` : ''}
         ${fields}
@@ -1096,11 +1167,11 @@
     export() { exportBackup(); },
     import() { $('#import-file').click(); },
     async 'new-series'() {
-      const ok = await confirmDialog('Start a new series?', 'Keeps players, names and roles. Clears attendance, payments, expenses, the league fee and payments to management, and resets trainings to just Training 1.', 'Start new series', true);
+      const ok = await confirmDialog('Start a new series?', 'Keeps players, names and roles. Clears attendance, payments, expenses, the league fee, advance and payments to management, and resets trainings to just Training 1.', 'Start new series', true);
       if (!ok) return;
       state.players.forEach(p => { p.att = {}; p.payments = []; });
       state.expenses = {};
-      state.tournament = { name: '', fee: '', payments: [] };
+      state.tournament = { name: '', fee: '', advance: '', payments: [] };
       state.trainings = [{ id: 't1', desc: '' }];
       commit();
       toast('New series started.');
@@ -1187,6 +1258,10 @@
     'exp-paidby'(el) { const e = findExpense(el); if (e) e.paidBy = el.value; },
     'tournament-fee'(el) { el.value = cleanNumber(el.value); state.tournament.fee = el.value; },
     'tournament-name'(el) { state.tournament.name = el.value; },
+    'tournament-advance'(el) { el.value = cleanNumber(el.value); state.tournament.advance = el.value; },
+    'pay-bank'(el) { state.settings.payBank = el.value; },
+    'pay-title'(el) { state.settings.payTitle = el.value; },
+    'pay-account'(el) { state.settings.payAccount = el.value; },
     name(el) { const p = findPlayer(el.dataset.id); if (p) p.name = el.value; },
     'pay-date'(el) { const x = findPayment(el); if (x) x.date = el.value; },
     'pay-amount'(el) { el.value = cleanNumber(el.value); const x = findPayment(el); if (x) x.amount = el.value; },

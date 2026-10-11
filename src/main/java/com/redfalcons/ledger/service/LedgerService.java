@@ -38,6 +38,8 @@ public class LedgerService {
     private static final Sort BY_POSITION = Sort.by("position");
     private static final String TOURNAMENT_FEE = "tournamentFee";
     private static final String TOURNAMENT_NAME = "tournamentName";
+    private static final String TOURNAMENT_ADVANCE = "tournamentAdvance";
+    private static final List<String> PAY_KEYS = List.of("payBank", "payTitle", "payAccount");
     /** Item name used when a legacy per-day amount is turned into an expense. */
     private static final String LEGACY_ITEM = "Amount spent";
     /** Note on the payment created from a "paid" total recorded before payments were itemised. */
@@ -105,11 +107,13 @@ public class LedgerService {
         SettingsDto settingsDto = new SettingsDto(
                 s.getOrDefault("currency", "Rs "),
                 parseIntOr(s.get("maxPerMatch"), 11),
-                Boolean.parseBoolean(s.getOrDefault("roundUp", "false")));
+                Boolean.parseBoolean(s.getOrDefault("roundUp", "false")),
+                s.get("payBank"), s.get("payTitle"), s.get("payAccount"));
 
         return new LedgerDto("cricket-ledger", 3, Instant.now().toString(), playerDtos,
                 dayTotals(expenseMap), trainingDtos, expenseMap,
                 new TournamentDto(s.getOrDefault(TOURNAMENT_NAME, ""), s.getOrDefault(TOURNAMENT_FEE, ""),
+                        s.getOrDefault(TOURNAMENT_ADVANCE, ""),
                         tournamentPayments.findAll(BY_POSITION).stream()
                                 .map(x -> new PaymentDto(x.getId(), x.getDate(), x.getAmount(), x.getMethod(), x.getNote()))
                                 .toList()),
@@ -191,6 +195,7 @@ public class LedgerService {
         TournamentDto tour = in.tournament();
         settings.save(new Setting(TOURNAMENT_FEE, tour == null ? "" : numeric(tour.fee())));
         settings.save(new Setting(TOURNAMENT_NAME, tour == null ? "" : clip(tour.name(), 80)));
+        settings.save(new Setting(TOURNAMENT_ADVANCE, tour == null ? "" : numeric(tour.advance())));
         List<TournamentPayment> sent = new ArrayList<>();
         Set<String> sentIds = new HashSet<>();
         if (tour != null && tour.payments() != null) {
@@ -212,6 +217,10 @@ public class LedgerService {
             }
             if (s.roundUp() != null) {
                 settings.save(new Setting("roundUp", s.roundUp().toString()));
+            }
+            List<String> pay = Arrays.asList(s.payBank(), s.payTitle(), s.payAccount());
+            for (int i = 0; i < PAY_KEYS.size(); i++) {
+                if (pay.get(i) != null) settings.save(new Setting(PAY_KEYS.get(i), clip(pay.get(i), 60)));
             }
         }
         return load();

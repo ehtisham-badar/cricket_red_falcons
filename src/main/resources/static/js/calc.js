@@ -65,11 +65,22 @@
     return { fee, n, share: split(fee, n, state.settings.roundUp) };
   }
 
-  // Money already sent to management, split over the players taking part: the advance asked of
-  // players who have not paid anything yet.
+  // Money already sent to management, split over the players taking part: the suggested advance.
   function advanceShare(state) {
     const sent = ((state.tournament && state.tournament.payments) || []).reduce((s, x) => s + num(x.amount), 0);
     return split(sent, state.players.filter(inTournament).length, state.settings.roundUp);
+  }
+
+  // The advance each player pays up front: the admin's amount, else the suggested share.
+  function advancePerPlayer(state) {
+    const set = state.tournament && state.tournament.advance;
+    return set !== '' && set != null ? num(set) : advanceShare(state);
+  }
+
+  // How much of the advance a player still has to pay; their payments count towards it first.
+  function advanceDue(state, player) {
+    if (!inTournament(player)) return 0;
+    return round2(Math.max(advancePerPlayer(state) - paidTotal(player), 0));
   }
 
   function playerCalc(state, player, stats, fmt, tour) {
@@ -165,7 +176,7 @@
 
   const api = {
     MATCHES, days, num, round2, inTournament, paidTotal, dayExpenses, dayAmount, dayStats, allStats,
-    tournamentStats, advanceShare, playerCalc, totals, warnings, money, signedMoney, netLabel
+    tournamentStats, advanceShare, advancePerPlayer, advanceDue, playerCalc, totals, warnings, money, signedMoney, netLabel
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.RFCalc = api;
