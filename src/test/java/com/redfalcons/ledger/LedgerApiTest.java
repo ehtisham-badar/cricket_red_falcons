@@ -59,10 +59,32 @@ class LedgerApiTest {
                 .contains("\"currency\":\"PKR \"")
                 .contains("\"desc\":\"Nets\"");
 
+        // A version 2 file (amounts only) is read as one fund-paid expense per day.
+        assertThat(loaded).contains("\"t1\":[{\"id\":\"legacy-t1\",\"item\":\"Amount spent\",\"amount\":\"1500\",\"paidBy\":\"\"}]");
+
+        String v3 = """
+                {"players":[{"id":"p1","name":"Babar","paid":"1500","tournament":true,"att":{"t1":true}},
+                            {"id":"p2","name":"Rizwan","paid":"2000","tournament":false,"att":{}}],
+                 "trainings":[{"id":"t1","desc":""}],
+                 "expenses":{"t1":[{"id":"e1","item":"Water","amount":"500","paidBy":"p2"},
+                                   {"id":"e2","item":"Balls","amount":"1000","paidBy":"ghost"}]},
+                 "tournament":{"fee":"65000"}}
+                """;
+        assertThat(send("PUT", "/api/ledger", v3, token).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/ledger", null, null).body())
+                .contains("\"tournament\":{\"fee\":\"65000\"}")
+                .contains("\"name\":\"Rizwan\",\"role\":\"\",\"paid\":\"2000\",\"tournament\":false")
+                .contains("{\"id\":\"e1\",\"item\":\"Water\",\"amount\":\"500\",\"paidBy\":\"p2\"}")
+                // paidBy pointing at an unknown player falls back to the team fund
+                .contains("{\"id\":\"e2\",\"item\":\"Balls\",\"amount\":\"1000\",\"paidBy\":\"\"}")
+                .contains("\"amounts\":{\"t1\":\"1500\"}")
+                .doesNotContain("legacy-t1");
+
         // Replacing again with fewer players removes the old ones and their attendance.
         assertThat(send("PUT", "/api/ledger", "{\"players\":[]}", token).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/ledger", null, null).body())
                 .doesNotContain("Babar")
-                .contains("\"trainings\":[{\"id\":\"t1\",\"desc\":\"\"}]");
+                .contains("\"trainings\":[{\"id\":\"t1\",\"desc\":\"\"}]")
+                .contains("\"expenses\":{}");
     }
 }

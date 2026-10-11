@@ -18,8 +18,8 @@
 
   let session = readStore(SESSION_KEY);      // { name, admin, token }
   let tab = readStore(TAB_KEY) || 'summary';
-  let state = null;                           // { players, trainings, amounts, settings }
-  let sheet = null;                           // { type: 'attendance', dayId } | { type: 'player', id }
+  let state = null;                           // { players, trainings, expenses, tournament, settings }
+  let sheet = null;                           // { type: 'day', dayId } | { type: 'player', id }
   let saveTimer = null;
   let pollTimer = null;
   let draftNames = '';                        // unsent text in the Add players box
@@ -50,15 +50,45 @@
   const X_ICON = icon('<path d="M18 6 6 18M6 6l12 12"/>', 18);
 
   function emptyState() {
-    return { players: [], trainings: [{ id: 't1', desc: '' }], amounts: {}, settings: { currency: 'Rs ', maxPerMatch: 11, roundUp: false } };
+    return {
+      players: [], trainings: [{ id: 't1', desc: '' }], expenses: {}, tournament: { fee: '' },
+      settings: { currency: 'Rs ', maxPerMatch: 11, roundUp: false }
+    };
+  }
+
+  // Version 2 data has one amount per day; turn each into a single fund-paid expense.
+  function expensesFrom(d) {
+    if (d.expenses) {
+      const out = {};
+      Object.keys(d.expenses).forEach(day => {
+        out[day] = (d.expenses[day] || []).map(e => ({
+          id: e.id || rid(), item: e.item || '', amount: e.amount == null ? '' : String(e.amount), paidBy: e.paidBy || ''
+        }));
+      });
+      return out;
+    }
+    const out = {};
+    Object.keys(d.amounts || {}).forEach(day => {
+      const amt = d.amounts[day];
+      if (amt !== '' && amt != null) out[day] = [{ id: 'legacy-' + day, item: 'Amount spent', amount: String(amt), paidBy: '' }];
+    });
+    return out;
   }
 
   function normalize(d) {
     const s = d.settings || {};
+    const players = (d.players || []).map(p => ({
+      id: p.id || rid(), name: p.name || '', role: p.role || '', paid: p.paid == null ? '' : String(p.paid),
+      tournament: p.tournament !== false, att: p.att || {}
+    }));
+    const ids = new Set(players.map(p => p.id));
+    const expenses = expensesFrom(d);
+    Object.values(expenses).forEach(list => list.forEach(e => { if (!ids.has(e.paidBy)) e.paidBy = ''; }));
     return {
-      players: (d.players || []).map(p => ({ id: p.id, name: p.name || '', role: p.role || '', paid: p.paid == null ? '' : String(p.paid), att: p.att || {} })),
+      players,
       trainings: d.trainings && d.trainings.length ? d.trainings.map(t => ({ id: t.id, desc: t.desc || '' })) : [{ id: 't1', desc: '' }],
-      amounts: d.amounts || {},
+      expenses,
+      tournament: { fee: d.tournament && d.tournament.fee != null ? String(d.tournament.fee) : '' },
       settings: {
         currency: CURRENCIES.includes(s.currency) ? s.currency : 'Rs ',
         maxPerMatch: s.maxPerMatch > 0 ? s.maxPerMatch : 11,
@@ -68,8 +98,8 @@
   }
 
   function comparable(d) {
-    const { players, trainings, amounts, settings } = d;
-    return JSON.stringify({ players, trainings, amounts, settings });
+    const { players, trainings, expenses, tournament, settings } = d;
+    return JSON.stringify({ players, trainings, expenses, tournament, settings });
   }
 
   // ---------- API ----------
@@ -236,24 +266,34 @@
       <span><strong>${esc(w.join(', '))}</strong>: amount entered but no players marked — that cost isn't assigned to anyone yet.</span></div>`;
   }
 
+  // Admins see the ledger from the manager's side; viewers from the player's side.
+  function netText(n) {
+    if (n > 0) return 'Pay back';
+    if (n < 0) return isAdmin() ? 'Owes you' : 'Balance due';
+    return 'Settled';
+  }
+
   function viewSummary() {
     const t = C.totals(state, fmt);
     const stats = C.allStats(state);
+    const tour = C.tournamentStats(state);
     const days = C.days(state);
     const admin = isAdmin();
     const cards = [
-      { label: 'Collected', value: fmt(t.collected), cls: '' },
-      { label: 'Total spent', value: fmt(t.spent), cls: '' },
-      { label: admin ? 'You pay back' : 'To be paid back', value: fmt(t.payBack), cls: 'pos' },
-      { label: admin ? 'Still owed to you' : 'Still owed', value: fmt(t.owed), cls: 'neg' }
+      { label: 'Collected', value: fmt(t.collected), cls: '', note: 'Paid in by players' },
+      { label: 'Tournament fee', value: t.tournamentFee > 0 ? fmt(t.tournamentFee) : '—', cls: '', note: tour.n ? `${fmt(tour.share)} each · ${tour.n} players` : 'Not set' },
+      { label: 'Day expenses', value: fmt(t.daySpent), cls: '', note: t.fronted > 0 ? `${fmt(t.fronted)} bought by players` : 'Trainings & matches' },
+      { label: 'Cash in hand', value: fmtNet(t.cashInHand).replace(/^\+/, ''), cls: t.cashInHand < 0 ? 'neg' : '', note: 'Collected − fund spending' },
+      { label: admin ? 'You pay back' : 'To be paid back', value: fmt(t.payBack), cls: 'pos', note: 'Players in credit' },
+      { label: admin ? 'Still owed to you' : 'Balance due', value: fmt(t.owed), cls: 'neg', note: 'Players still to pay' }
     ];
 
     const rows = state.players.map((p, i) => {
-      const c = C.playerCalc(state, p, stats, fmt);
+      const c = C.playerCalc(state, p, stats, fmt, tour);
       return `<button class="prow" data-action="open-player" data-id="${esc(p.id)}">
         <span class="sr">${i + 1}</span>
-        <span class="pname"><strong>${esc(p.name) || '<em>Unnamed</em>'}</strong><small>${esc(p.role) || '—'}</small></span>
-        <span class="pnet ${netClass(c.net)}"><strong>${fmtNet(c.net)}</strong><small>${C.netLabel(c.net)}</small></span>
+        <span class="pname"><strong>${esc(p.name) || '<em>Unnamed</em>'}</strong><small>${esc(p.role) || '—'}${C.inTournament(p) ? '' : ' · not in tournament'}</small></span>
+        <span class="pnet ${netClass(c.net)}"><strong>${fmtNet(c.net)}</strong><small>${netText(c.net)}</small></span>
       </button>`;
     }).join('');
 
@@ -265,26 +305,30 @@
             <thead>
               <tr><th class="sticky">#</th><th class="sticky sticky-2">Player</th>
                 ${days.map(d => `<th class="day-col ${d.type}" title="${esc(d.label)}${d.desc ? ' — ' + esc(d.desc) : ''}">${d.short}<small>${stats[d.id].n > 0 && stats[d.id].amount > 0 ? fmt(stats[d.id].share) : '—'}</small></th>`).join('')}
-                <th>Cost</th><th>Paid</th><th>Net</th></tr>
+                <th class="day-col tour" title="Tournament fee share">Tour.<small>${tour.fee > 0 && tour.n ? fmt(tour.share) : '—'}</small></th>
+                <th>Cost</th><th>Paid</th><th title="Items bought for the team">Bought</th><th>Balance</th></tr>
             </thead>
             <tbody>
               ${state.players.map((p, i) => {
-                const c = C.playerCalc(state, p, stats, fmt);
+                const c = C.playerCalc(state, p, stats, fmt, tour);
                 return `<tr data-action="open-player" data-id="${esc(p.id)}">
                   <td class="sticky">${i + 1}</td><td class="sticky sticky-2 name-cell">${esc(p.name)}</td>
                   ${days.map(d => `<td class="dot-cell">${p.att[d.id] ? `<span class="dot ${d.type}" title="${d.type === 'match' ? 'Played' : 'Arrived'}"></span>` : '<span class="dot-empty"></span>'}</td>`).join('')}
-                  <td>${fmt(c.cost)}</td><td>${fmt(c.paid)}</td><td class="${netClass(c.net)} strong">${fmtNet(c.net)}</td></tr>`;
+                  <td class="dot-cell">${C.inTournament(p) ? '<span class="dot tour" title="In tournament"></span>' : '<span class="dot-empty"></span>'}</td>
+                  <td>${fmt(c.cost)}</td><td>${fmt(c.paid)}</td><td>${c.credit > 0 ? fmt(c.credit) : '—'}</td>
+                  <td class="${netClass(c.net)} strong">${fmtNet(c.net)}</td></tr>`;
               }).join('')}
             </tbody>
             <tfoot><tr><td class="sticky"></td><td class="sticky sticky-2">Attended</td>
-              ${days.map(d => `<td>${stats[d.id].n}</td>`).join('')}<td>${fmt(t.spent)}</td><td>${fmt(t.collected)}</td><td></td></tr></tfoot>
+              ${days.map(d => `<td>${stats[d.id].n}</td>`).join('')}<td>${tour.n}</td>
+              <td>${fmt(t.spent)}</td><td>${fmt(t.collected)}</td><td>${t.fronted > 0 ? fmt(t.fronted) : '—'}</td><td></td></tr></tfoot>
           </table>
         </div>
       </section>` : '';
 
     return `
       ${pageHead('Summary', `${state.players.length} player${state.players.length === 1 ? '' : 's'} · ${state.trainings.length} training${state.trainings.length === 1 ? '' : 's'} · 5 matches`)}
-      <div class="stats">${cards.map(c => `<div class="stat ${c.cls}"><span>${c.label}</span><strong>${c.value}</strong></div>`).join('')}</div>
+      <div class="stats">${cards.map(c => `<div class="stat ${c.cls}"><span>${c.label}</span><strong>${c.value}</strong><small>${esc(c.note)}</small></div>`).join('')}</div>
       ${warningBanner()}
       <div class="summary-grid">
         <section class="panel">
@@ -300,12 +344,36 @@
       <p>No players yet.</p>${isAdmin() ? '<button class="btn btn-primary" data-action="tab" data-tab="players">Add players</button>' : ''}</div>`;
   }
 
+  function playerName(id) {
+    const p = id && state.players.find(x => x.id === id);
+    return p ? (p.name || 'Unnamed') : 'Team fund';
+  }
+
+  function tournamentPanel() {
+    const tour = C.tournamentStats(state);
+    const out = state.players.length - tour.n;
+    return `<section class="tour-panel">
+      <div class="tour-text">
+        <span class="day-kind">Whole series</span>
+        <h3>Tournament fee</h3>
+        <p class="muted">Split equally among players taking part${out ? ` (${out} left out — change this on the Players page)` : '. Leave someone out on the Players page'}.</p>
+      </div>
+      <div class="tour-figs">
+        ${isAdmin()
+          ? `<span class="money-input big"><em>${esc(cur().trim())}</em><input type="text" inputmode="decimal" placeholder="e.g. 65000" value="${esc(state.tournament.fee)}" data-input="tournament-fee" data-focus="tour-fee" aria-label="Tournament fee"></span>`
+          : `<strong class="tour-fee">${tour.fee > 0 ? fmt(tour.fee) : '—'}</strong>`}
+        <span class="tour-share">${tour.fee > 0 && tour.n ? `<strong>${fmt(tour.share)}</strong> each · ${tour.n} player${tour.n === 1 ? '' : 's'}` : `${tour.n} player${tour.n === 1 ? '' : 's'} taking part`}</span>
+      </div>
+    </section>`;
+  }
+
   function viewDays() {
     const admin = isAdmin();
     const stats = C.allStats(state);
     const max = state.settings.maxPerMatch;
     const cards = C.days(state).map(d => {
       const s = stats[d.id];
+      const items = C.dayExpenses(state, d.id).filter(e => e.item || C.num(e.amount) > 0);
       const count = d.type === 'match' ? `${s.n} / ${max} played` : `${s.n} arrived`;
       const share = s.n > 0 && s.amount > 0 ? `${fmt(s.share)} each` : '—';
       const removable = admin && d.type === 'training' && state.trainings.length > 1;
@@ -318,23 +386,27 @@
         ${d.type === 'training' ? (admin
           ? `<input class="field" type="text" placeholder="Description (e.g. Nets at club)" value="${esc(d.desc)}" data-input="training-desc" data-id="${esc(d.id)}" data-focus="desc-${esc(d.id)}" maxlength="200">`
           : `<p class="desc">${esc(d.desc) || '<span class="muted">No description</span>'}</p>`) : ''}
-        <label class="amount">
-          <span>Amount spent</span>
-          ${admin
-            ? `<span class="money-input"><em>${esc(cur().trim())}</em><input type="text" inputmode="decimal" placeholder="0" value="${esc(state.amounts[d.id] || '')}" data-input="amount" data-id="${esc(d.id)}" data-focus="amt-${esc(d.id)}"></span>`
-            : `<strong>${s.amount > 0 ? fmt(s.amount) : '—'}</strong>`}
-        </label>
+        <div class="amount"><span>Total spent</span><strong>${s.amount > 0 ? fmt(s.amount) : '—'}</strong></div>
+        ${items.length ? `<ul class="mini-items">${items.slice(0, 3).map(e => `<li><span>${esc(e.item) || 'Item'}<small>${esc(playerName(e.paidBy))}</small></span><span>${fmt(C.num(e.amount))}</span></li>`).join('')}
+          ${items.length > 3 ? `<li class="more">+${items.length - 3} more</li>` : ''}</ul>` : '<p class="muted mini-empty">No expenses yet</p>'}
         <div class="day-meta"><span>${count}</span><span class="share">${share}</span></div>
         <button class="btn btn-block ${d.type === 'match' ? 'btn-gold' : 'btn-primary'}" data-action="open-day" data-id="${esc(d.id)}">
-          ${admin ? 'Mark attendance' : 'See attendance'}</button>
+          ${admin ? 'Expenses & attendance' : 'See details'}</button>
       </article>`;
     }).join('');
 
     return `
-      ${pageHead('Days', 'Trainings first, then Match 1–5. Each day’s cost is split among those who attended.',
+      ${pageHead('Days', 'Each day’s expenses are split among the players who attended. Whoever paid for an item gets it credited.',
         admin ? `<button class="btn btn-primary" data-action="add-training">${icon('<path d="M12 5v14M5 12h14"/>', 18)} Add training</button>` : '')}
       ${warningBanner()}
+      ${tournamentPanel()}
       <div class="day-grid">${cards}</div>`;
+  }
+
+  function tourToggle(p) {
+    const on = C.inTournament(p);
+    return `<button class="tog tour-tog ${on ? 'on' : ''} ${isAdmin() ? '' : 'ro'}" data-action="toggle-tournament" data-id="${esc(p.id)}"
+      ${isAdmin() ? '' : 'disabled'} aria-pressed="${on}" title="Shares the tournament fee">${on ? 'In' : 'Out'}</button>`;
   }
 
   function viewPlayers() {
@@ -345,15 +417,16 @@
         <button class="pl-name" data-action="open-player" data-id="${esc(p.id)}">${esc(p.name) || '<em>Unnamed</em>'}</button>
         ${admin
           ? `<select class="field select" data-input="role" data-id="${esc(p.id)}" aria-label="Role for ${esc(p.name)}">${ROLES.map(r => `<option value="${esc(r)}" ${r === p.role ? 'selected' : ''}>${r || 'No role'}</option>`).join('')}</select>
+             ${tourToggle(p)}
              <button class="icon-btn danger" data-action="remove-player" data-id="${esc(p.id)}" aria-label="Remove ${esc(p.name)}">${X_ICON}</button>`
-          : `<span class="muted role">${esc(p.role) || '—'}</span>`}
+          : `<span class="muted role">${esc(p.role) || '—'}</span>${tourToggle(p)}`}
       </div>`).join('');
 
     return `
       ${pageHead('Players', `${state.players.length} in the squad`)}
       <div class="players-layout">
         <section class="panel">
-          <div class="player-head"><span>Sr.</span><span>Name</span><span>Role</span></div>
+          <div class="player-head"><span>Sr.</span><span>Name</span><span>Role</span><span>Tournament</span></div>
           ${list || emptyPlayers()}
         </section>
         ${admin ? `<section class="panel add-panel">
@@ -416,7 +489,7 @@
   // ---------- sheets ----------
   function renderSheet() {
     let body = '';
-    if (sheet.type === 'attendance') body = sheetAttendance();
+    if (sheet.type === 'day') body = sheetDay();
     if (sheet.type === 'player') body = sheetPlayer();
     if (!body) { sheet = null; return ''; }
     return `<div class="sheet-backdrop" data-action="close-sheet"></div>
@@ -434,7 +507,35 @@
       ${disabled ? 'disabled' : ''} ${full ? `title="${max} players already played ${d.label}"` : ''} aria-pressed="${on}">${label}</button>`;
   }
 
-  function sheetAttendance() {
+  const QUICK_ITEMS = ['Ground fee', 'Balls', 'Water', 'Other'];
+
+  function expenseRows(d) {
+    const list = C.dayExpenses(state, d.id);
+    if (!isAdmin()) {
+      if (!list.length) return '<p class="muted">No expenses recorded.</p>';
+      return `<ul class="exp-list">${list.map(e => `<li><span><strong>${esc(e.item) || 'Item'}</strong><small>Paid by ${esc(playerName(e.paidBy))}</small></span>
+        <span class="amt">${fmt(C.num(e.amount))}</span></li>`).join('')}</ul>`;
+    }
+    const payers = state.players.map(p => ({ id: p.id, name: p.name || 'Unnamed' }));
+    const rows = list.map(e => `
+      <div class="exp-row">
+        <input class="field" type="text" placeholder="Item (e.g. Water)" value="${esc(e.item)}" maxlength="80"
+          data-input="exp-item" data-day="${esc(d.id)}" data-id="${esc(e.id)}" data-focus="exi-${esc(e.id)}" aria-label="Item">
+        <span class="money-input"><em>${esc(cur().trim())}</em><input type="text" inputmode="decimal" placeholder="0" value="${esc(e.amount)}"
+          data-input="exp-amount" data-day="${esc(d.id)}" data-id="${esc(e.id)}" data-focus="exa-${esc(e.id)}" aria-label="Amount"></span>
+        <select class="field select" data-input="exp-paidby" data-day="${esc(d.id)}" data-id="${esc(e.id)}" aria-label="Paid by">
+          <option value="">Team fund</option>
+          ${payers.map(p => `<option value="${esc(p.id)}" ${p.id === e.paidBy ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
+        </select>
+        <button class="icon-btn danger" data-action="remove-expense" data-day="${esc(d.id)}" data-id="${esc(e.id)}" aria-label="Remove ${esc(e.item || 'item')}">${X_ICON}</button>
+      </div>`).join('');
+    return `${rows ? `<div class="exp-rows"><div class="exp-head"><span>Item</span><span>Amount</span><span>Paid by</span></div>${rows}</div>` : ''}
+      <div class="quick-add"><span class="muted">Add:</span>
+        ${QUICK_ITEMS.map(item => `<button class="chip" data-action="add-expense" data-day="${esc(d.id)}" data-item="${item === 'Other' ? '' : esc(item)}">+ ${item}</button>`).join('')}
+      </div>`;
+  }
+
+  function sheetDay() {
     const d = C.days(state).find(x => x.id === sheet.dayId);
     if (!d) return '';
     const stats = C.allStats(state);
@@ -462,8 +563,13 @@
         <div><strong>${s.amount > 0 ? fmt(s.amount) : '—'}</strong><span>spent</span></div>
         <div><strong>${s.n > 0 && s.amount > 0 ? fmt(s.share) : '—'}</strong><span>each</span></div>
       </div>
-      ${full && isAdmin() ? `<p class="hint">${max} players already played ${d.label}</p>` : ''}
-      <div class="sheet-body">${rows || '<p class="muted center">No players yet.</p>'}</div>`;
+      <div class="sheet-body">
+        <h3 class="sub first">Expenses <span class="muted">${fmt(s.amount)}</span></h3>
+        ${expenseRows(d)}
+        <h3 class="sub">Attendance <span class="muted">${s.n}${isMatch ? ` / ${max}` : ''}</span></h3>
+        ${full && isAdmin() ? `<p class="hint">${max} players already played ${d.label}</p>` : ''}
+        ${rows || '<p class="muted center">No players yet.</p>'}
+      </div>`;
   }
 
   function sheetPlayer() {
@@ -474,14 +580,20 @@
     const stats = C.allStats(state);
     const c = C.playerCalc(state, p, stats, fmt);
     const days = C.days(state);
+    const inTour = C.inTournament(p);
 
     const fields = admin ? `
       <div class="form-grid">
         <label><span>Name</span><input class="field" type="text" value="${esc(p.name)}" data-input="name" data-id="${esc(p.id)}" data-focus="pname-${esc(p.id)}" maxlength="60"></label>
         <label><span>Role</span><select class="field select" data-input="role" data-id="${esc(p.id)}">${ROLES.map(r => `<option value="${esc(r)}" ${r === p.role ? 'selected' : ''}>${r || 'No role'}</option>`).join('')}</select></label>
         <label><span>Paid</span><span class="money-input"><em>${esc(cur().trim())}</em><input type="text" inputmode="decimal" placeholder="0" value="${esc(p.paid)}" data-input="paid" data-id="${esc(p.id)}" data-focus="paid-${esc(p.id)}"></span></label>
+        <div class="form-row"><span>Tournament</span>
+          <span class="tour-row">${tourToggle(p)}<small class="muted">${inTour ? 'Shares the tournament fee' : 'Not charged the tournament fee'}</small></span></div>
       </div>` : `
-      <dl class="kv"><dt>Role</dt><dd>${esc(p.role) || '—'}</dd><dt>Paid</dt><dd>${fmt(c.paid)}</dd></dl>`;
+      <dl class="kv"><dt>Role</dt><dd>${esc(p.role) || '—'}</dd><dt>Paid</dt><dd>${fmt(c.paid)}</dd>
+        <dt>Tournament</dt><dd>${inTour ? 'Taking part' : 'Not taking part'}</dd></dl>`;
+
+    const sumLine = `Paid ${fmt(c.paid)}${c.credit > 0 ? ` + Bought ${fmt(c.credit)}` : ''} − Cost ${fmt(c.cost)}`;
 
     return `
       <header class="sheet-head">
@@ -490,9 +602,9 @@
       </header>
       <div class="sheet-body">
         <div class="net-hero ${netClass(c.net)}">
-          <span>${C.netLabel(c.net)}</span>
+          <span>${netText(c.net)}</span>
           <strong>${fmtNet(c.net)}</strong>
-          <small>Paid ${fmt(c.paid)} − Cost ${fmt(c.cost)}</small>
+          <small>${sumLine}</small>
         </div>
         ${fields}
         <h3 class="sub">Attendance</h3>
@@ -500,7 +612,9 @@
           ${days.map(d => `<div class="att-cell ${d.type}"><span>${d.label}</span>${toggleButton(p, d, stats)}</div>`).join('')}
         </div>
         <h3 class="sub">Cost <span class="muted">${fmt(c.cost)}</span></h3>
-        <ul class="breakdown">${c.lines.length ? c.lines.map(l => `<li class="${l.day.type}">${esc(l.text)}</li>`).join('') : '<li class="none">No cost</li>'}</ul>
+        <ul class="breakdown">${c.lines.length ? c.lines.map(l => `<li class="${l.type}">${esc(l.text)}</li>`).join('') : '<li class="none">No cost</li>'}</ul>
+        ${c.creditLines.length ? `<h3 class="sub">Bought for the team <span class="muted">${fmt(c.credit)}</span></h3>
+        <ul class="breakdown credit">${c.creditLines.map(l => `<li class="${l.type}">${esc(l.text)}</li>`).join('')}</ul>` : ''}
       </div>`;
   }
 
@@ -533,13 +647,20 @@
 
   // ---------- backup ----------
   function exportBackup() {
+    // Version 3 adds expenses and tournament; amounts (per-day totals) keep older readers working.
+    const amounts = {};
+    C.days(state).forEach(d => {
+      if (C.dayExpenses(state, d.id).length) amounts[d.id] = String(C.dayAmount(state, d.id));
+    });
     const data = {
       app: 'cricket-ledger',
-      version: 2,
+      version: 3,
       savedAt: new Date().toISOString(),
-      players: state.players.map(p => ({ id: p.id, name: p.name, role: p.role, paid: p.paid, att: p.att })),
-      amounts: state.amounts,
-      trainings: state.trainings
+      players: state.players.map(p => ({ id: p.id, name: p.name, role: p.role, paid: p.paid, tournament: p.tournament, att: p.att })),
+      amounts,
+      trainings: state.trainings,
+      expenses: state.expenses,
+      tournament: state.tournament
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
@@ -562,9 +683,7 @@
     }
     const ok = await confirmDialog('Open backup?', `This replaces all current data with “${file.name}” (${data.players.length} players).`, 'Replace data', true);
     if (!ok) return;
-    const next = normalize({ ...data, settings: state.settings });
-    next.players.forEach(p => { if (!p.id) p.id = rid(); });
-    state = next;
+    state = normalize({ ...data, settings: state.settings });
     sheet = null;
     commit();
     toast('Backup restored.');
@@ -572,11 +691,12 @@
 
   // ---------- events ----------
   function findPlayer(id) { return state.players.find(p => p.id === id); }
+  function findExpense(el) { return (state.expenses[el.dataset.day] || []).find(e => e.id === el.dataset.id); }
 
   const actions = {
     tab(el) { tab = el.dataset.tab; writeStore(TAB_KEY, tab); sheet = null; render(); window.scrollTo({ top: 0 }); },
     'open-player'(el) { sheet = { type: 'player', id: el.dataset.id }; render(); },
-    'open-day'(el) { sheet = { type: 'attendance', dayId: el.dataset.id }; render(); },
+    'open-day'(el) { sheet = { type: 'day', dayId: el.dataset.id }; render(); },
     'close-sheet'() { sheet = null; render(); },
     async logout() {
       const ok = await confirmDialog('Switch user?', 'You will go back to the start screen.', 'Switch user');
@@ -613,11 +733,11 @@
     async 'remove-training'(el) {
       const idx = state.trainings.findIndex(t => t.id === el.dataset.id);
       if (idx < 0 || state.trainings.length <= 1) return;
-      const ok = await confirmDialog(`Remove Training ${idx + 1}?`, 'Its amount and attendance will be removed.', 'Remove', true);
+      const ok = await confirmDialog(`Remove Training ${idx + 1}?`, 'Its expenses and attendance will be removed.', 'Remove', true);
       if (!ok) return;
       const id = state.trainings[idx].id;
       state.trainings.splice(idx, 1);
-      delete state.amounts[id];
+      delete state.expenses[id];
       state.players.forEach(p => { delete p.att[id]; });
       if (sheet && sheet.dayId === id) sheet = null;
       commit();
@@ -626,7 +746,7 @@
       const ta = $('#add-names');
       const names = ta.value.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
       if (!names.length) { toast('Type or paste at least one name.'); return; }
-      names.forEach(name => state.players.push({ id: rid(), name, role: '', paid: '', att: {} }));
+      names.forEach(name => state.players.push({ id: rid(), name, role: '', paid: '', tournament: true, att: {} }));
       draftNames = '';
       commit();
       toast(`${names.length} player${names.length === 1 ? '' : 's'} added.`);
@@ -634,24 +754,29 @@
     async 'remove-player'(el) {
       const p = findPlayer(el.dataset.id);
       if (!p) return;
-      const ok = await confirmDialog(`Remove ${p.name || 'this player'}?`, 'Their attendance and payments will be removed.', 'Remove', true);
+      const bought = Object.values(state.expenses).flat().filter(e => e.paidBy === p.id).length;
+      const ok = await confirmDialog(`Remove ${p.name || 'this player'}?`,
+        'Their attendance and payments will be removed.' + (bought ? ` ${bought} item${bought === 1 ? '' : 's'} they paid for will be marked as paid by the team fund.` : ''),
+        'Remove', true);
       if (!ok) return;
       state.players = state.players.filter(x => x.id !== p.id);
+      Object.values(state.expenses).forEach(list => list.forEach(e => { if (e.paidBy === p.id) e.paidBy = ''; }));
       commit();
     },
     export() { exportBackup(); },
     import() { $('#import-file').click(); },
     async 'new-series'() {
-      const ok = await confirmDialog('Start a new series?', 'Keeps players, names and roles. Clears attendance, payments and amounts, and resets trainings to just Training 1.', 'Start new series', true);
+      const ok = await confirmDialog('Start a new series?', 'Keeps players, names and roles. Clears attendance, payments, expenses and the tournament fee, and resets trainings to just Training 1.', 'Start new series', true);
       if (!ok) return;
       state.players.forEach(p => { p.att = {}; p.paid = ''; });
-      state.amounts = {};
+      state.expenses = {};
+      state.tournament = { fee: '' };
       state.trainings = [{ id: 't1', desc: '' }];
       commit();
       toast('New series started.');
     },
     async 'clear-all'() {
-      const ok = await confirmDialog('Clear everything?', 'This removes all players, trainings, amounts and payments. Save a backup first if you might need it.', 'Clear all', true);
+      const ok = await confirmDialog('Clear everything?', 'This removes all players, trainings, expenses, the tournament fee and payments. Save a backup first if you might need it.', 'Clear all', true);
       if (!ok) return;
       const settings = state.settings;
       state = { ...emptyState(), settings };
@@ -659,12 +784,38 @@
       commit();
       toast('All data cleared.');
     },
-    'toggle-roundup'() { state.settings.roundUp = !state.settings.roundUp; commit(); }
+    'toggle-roundup'() { state.settings.roundUp = !state.settings.roundUp; commit(); },
+    'toggle-tournament'(el) {
+      const p = findPlayer(el.dataset.id);
+      if (!p || !isAdmin()) return;
+      p.tournament = !C.inTournament(p);
+      commit();
+    },
+    'add-expense'(el) {
+      if (!isAdmin()) return;
+      const day = el.dataset.day;
+      const e = { id: rid(), item: el.dataset.item || '', amount: '', paidBy: '' };
+      (state.expenses[day] = state.expenses[day] || []).push(e);
+      commit();
+      // Jump to the field that still needs filling in.
+      const target = document.querySelector(`[data-focus="${e.item ? 'exa' : 'exi'}-${e.id}"]`);
+      if (target) target.focus();
+    },
+    'remove-expense'(el) {
+      const list = state.expenses[el.dataset.day];
+      if (!list) return;
+      state.expenses[el.dataset.day] = list.filter(e => e.id !== el.dataset.id);
+      if (!state.expenses[el.dataset.day].length) delete state.expenses[el.dataset.day];
+      commit();
+    }
   };
 
   const inputs = {
     'training-desc'(el) { const t = state.trainings.find(x => x.id === el.dataset.id); if (t) t.desc = el.value; },
-    amount(el) { el.value = cleanNumber(el.value); state.amounts[el.dataset.id] = el.value; },
+    'exp-item'(el) { const e = findExpense(el); if (e) e.item = el.value; },
+    'exp-amount'(el) { el.value = cleanNumber(el.value); const e = findExpense(el); if (e) e.amount = el.value; },
+    'exp-paidby'(el) { const e = findExpense(el); if (e) e.paidBy = el.value; },
+    'tournament-fee'(el) { el.value = cleanNumber(el.value); state.tournament.fee = el.value; },
     name(el) { const p = findPlayer(el.dataset.id); if (p) p.name = el.value; },
     paid(el) { el.value = cleanNumber(el.value); const p = findPlayer(el.dataset.id); if (p) p.paid = el.value; },
     role(el) { const p = findPlayer(el.dataset.id); if (p) p.role = el.value; },

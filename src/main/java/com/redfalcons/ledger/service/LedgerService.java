@@ -1,21 +1,26 @@
 package com.redfalcons.ledger.service;
 
 import com.redfalcons.ledger.model.DayAmount;
+import com.redfalcons.ledger.model.Expense;
 import com.redfalcons.ledger.model.Player;
 import com.redfalcons.ledger.model.Setting;
 import com.redfalcons.ledger.model.Training;
 import com.redfalcons.ledger.repo.DayAmountRepository;
+import com.redfalcons.ledger.repo.ExpenseRepository;
 import com.redfalcons.ledger.repo.PlayerRepository;
 import com.redfalcons.ledger.repo.SettingRepository;
 import com.redfalcons.ledger.repo.TrainingRepository;
 import com.redfalcons.ledger.web.LedgerDto;
+import com.redfalcons.ledger.web.LedgerDto.ExpenseDto;
 import com.redfalcons.ledger.web.LedgerDto.PlayerDto;
 import com.redfalcons.ledger.web.LedgerDto.SettingsDto;
+import com.redfalcons.ledger.web.LedgerDto.TournamentDto;
 import com.redfalcons.ledger.web.LedgerDto.TrainingDto;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.*;
 
@@ -25,17 +30,22 @@ public class LedgerService {
     public static final List<String> MATCH_IDS = List.of("m1", "m2", "m3", "m4", "m5");
     private static final Set<String> CURRENCIES = Set.of("Rs ", "PKR ", "₹", "$", "£");
     private static final Sort BY_POSITION = Sort.by("position");
+    private static final String TOURNAMENT_FEE = "tournamentFee";
+    /** Item name used when a legacy per-day amount is turned into an expense. */
+    private static final String LEGACY_ITEM = "Amount spent";
 
     private final PlayerRepository players;
     private final TrainingRepository trainings;
-    private final DayAmountRepository amounts;
+    private final DayAmountRepository legacyAmounts;
+    private final ExpenseRepository expenses;
     private final SettingRepository settings;
 
-    public LedgerService(PlayerRepository players, TrainingRepository trainings,
-                         DayAmountRepository amounts, SettingRepository settings) {
+    public LedgerService(PlayerRepository players, TrainingRepository trainings, DayAmountRepository legacyAmounts,
+                         ExpenseRepository expenses, SettingRepository settings) {
         this.players = players;
         this.trainings = trainings;
-        this.amounts = amounts;
+        this.legacyAmounts = legacyAmounts;
+        this.expenses = expenses;
         this.settings = settings;
     }
 
@@ -45,7 +55,7 @@ public class LedgerService {
                 .map(p -> {
                     Map<String, Boolean> att = new LinkedHashMap<>();
                     p.getAttended().forEach(d -> att.put(d, true));
-                    return new PlayerDto(p.getId(), p.getName(), p.getRole(), p.getPaid(), att);
+                    return new PlayerDto(p.getId(), p.getName(), p.getRole(), p.getPaid(), p.isInTournament(), att);
                 })
                 .toList();
 
@@ -56,8 +66,17 @@ public class LedgerService {
             trainingDtos = List.of(new TrainingDto("t1", ""));
         }
 
-        Map<String, String> amountMap = new LinkedHashMap<>();
-        amounts.findAll().forEach(a -> amountMap.put(a.getDayId(), a.getAmount()));
+        Map<String, List<ExpenseDto>> expenseMap = new LinkedHashMap<>();
+        expenses.findAll(BY_POSITION).forEach(e -> expenseMap
+                .computeIfAbsent(e.getDayId(), k -> new ArrayList<>())
+                .add(new ExpenseDto(e.getId(), e.getItem(), e.getAmount(), e.getPaidBy())));
+        // Data saved before expenses existed: show each day's amount as one fund-paid item.
+        legacyAmounts.findAll().forEach(a -> {
+            if (!a.getAmount().isEmpty() && !expenseMap.containsKey(a.getDayId())) {
+                expenseMap.put(a.getDayId(), List.of(
+                        new ExpenseDto("legacy-" + a.getDayId(), LEGACY_ITEM, a.getAmount(), "")));
+            }
+        });
 
         Map<String, String> s = new HashMap<>();
         settings.findAll().forEach(x -> s.put(x.getKey(), x.getValue()));
@@ -66,8 +85,9 @@ public class LedgerService {
                 parseIntOr(s.get("maxPerMatch"), 11),
                 Boolean.parseBoolean(s.getOrDefault("roundUp", "false")));
 
-        return new LedgerDto("cricket-ledger", 2, Instant.now().toString(),
-                playerDtos, amountMap, trainingDtos, settingsDto);
+        return new LedgerDto("cricket-ledger", 3, Instant.now().toString(), playerDtos,
+                dayTotals(expenseMap), trainingDtos, expenseMap,
+                new TournamentDto(s.getOrDefault(TOURNAMENT_FEE, "")), settingsDto);
     }
 
     /** Replaces the whole ledger with the given state (admin only). */
@@ -102,26 +122,35 @@ public class LedgerService {
                     if (Boolean.TRUE.equals(on) && validDays.contains(day)) attended.add(day);
                 });
             }
-            newPlayers.add(new Player(p.id(), newPlayers.size(), nz(p.name()).trim(),
-                    nz(p.role()), numeric(p.paid()), attended));
+            newPlayers.add(new Player(p.id(), newPlayers.size(), nz(p.name()).trim(), nz(p.role()),
+                    numeric(p.paid()), !Boolean.FALSE.equals(p.tournament()), attended));
         }
 
-        List<DayAmount> newAmounts = new ArrayList<>();
-        if (in.amounts() != null) {
-            in.amounts().forEach((day, amount) -> {
-                if (validDays.contains(day)) newAmounts.add(new DayAmount(day, numeric(amount)));
-            });
-        }
+        List<Expense> newExpenses = new ArrayList<>();
+        Set<String> expenseIds = new HashSet<>();
+        Map<String, List<ExpenseDto>> expenseIn = in.expenses() != null ? in.expenses() : fromAmounts(in.amounts());
+        expenseIn.forEach((day, list) -> {
+            if (!validDays.contains(day) || list == null) return;
+            for (ExpenseDto e : list) {
+                if (e == null || blank(e.id()) || !expenseIds.add(e.id())) continue;
+                String paidBy = playerIds.contains(nz(e.paidBy())) ? e.paidBy() : "";
+                newExpenses.add(new Expense(e.id(), day, newExpenses.size(), nz(e.item()).trim(),
+                        numeric(e.amount()), paidBy));
+            }
+        });
 
-        // deleteAll (not InBatch) so Hibernate also removes the player_attendance rows.
-        players.deleteAll();
+        players.deleteAll(); // not InBatch, so Hibernate also removes the player_attendance rows
         trainings.deleteAllInBatch();
-        amounts.deleteAllInBatch();
+        expenses.deleteAllInBatch();
+        legacyAmounts.deleteAllInBatch();
         players.flush();
 
         trainings.saveAll(newTrainings);
         players.saveAll(newPlayers);
-        amounts.saveAll(newAmounts);
+        expenses.saveAll(newExpenses);
+
+        String fee = in.tournament() == null ? "" : numeric(in.tournament().fee());
+        settings.save(new Setting(TOURNAMENT_FEE, fee));
 
         SettingsDto s = in.settings();
         if (s != null) {
@@ -138,13 +167,37 @@ public class LedgerService {
         return load();
     }
 
+    /** Version 2 files only have a total per day; treat each as a single fund-paid expense. */
+    private static Map<String, List<ExpenseDto>> fromAmounts(Map<String, String> amounts) {
+        Map<String, List<ExpenseDto>> out = new LinkedHashMap<>();
+        if (amounts == null) return out;
+        amounts.forEach((day, amount) -> {
+            if (!numeric(amount).isEmpty()) {
+                out.put(day, List.of(new ExpenseDto("legacy-" + day, LEGACY_ITEM, amount, "")));
+            }
+        });
+        return out;
+    }
+
+    private static Map<String, String> dayTotals(Map<String, List<ExpenseDto>> expenseMap) {
+        Map<String, String> totals = new LinkedHashMap<>();
+        expenseMap.forEach((day, list) -> {
+            BigDecimal sum = BigDecimal.ZERO;
+            for (ExpenseDto e : list) {
+                if (!e.amount().isEmpty()) sum = sum.add(new BigDecimal(e.amount()));
+            }
+            totals.put(day, sum.stripTrailingZeros().toPlainString());
+        });
+        return totals;
+    }
+
     private static String numeric(String v) {
         if (v == null) return "";
         String t = v.trim();
         if (t.isEmpty()) return "";
         try {
             double d = Double.parseDouble(t);
-            return Double.isFinite(d) ? t : "";
+            return Double.isFinite(d) && d >= 0 ? new BigDecimal(t).toPlainString() : "";
         } catch (NumberFormatException e) {
             return "";
         }

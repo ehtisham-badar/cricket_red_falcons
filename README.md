@@ -37,7 +37,7 @@ It is never stored in git: set it in `config/application.properties` locally, or
 ## Data
 
 - Saved automatically to `./data/redfalcons.mv.db` (git-ignored). Set `LEDGER_DATA_DIR` to store it elsewhere.
-- **Settings → Save backup** downloads `cricket-ledger-YYYY-MM-DD.json`, which uses the same format as the original HTML version.
+- **Settings → Save backup** downloads `cricket-ledger-YYYY-MM-DD.json`. Backups also store itemised expenses and the tournament fee, and still include per-day totals for older readers. Backups from the original HTML version open fine: each day's amount becomes one expense item.
 - **Open backup** restores one.
 
 ## Deploying (Railway + optional Vercel)
