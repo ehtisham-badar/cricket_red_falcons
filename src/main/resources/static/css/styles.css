@@ -710,7 +710,7 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
 .prow-wrap .prow { flex: 1; min-width: 0; }
 .icon-btn.wa { color: #1fa855; border-color: rgba(31, 168, 85, .35); }
 .icon-btn.wa:hover { color: #fff; background: #1fa855; border-color: #1fa855; }
-.adv-due { color: var(--neg); font-weight: 700; }
+.adv-due { color: var(--neg); font-weight: 700; white-space: nowrap; }
 .pay-to-line { color: var(--gold); font-weight: 600; }
 .adv-status { margin: 0 0 16px; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255, 255, 255, .03); font-size: 14px; text-align: center; color: var(--pos); }
 .adv-status.due { color: var(--neg); border-color: rgba(255, 107, 107, .35); background: rgba(208, 34, 44, .1); }
