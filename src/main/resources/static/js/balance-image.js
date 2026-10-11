@@ -61,6 +61,8 @@
    * @param {{name: string, net: number}[]} o.rows   players in Sr. no. order
    * @param {(n: number) => string} o.money           formats a positive amount, e.g. "Rs 3,129.55"
    * @param {string[]} o.chips                        short summary lines shown under the header
+   * @param {{name: string, figures: {label: string, value: string, color: string}[]}} [o.league]
+   *        league money (fee, paid to management, still owed, in account) drawn as a row of boxes
    * @param {string} o.dateText, o.link, o.logoSrc
    * @returns {Promise<Blob>}
    */
@@ -75,7 +77,9 @@
     const GAP = 10;
     const headerH = 300;
     const chipsH = o.chips.length ? 96 : 24;
-    const listTop = headerH + chipsH;
+    const LEAGUE_H = 190;
+    const leagueTop = headerH + chipsH;
+    const listTop = leagueTop + (o.league ? LEAGUE_H : 0);
     const listH = Math.max(perCol, 1) * (ROW_H + GAP);
     const footerH = 150;
     const H = listTop + listH + footerH;
@@ -151,6 +155,32 @@
         ctx.fillStyle = chip.color;
         ctx.fillText(chip.text, cx + 22, cy + 27);
         cx += w + 14;
+      });
+    }
+
+    // League money: fee, paid to management, still owed to management, in the admin's account.
+    if (o.league) {
+      ctx.fillStyle = C.gold;
+      ctx.font = `800 20px ${BODY}`;
+      spaced(ctx, o.league.name.toUpperCase(), PAD, leagueTop + 14, 3);
+      const n = o.league.figures.length;
+      const gap = 14;
+      const boxW = (W - PAD * 2 - gap * (n - 1)) / n;
+      const boxY = leagueTop + 40;
+      o.league.figures.forEach((f, i) => {
+        const bx = PAD + i * (boxW + gap);
+        roundRect(ctx, bx, boxY, boxW, 112, 16);
+        ctx.fillStyle = 'rgba(226,182,92,0.07)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(226,182,92,0.25)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.fillStyle = C.muted;
+        ctx.font = `800 15px ${BODY}`;
+        spaced(ctx, fit(ctx, f.label.toUpperCase(), boxW - 40), bx + 20, boxY + 32, 1.5);
+        ctx.fillStyle = f.color;
+        ctx.font = `800 30px ${BODY}`;
+        ctx.fillText(fit(ctx, f.value, boxW - 40), bx + 20, boxY + 76);
       });
     }
 

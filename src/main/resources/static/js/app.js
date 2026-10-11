@@ -357,7 +357,17 @@
     if (t.owed > 0) chips.push({ text: `Still to pay ${fmt(t.owed)}`, color: '#ff6b6b', bg: 'rgba(208,34,44,0.18)' });
     if (t.payBack > 0) chips.push({ text: `To pay back ${fmt(t.payBack)}`, color: '#e2b65c', bg: 'rgba(226,182,92,0.14)' });
     if (tour.fee > 0 && tour.n) chips.push({ text: `Tournament ${fmt(tour.share)} each`, color: '#f5eee2', bg: 'rgba(255,255,255,0.07)' });
+    const league = t.tournamentFee > 0 || state.tournament.payments.length ? {
+      name: leagueName(),
+      figures: [
+        { label: 'League fee', value: t.tournamentFee > 0 ? fmt(t.tournamentFee) : '—', color: '#f5eee2' },
+        { label: 'Paid to management', value: fmt(t.sentToManagement), color: '#e2b65c' },
+        { label: 'Still owed to mgmt', value: fmt(t.managementDue), color: t.managementDue > 0 ? '#ff6b6b' : '#f5eee2' },
+        { label: 'In my account', value: fmtNet(t.cashInHand).replace(/^\+/, ''), color: t.cashInHand < 0 ? '#ff6b6b' : '#f5eee2' }
+      ]
+    } : null;
     return window.RFBalanceImage.render({
+      league,
       rows: state.players.map(p => ({ name: p.name, net: C.playerCalc(state, p, stats, fmt, tour).net })),
       money: fmt,
       chips,
