@@ -108,6 +108,18 @@ class LedgerApiTest {
                 .contains("{\"id\":\"x2\",\"date\":\"\",\"amount\":\"500.5\"")
                 .contains("\"payments\":[{\"id\":\"legacy-pay-p2\",\"date\":\"\",\"amount\":\"2000\",\"method\":\"\",\"note\":\"Paid before payment history\"}]");
 
+        // Phone numbers reach only the admin, and a save without them keeps the stored ones.
+        String withPhone = """
+                {"players":[{"id":"p1","name":"Babar","att":{},"payments":[],"phone":"03119876543"}]}
+                """;
+        assertThat(send("PUT", "/api/ledger", withPhone, token).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/ledger", null, null).body()).doesNotContain("03119876543").contains("\"phone\":null");
+        assertThat(send("GET", "/api/ledger", null, token).body()).contains("\"phone\":\"03119876543\"");
+        assertThat(send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{}}]}", token).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/ledger", null, token).body()).contains("\"phone\":\"03119876543\"");
+        assertThat(send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{},\"phone\":\"\"}]}", token).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/ledger", null, token).body()).contains("\"phone\":\"\"");
+
         // Replacing again with fewer players removes the old ones and their attendance.
         assertThat(send("PUT", "/api/ledger", "{\"players\":[]}", token).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/ledger", null, null).body())

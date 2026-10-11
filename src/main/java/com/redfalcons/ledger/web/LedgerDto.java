@@ -20,9 +20,12 @@ public record LedgerDto(
         TournamentDto tournament,
         SettingsDto settings) {
 
-    /** {@code paid} is the total of {@code payments}; files without payments are read from {@code paid}. */
+    /**
+     * {@code paid} is the total of {@code payments}; files without payments are read from {@code paid}.
+     * {@code phone} is only sent to the admin; null on save keeps the stored number.
+     */
     public record PlayerDto(String id, String name, String role, String paid, Boolean tournament,
-                            Map<String, Boolean> att, List<PaymentDto> payments) {
+                            Map<String, Boolean> att, List<PaymentDto> payments, String phone) {
     }
 
     public record PaymentDto(String id, String date, String amount, String method, String note) {

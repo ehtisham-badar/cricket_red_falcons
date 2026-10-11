@@ -66,8 +66,15 @@ public class LedgerService {
         this.settings = settings;
     }
 
+    /** The full ledger for the admin. */
     @Transactional(readOnly = true)
     public LedgerDto load() {
+        return load(true);
+    }
+
+    /** The ledger; players' phone numbers are left out unless {@code admin}. */
+    @Transactional(readOnly = true)
+    public LedgerDto load(boolean admin) {
         Map<String, List<PaymentDto>> paymentsByPlayer = new HashMap<>();
         payments.findAll(BY_POSITION).forEach(x -> paymentsByPlayer
                 .computeIfAbsent(x.getPlayerId(), k -> new ArrayList<>())
@@ -79,7 +86,7 @@ public class LedgerService {
                     p.getAttended().forEach(d -> att.put(d, true));
                     List<PaymentDto> paid = paymentsByPlayer.getOrDefault(p.getId(), legacyPayments(p.getId(), p.getPaid()));
                     return new PlayerDto(p.getId(), p.getName(), p.getRole(), sum(paid.stream().map(PaymentDto::amount)),
-                            p.isInTournament(), att, paid);
+                            p.isInTournament(), att, paid, admin ? p.getPhone() : null);
                 })
                 .toList();
 
@@ -142,6 +149,10 @@ public class LedgerService {
         Set<String> validDays = new HashSet<>(trainingIds);
         validDays.addAll(MATCH_IDS);
 
+        // A save without phone numbers (an older app, or a backup file) keeps the stored ones.
+        Map<String, String> storedPhones = new HashMap<>();
+        players.findAll().forEach(p -> storedPhones.put(p.getId(), p.getPhone()));
+
         List<Player> newPlayers = new ArrayList<>();
         List<Payment> newPayments = new ArrayList<>();
         Set<String> playerIds = new HashSet<>();
@@ -162,8 +173,9 @@ public class LedgerService {
                         clip(x.method(), 40), clip(x.note(), 200)));
                 amounts.add(numeric(x.amount()));
             }
+            String phone = p.phone() != null ? clip(p.phone(), 20) : storedPhones.getOrDefault(p.id(), "");
             newPlayers.add(new Player(p.id(), newPlayers.size(), nz(p.name()).trim(), nz(p.role()),
-                    sum(amounts.stream()), !Boolean.FALSE.equals(p.tournament()), attended));
+                    sum(amounts.stream()), !Boolean.FALSE.equals(p.tournament()), phone, attended));
         }
 
         List<Expense> newExpenses = new ArrayList<>();

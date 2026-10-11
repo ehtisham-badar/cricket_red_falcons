@@ -42,8 +42,8 @@ public class LedgerController {
     }
 
     @GetMapping("/ledger")
-    public LedgerDto get() {
-        return service.load();
+    public LedgerDto get(@RequestHeader(value = TOKEN_HEADER, required = false) String token) {
+        return service.load(auth.isValidToken(token));
     }
 
     @PutMapping("/ledger")

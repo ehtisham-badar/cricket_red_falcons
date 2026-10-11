@@ -719,3 +719,5 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
 .tour-figs > small { font-size: 12px; }
 .pref > label { flex: none; }
 .pref > input.field { max-width: 230px; }
+.field.invalid { border-color: rgba(255, 107, 107, .6); }
+.field-hint { margin: -4px 0 0; color: var(--neg); font-size: 13px; }

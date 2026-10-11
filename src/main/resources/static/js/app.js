@@ -102,7 +102,7 @@
       const id = p.id || rid();
       return {
         id, name: p.name || '', role: p.role || '', tournament: p.tournament !== false, att: p.att || {},
-        payments: paymentsFrom(id, p)
+        payments: paymentsFrom(id, p), phone: p.phone == null ? '' : String(p.phone)
       };
     });
     const ids = new Set(players.map(p => p.id));
@@ -475,8 +475,17 @@
     });
   }
 
-  function openWhatsApp(text) {
-    window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank', 'noopener');
+  // A Pakistani mobile number (0300 1234567, +92 300…) in the international form wa.me expects.
+  function waNumber(phone) {
+    const d = String(phone || '').replace(/\D/g, '');
+    if (/^03\d{9}$/.test(d)) return '92' + d.slice(1);
+    if (/^923\d{9}$/.test(d)) return d;
+    return '';
+  }
+
+  // Opens the player's own chat when they have a valid number, otherwise WhatsApp's chat picker.
+  function openWhatsApp(text, phone) {
+    window.open(`https://wa.me/${waNumber(phone)}?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
   }
 
   async function copyText(text) {
@@ -590,7 +599,7 @@
         <span class="pnet ${netClass(c.net)}"><strong>${fmtNet(c.net)}</strong><small>${netText(c.net)}</small></span>
       </button>`;
       return admin && c.net < 0
-        ? `<div class="prow-wrap">${row}<button class="icon-btn wa" data-action="share-player" data-id="${esc(p.id)}" aria-label="Send ${esc(p.name)} a reminder on WhatsApp" title="Send reminder on WhatsApp">${WA_ICON}</button></div>`
+        ? `<div class="prow-wrap">${row}<button class="icon-btn wa" data-action="share-player" data-id="${esc(p.id)}" aria-label="Send ${esc(p.name)} a reminder on WhatsApp" title="${waNumber(p.phone) ? `Send reminder to ${esc(p.phone)}` : 'Send reminder (no number saved — pick the chat)'}">${WA_ICON}</button></div>`
         : row;
     }).join('');
 
@@ -974,6 +983,8 @@
       <div class="form-grid">
         <label><span>Name</span><input class="field" type="text" value="${esc(p.name)}" data-input="name" data-id="${esc(p.id)}" data-focus="pname-${esc(p.id)}" maxlength="60"></label>
         <label><span>Role</span><select class="field select" data-input="role" data-id="${esc(p.id)}">${ROLES.map(r => `<option value="${esc(r)}" ${r === p.role ? 'selected' : ''}>${r || 'No role'}</option>`).join('')}</select></label>
+        <label><span>WhatsApp</span><input class="field ${p.phone && !waNumber(p.phone) ? 'invalid' : ''}" type="tel" inputmode="tel" placeholder="03xx xxxxxxx" value="${esc(p.phone)}" data-input="phone" data-id="${esc(p.id)}" data-focus="pphone-${esc(p.id)}" maxlength="20"></label>
+        ${p.phone && !waNumber(p.phone) ? '<p class="field-hint">Not a valid mobile number, so reminders open the chat picker.</p>' : ''}
         <div class="form-row"><span>Tournament</span>
           <span class="tour-row">${tourToggle(p)}<small class="muted">${inTour ? 'Shares the tournament fee' : 'Not charged the tournament fee'}</small></span></div>
       </div>` : `
@@ -1051,7 +1062,8 @@
       version: 3,
       savedAt: new Date().toISOString(),
       players: state.players.map(p => ({
-        id: p.id, name: p.name, role: p.role, paid: String(C.paidTotal(p) || ''), tournament: p.tournament, att: p.att, payments: p.payments
+        id: p.id, name: p.name, role: p.role, paid: String(C.paidTotal(p) || ''), tournament: p.tournament, att: p.att, payments: p.payments,
+        phone: p.phone
       })),
       amounts,
       trainings: state.trainings,
@@ -1147,7 +1159,7 @@
       const ta = $('#add-names');
       const names = ta.value.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
       if (!names.length) { toast('Type or paste at least one name.'); return; }
-      names.forEach(name => state.players.push({ id: rid(), name, role: '', tournament: true, att: {}, payments: [] }));
+      names.forEach(name => state.players.push({ id: rid(), name, role: '', tournament: true, att: {}, payments: [], phone: '' }));
       draftNames = '';
       commit();
       toast(`${names.length} player${names.length === 1 ? '' : 's'} added.`);
@@ -1214,7 +1226,7 @@
       list.splice(list.indexOf(x), 1);
       commit();
     },
-    'share-player'(el) { const p = findPlayer(el.dataset.id); if (p) openWhatsApp(playerMessage(p)); },
+    'share-player'(el) { const p = findPlayer(el.dataset.id); if (p) openWhatsApp(playerMessage(p), p.phone); },
     'copy-player'(el) { const p = findPlayer(el.dataset.id); if (p) copyText(playerMessage(p)); },
     'share-team'() { openWhatsApp(teamMessage()); },
     async 'share-image'(el) {
@@ -1263,6 +1275,7 @@
     'pay-title'(el) { state.settings.payTitle = el.value; },
     'pay-account'(el) { state.settings.payAccount = el.value; },
     name(el) { const p = findPlayer(el.dataset.id); if (p) p.name = el.value; },
+    phone(el) { el.value = el.value.replace(/[^\d+ -]/g, ''); const p = findPlayer(el.dataset.id); if (p) p.phone = el.value; },
     'pay-date'(el) { const x = findPayment(el); if (x) x.date = el.value; },
     'pay-amount'(el) { el.value = cleanNumber(el.value); const x = findPayment(el); if (x) x.amount = el.value; },
     'pay-method'(el) { const x = findPayment(el); if (x) x.method = el.value; },

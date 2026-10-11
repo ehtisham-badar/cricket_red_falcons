@@ -29,6 +29,9 @@ public class Player {
     @Column(name = "in_tournament")
     private Boolean inTournament = true;
 
+    /** WhatsApp number for reminders; admin-only. Null on rows from before this column. */
+    private String phone = "";
+
     /** Ids of the days ('t1', 'm1'…) this player attended. */
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "player_attendance", joinColumns = @JoinColumn(name = "player_id"))
@@ -39,13 +42,14 @@ public class Player {
     }
 
     public Player(String id, int position, String name, String role, String paid, boolean inTournament,
-                  Set<String> attended) {
+                  String phone, Set<String> attended) {
         this.id = id;
         this.position = position;
         this.name = name;
         this.role = role;
         this.paid = paid;
         this.inTournament = inTournament;
+        this.phone = phone;
         this.attended = new LinkedHashSet<>(attended);
     }
 
@@ -55,5 +59,6 @@ public class Player {
     public String getRole() { return role; }
     public String getPaid() { return paid; }
     public boolean isInTournament() { return !Boolean.FALSE.equals(inTournament); }
+    public String getPhone() { return phone == null ? "" : phone; }
     public Set<String> getAttended() { return attended; }
 }
