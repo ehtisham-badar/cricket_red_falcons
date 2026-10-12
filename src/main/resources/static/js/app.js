@@ -256,6 +256,7 @@
     $('#app').hidden = false;
     setSaveStatus('');
     render();
+    animateView();
     startPolling();
   }
 
@@ -287,6 +288,15 @@
         if (sel && el.setSelectionRange) { try { el.setSelectionRange(sel[0], sel[1]); } catch { /* ignore */ } }
       }
     }
+  }
+
+  // Fades the page in on tab changes only; render() also runs on every keystroke.
+  function animateView() {
+    const v = $('#view');
+    v.classList.remove('enter');
+    void v.offsetWidth;
+    v.classList.add('enter');
+    setTimeout(() => v.classList.remove('enter'), 700);
   }
 
   function pageHead(title, sub, actions = '') {
@@ -640,7 +650,7 @@
     const rows = state.players.map((p, i) => {
       const c = C.playerCalc(state, p, stats, fmt, tour);
       const adv = advanceNow(p, c.net);
-      const row = `<button class="prow" data-action="open-player" data-id="${esc(p.id)}">
+      const row = `<button class="prow" data-net="${netClass(c.net)}" data-action="open-player" data-id="${esc(p.id)}">
         <span class="sr">${i + 1}</span>
         <span class="pname"><strong>${esc(p.name) || '<em>Unnamed</em>'}</strong><small>${esc(p.role) || '—'}${C.inTournament(p) ? '' : ' · not in tournament'}${adv > 0 ? ` · <span class="adv-due">advance ${fmt(adv)}</span>` : ''}</small></span>
         <span class="pnet ${netClass(c.net)}"><strong>${fmtNet(c.net)}</strong><small>${netText(c.net)}</small></span>
@@ -1156,7 +1166,7 @@
   function findExpense(el) { return (state.expenses[el.dataset.day] || []).find(e => e.id === el.dataset.id); }
 
   const actions = {
-    tab(el) { tab = el.dataset.tab; writeStore(TAB_KEY, tab); sheet = null; render(); window.scrollTo({ top: 0 }); },
+    tab(el) { tab = el.dataset.tab; writeStore(TAB_KEY, tab); sheet = null; render(); animateView(); window.scrollTo({ top: 0 }); },
     'open-player'(el) { sheet = { type: 'player', id: el.dataset.id }; render(); },
     'open-day'(el) { sheet = { type: 'day', dayId: el.dataset.id }; render(); },
     'close-sheet'() { sheet = null; render(); },
