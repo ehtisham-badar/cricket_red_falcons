@@ -1099,3 +1099,4 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
 .st-tools .st-hint { margin: 0; flex: 1 1 320px; }
 .st-extra { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
 .step-ro { display: grid; place-items: center; height: 38px; border-radius: var(--pill); border: 1px solid var(--line); background: rgba(var(--hi-rgb), .03); font-weight: 800; font-variant-numeric: tabular-nums; }
+.btn:disabled { opacity: .4; cursor: not-allowed; transform: none; box-shadow: none; }

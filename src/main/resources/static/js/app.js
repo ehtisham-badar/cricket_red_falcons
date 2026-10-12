@@ -1162,6 +1162,8 @@
           <button class="btn btn-ghost" data-action="export">${icon('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>', 18)} Save backup</button>
           ${admin ? `
           <button class="btn btn-ghost" data-action="import">${icon('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>', 18)} Open backup</button>
+          <button class="btn btn-ghost" data-action="clear-all-xis" ${xiCount() ? '' : 'disabled'}>${icon('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m17 8 5 5M22 8l-5 5"/>', 18)} Clear all playing XIs</button>
+          <button class="btn btn-ghost" data-action="clear-all-stats" ${statCount() ? '' : 'disabled'}>${icon('<path d="M18 20V10M12 20V4M6 20v-6"/><path d="m3 3 18 18"/>', 18)} Clear all stats</button>
           <button class="btn btn-ghost" data-action="new-series">${icon('<path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>', 18)} New series</button>
           <button class="btn btn-danger" data-action="clear-all">${icon('<path d="M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>', 18)} Clear all</button>` : ''}
         </div>
@@ -1683,6 +1685,10 @@
     if (!state.stats[m][pid]) state.stats[m][pid] = C.statOf(state, m, pid);
     return state.stats[m][pid];
   }
+  // Matches that have an XI, 12th man or batting order; and how many stats entries exist.
+  const xiCount = () => state.matches.filter(m => state.players.some(p => p.att[m.id]) || state.twelfth[m.id] || state.battingOrder[m.id]).length;
+  const statCount = () => Object.values(state.stats).reduce((n, byPlayer) => n + Object.keys(byPlayer).length, 0);
+
   function findMatch(id) { return C.matches(state).find(m => m.id === id); }
   function findPayment(el) {
     const list = paymentsOf(el.dataset.player);
@@ -1785,6 +1791,33 @@
       if (shuffled[xi.length]) state.twelfth[day.id] = shuffled[xi.length].id; else delete state.twelfth[day.id];
       commit();
       toast(`Picked ${xi.length} players${shuffled[xi.length] ? ` and ${shuffled[xi.length].name} as 12th man` : ''}.`);
+    },
+    async 'clear-all-xis'() {
+      if (!isAdmin()) return;
+      const n = xiCount();
+      if (!n) return;
+      const ok = await confirmDialog('Clear all playing XIs?',
+        `Removes the XI, 12th man and batting order from ${n} match${n === 1 ? '' : 'es'}. League fees go back to being split across everyone until new XIs are picked, and match expenses aren’t charged to anyone. Stats stay.`,
+        'Clear all XIs', true);
+      if (!ok) return;
+      state.matches.forEach(m => { state.players.forEach(p => { delete p.att[m.id]; }); });
+      state.twelfth = {};
+      state.battingOrder = {};
+      commit();
+      toast(`Playing XIs cleared from ${n} match${n === 1 ? '' : 'es'}.`);
+    },
+    async 'clear-all-stats'() {
+      if (!isAdmin()) return;
+      const n = statCount();
+      if (!n) return;
+      const matchesWithStats = Object.keys(state.stats).filter(m => Object.keys(state.stats[m]).length).length;
+      const ok = await confirmDialog('Clear all stats?',
+        `Removes ${n} player stat${n === 1 ? '' : 's'} across ${matchesWithStats} match${matchesWithStats === 1 ? '' : 'es'} — batting, bowling, extras and fielding. Players, matches and money aren’t affected.`,
+        'Clear all stats', true);
+      if (!ok) return;
+      state.stats = {};
+      commit();
+      toast('All stats cleared.');
     },
     'set-stats-visibility'(el) {
       if (!isAdmin()) return;
