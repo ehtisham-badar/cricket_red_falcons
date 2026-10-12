@@ -131,6 +131,17 @@ class LedgerApiTest {
         assertThat(send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{\"m1\":true,\"m2\":true}},{\"id\":\"p2\",\"name\":\"Rizwan\",\"att\":{}}]}", token).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"twelfth\":{\"m1\":\"p2\"}");
 
+        // A batting order keeps only that match's players, once each; a save without it keeps it.
+        String withOrder = """
+                {"players":[{"id":"p1","name":"Babar","att":{"m1":true}},{"id":"p2","name":"Rizwan","att":{"m1":true}},
+                            {"id":"p3","name":"Shaheen","att":{}}],
+                 "battingOrder":{"m1":["p2","p3","p1","p2"],"t1":["p1"]}}
+                """;
+        assertThat(send("PUT", "/api/ledger", withOrder, token).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"battingOrder\":{\"m1\":[\"p2\",\"p1\"]}");
+        assertThat(send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{\"m1\":true}},{\"id\":\"p2\",\"name\":\"Rizwan\",\"att\":{\"m1\":true}}]}", token).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"battingOrder\":{\"m1\":[\"p2\",\"p1\"]}");
+
         // Replacing again with fewer players removes the old ones and their attendance.
         assertThat(send("PUT", "/api/ledger", "{\"players\":[]}", token).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/ledger", null, null).body())

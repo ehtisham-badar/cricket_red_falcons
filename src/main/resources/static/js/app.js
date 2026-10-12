@@ -61,7 +61,7 @@
 
   function emptyState() {
     return {
-      players: [], trainings: [{ id: 't1', desc: '' }], expenses: {}, tournament: { name: '', fee: '', advance: '', payments: [] }, twelfth: {},
+      players: [], trainings: [{ id: 't1', desc: '' }], expenses: {}, tournament: { name: '', fee: '', advance: '', payments: [] }, twelfth: {}, battingOrder: {},
       settings: { currency: 'Rs ', maxPerMatch: 11, roundUp: false, ...DEFAULT_PAY_TO }
     };
   }
@@ -115,9 +115,17 @@
       const p = players.find(x => x.id === id);
       if (C.MATCHES.some(m => m.id === match) && p && !p.att[match]) twelfth[match] = id;
     });
+    // match id -> player ids in batting order; only players playing that match, each once
+    const battingOrder = {};
+    Object.entries(d.battingOrder || {}).forEach(([match, list]) => {
+      if (!C.MATCHES.some(m => m.id === match) || !Array.isArray(list)) return;
+      const kept = [...new Set(list)].filter(id => players.some(p => p.id === id && p.att[match]));
+      if (kept.length) battingOrder[match] = kept;
+    });
     return {
       players,
       twelfth,
+      battingOrder,
       trainings: d.trainings && d.trainings.length ? d.trainings.map(t => ({ id: t.id, desc: t.desc || '' })) : [{ id: 't1', desc: '' }],
       expenses,
       tournament: {
@@ -138,8 +146,8 @@
   }
 
   function comparable(d) {
-    const { players, trainings, expenses, tournament, settings, twelfth } = d;
-    return JSON.stringify({ players, trainings, expenses, tournament, settings, twelfth });
+    const { players, trainings, expenses, tournament, settings, twelfth, battingOrder } = d;
+    return JSON.stringify({ players, trainings, expenses, tournament, settings, twelfth, battingOrder });
   }
 
   // ---------- API ----------
@@ -452,11 +460,12 @@
     { key: 'venue', label: 'Venue', placeholder: 'e.g. Model Town ground' }
   ];
 
-  // The players marked as playing this match, in squad order, with captain and keeper from their role.
+  // The players marked as playing this match, in batting order, with captain and keeper from their role.
   function playingXI(dayId) {
-    return state.players.filter(p => p.att[dayId]).map(p => {
+    return battingOrderOf(dayId).map((p, i) => {
       const keeper = /keeper/i.test(p.role);
       return {
+        opener: i < 2,
         name: p.name,
         role: keeper ? '' : p.role.replace(/\s*\+?\s*captain\s*/i, '').trim(),
         captain: /captain/i.test(p.role),
@@ -772,7 +781,7 @@
     const admin = isAdmin();
     const stats = C.allStats(state);
     const max = state.settings.maxPerMatch;
-    const cards = C.days(state).map(d => {
+    const card = d => {
       const s = stats[d.id];
       const items = C.dayExpenses(state, d.id).filter(e => e.item || C.num(e.amount) > 0);
       const count = d.type === 'match' ? `${s.n} / ${max} played${state.twelfth[d.id] ? ' + 12th' : ''}` : `${s.n} arrived`;
@@ -797,14 +806,24 @@
         <button class="btn btn-block ${d.type === 'match' ? 'btn-gold' : 'btn-primary'}" data-action="open-day" data-id="${esc(d.id)}">
           ${admin ? 'Expenses & attendance' : 'See details'}</button>
       </article>`;
-    }).join('');
+    };
+    const all = C.days(state);
+    const trainings = all.filter(d => d.type === 'training');
+    const matches = all.filter(d => d.type === 'match');
 
     return `
       ${pageHead('Days', 'Each day’s expenses are split among the players who attended. Whoever paid for an item gets it credited.',
         admin ? `<button class="btn btn-primary" data-action="add-training">${icon('<path d="M12 5v14M5 12h14"/>', 18)} Add training</button>` : '')}
       ${warningBanner()}
       ${tournamentPanel()}
-      <div class="day-grid">${cards}</div>`;
+      <section class="day-group">
+        <h3 class="group-head training">Trainings <span>${trainings.length}</span></h3>
+        <div class="day-grid">${trainings.map(card).join('')}</div>
+      </section>
+      <section class="day-group">
+        <h3 class="group-head match">Matches <span>${matches.length}</span></h3>
+        <div class="day-grid matches">${matches.map(card).join('')}</div>
+      </section>`;
   }
 
   function tourToggle(p) {
@@ -958,6 +977,27 @@
       </div>`;
   }
 
+  function battingSection(d) {
+    const order = battingOrderOf(d.id);
+    const admin = isAdmin();
+    const UP = icon('<path d="m18 15-6-6-6 6"/>', 18);
+    const DOWN = icon('<path d="m6 9 6 6 6-6"/>', 18);
+    return `<section class="bat">
+      <h3 class="sub first">Batting order
+        ${admin && state.battingOrder[d.id] ? `<button class="chip small-chip" data-action="bat-reset" data-day="${esc(d.id)}">Reset</button>` : ''}</h3>
+      <ol class="bat-list">
+        ${order.map((p, i) => `<li class="${i < 2 ? 'opener' : ''}">
+          <span class="bat-pos">${i + 1}</span>
+          <span class="pname"><strong>${esc(p.name)}</strong><small>${i < 2 ? 'Opener' : esc(p.role) || '—'}</small></span>
+          ${admin ? `<span class="bat-moves">
+            <button class="icon-btn" data-action="bat-move" data-day="${esc(d.id)}" data-id="${esc(p.id)}" data-dir="up" ${i === 0 ? 'disabled' : ''} aria-label="Move ${esc(p.name)} up">${UP}</button>
+            <button class="icon-btn" data-action="bat-move" data-day="${esc(d.id)}" data-id="${esc(p.id)}" data-dir="down" ${i === order.length - 1 ? 'disabled' : ''} aria-label="Move ${esc(p.name)} down">${DOWN}</button>
+          </span>` : ''}
+        </li>`).join('')}
+      </ol>
+    </section>`;
+  }
+
   function leagueLine(d, s) {
     const tour = C.tournamentStats(state);
     if (!(tour.fee > 0)) return '';
@@ -1006,6 +1046,7 @@
         ${s.n > 0 ? '' : '<p class="muted xi-hint">Mark who’s playing below, or pick at random, to share the Playing XI picture.</p>'}` : ''}
         ${isMatch ? leagueLine(d, s) : ''}
         ${twelfthId ? `<p class="twelfth-line">12th man: <strong>${esc(playerName(twelfthId))}</strong> · not charged for this match</p>` : ''}
+        ${isMatch && s.n > 0 ? battingSection(d) : ''}
         <h3 class="sub first">Expenses <span class="muted">${fmt(s.amount)}</span></h3>
         ${expenseRows(d)}
         <h3 class="sub">Attendance <span class="muted">${s.n}${isMatch ? ` / ${max}` : ''}</span></h3>
@@ -1169,7 +1210,8 @@
       trainings: state.trainings,
       expenses: state.expenses,
       tournament: state.tournament,
-      twelfth: state.twelfth
+      twelfth: state.twelfth,
+      battingOrder: state.battingOrder
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
@@ -1196,6 +1238,13 @@
     sheet = null;
     commit();
     toast('Backup restored.');
+  }
+
+  // The XI in batting order: the saved order first, then anyone playing who isn't in it, in squad order.
+  function battingOrderOf(dayId) {
+    const playing = state.players.filter(p => p.att[dayId]);
+    const saved = (state.battingOrder[dayId] || []).map(findPlayer).filter(p => p && p.att[dayId]);
+    return saved.concat(playing.filter(p => !saved.includes(p)));
   }
 
   // Fisher–Yates with crypto randomness, so every player has the same chance.
@@ -1264,6 +1313,22 @@
       }
       commit();
     },
+    'bat-move'(el) {
+      if (!isAdmin()) return;
+      const day = el.dataset.day;
+      const order = battingOrderOf(day).map(p => p.id);
+      const i = order.indexOf(el.dataset.id);
+      const j = i + (el.dataset.dir === 'up' ? -1 : 1);
+      if (i < 0 || j < 0 || j >= order.length) return;
+      [order[i], order[j]] = [order[j], order[i]];
+      state.battingOrder[day] = order;
+      commit();
+    },
+    'bat-reset'(el) {
+      if (!isAdmin()) return;
+      delete state.battingOrder[el.dataset.day];
+      commit();
+    },
     async 'clear-xi'(el) {
       const day = C.MATCHES.find(m => m.id === el.dataset.id);
       if (!day || !isAdmin()) return;
@@ -1274,6 +1339,7 @@
       if (!ok) return;
       state.players.forEach(p => { delete p.att[day.id]; });
       delete state.twelfth[day.id];
+      delete state.battingOrder[day.id];
       commit();
       toast(`${day.label} XI cleared.`);
     },
@@ -1291,6 +1357,7 @@
       const shuffled = shuffle(pool);
       const xi = shuffled.slice(0, state.settings.maxPerMatch);
       state.players.forEach(p => { delete p.att[day.id]; });
+      delete state.battingOrder[day.id];
       xi.forEach(p => { p.att[day.id] = true; });
       if (shuffled[xi.length]) state.twelfth[day.id] = shuffled[xi.length].id; else delete state.twelfth[day.id];
       commit();
@@ -1345,6 +1412,7 @@
       state.expenses = {};
       state.tournament = { name: '', fee: '', advance: '', payments: [] };
       state.twelfth = {};
+      state.battingOrder = {};
       state.trainings = [{ id: 't1', desc: '' }];
       commit();
       toast('New series started.');

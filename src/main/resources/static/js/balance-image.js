@@ -318,7 +318,7 @@
    * @param {string} o.matchLabel                     e.g. "Match 1"
    * @param {string} o.leagueName                     shown under the club name
    * @param {string} [o.opponent], [o.when], [o.venue] optional details typed in before sharing
-   * @param {{name: string, role: string, captain: boolean, keeper: boolean}[]} o.players
+   * @param {{name: string, role: string, captain: boolean, keeper: boolean, opener?: boolean}[]} o.players  in batting order
    * @param {{name: string, role: string}} [o.twelfth]  the 12th man, drawn below the XI
    * @param {string} o.link, o.logoSrc
    * @returns {Promise<Blob>}
@@ -332,7 +332,7 @@
     const headerH = 300;
     const bannerTop = headerH + 10;
     const bannerH = 120 + (opponent ? 56 : 0) + (info ? 44 : 0);
-    const listTop = bannerTop + bannerH + 36;
+    const listTop = bannerTop + bannerH + 64;
     const ROW_H = 84;
     const GAP = 10;
     const listH = Math.max(o.players.length, 1) * (ROW_H + GAP);
@@ -374,8 +374,11 @@
     }
     ctx.textAlign = 'left';
 
-    // Players, in squad order, with captain and keeper badges.
+    // Players in batting order, with captain and keeper badges; openers get gold numbers.
     const colW = W - PAD * 2;
+    ctx.fillStyle = C.gold;
+    ctx.font = `800 18px ${BODY}`;
+    spaced(ctx, 'BATTING ORDER', PAD + 4, listTop - 24, 3);
     o.players.forEach((p, i) => {
       const x = PAD;
       const y = listTop + i * (ROW_H + GAP);
@@ -390,18 +393,18 @@
       const bx = x + 46;
       ctx.beginPath();
       ctx.arc(bx, cy, 22, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(208,34,44,0.18)';
+      ctx.fillStyle = p.opener ? 'rgba(226,182,92,0.2)' : 'rgba(208,34,44,0.18)';
       ctx.fill();
-      ctx.fillStyle = C.due;
+      ctx.fillStyle = p.opener ? C.gold : C.due;
       ctx.font = `800 20px ${BODY}`;
       ctx.textAlign = 'center';
       ctx.fillText(String(i + 1), bx, cy + 1);
 
       const right = x + colW - 24;
       ctx.textAlign = 'right';
-      ctx.fillStyle = C.muted;
+      ctx.fillStyle = p.opener ? C.gold : C.muted;
       ctx.font = `600 22px ${BODY}`;
-      const role = p.role || '';
+      const role = p.opener ? ['Opener', p.role].filter(Boolean).join(' · ') : (p.role || '');
       ctx.fillText(role, right, cy + 1);
       const roleW = role ? ctx.measureText(role).width + 24 : 0;
       ctx.textAlign = 'left';

@@ -812,3 +812,33 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
 .amount.league-each strong { font-size: 15px; color: var(--gold-light); }
 .league-line { margin: 0 0 14px; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255, 255, 255, .03); color: var(--muted); font-size: 14px; }
 .league-line strong { color: var(--gold-light); }
+
+/* Batting order */
+.bat { margin-bottom: 18px; }
+.bat .sub { align-items: center; }
+.small-chip { min-height: 30px; padding: 0 12px; font-size: 12px; font-family: var(--body-font); }
+.bat-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.bat-list li {
+  display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 12px;
+  padding: 6px 8px 6px 10px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255, 255, 255, .025);
+}
+.bat-list li.opener { border-color: rgba(226, 182, 92, .35); background: linear-gradient(90deg, rgba(226, 182, 92, .1), rgba(255, 255, 255, .02)); }
+.bat-pos { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: rgba(208, 34, 44, .18); color: var(--red-soft); font-weight: 800; font-size: 13px; }
+.bat-list li.opener .bat-pos { background: rgba(226, 182, 92, .2); color: var(--gold); }
+.bat-list li.opener .pname small { color: var(--gold); font-weight: 700; }
+.bat-moves { display: flex; gap: 6px; }
+.bat-moves .icon-btn { width: 38px; height: 38px; }
+.bat-moves .icon-btn:disabled { opacity: .25; cursor: default; }
+
+/* Days: trainings and matches in their own rows */
+.day-group + .day-group { margin-top: 28px; }
+.group-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; font-family: var(--head-font); font-size: 22px; }
+.group-head::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, var(--line-2), transparent); }
+.group-head span { display: inline-grid; place-items: center; min-width: 26px; height: 26px; padding: 0 8px; border-radius: var(--pill); font-family: var(--body-font); font-size: 13px; font-weight: 800; }
+.group-head.training { color: var(--red-soft); }
+.group-head.training span { background: rgba(208, 34, 44, .18); }
+.group-head.match { color: var(--gold); }
+.group-head.match span { background: rgba(226, 182, 92, .16); }
+@media (min-width: 1360px) {
+  .day-grid.matches { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}

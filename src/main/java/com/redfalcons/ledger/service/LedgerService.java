@@ -42,6 +42,10 @@ public class LedgerService {
     private static final List<String> PAY_KEYS = List.of("payBank", "payTitle", "payAccount");
     /** 12th men, stored as "m1=playerId;m2=playerId". */
     private static final String TWELFTH = "twelfthMen";
+    /** Batting order per match, stored under "battingOrder.m1" etc. as "id,id,id". */
+    private static final String BATTING = "battingOrder.";
+    /** Longest value the settings table holds. */
+    private static final int SETTING_MAX = 255;
     /** Item name used when a legacy per-day amount is turned into an expense. */
     private static final String LEGACY_ITEM = "Amount spent";
     /** Note on the payment created from a "paid" total recorded before payments were itemised. */
@@ -126,7 +130,7 @@ public class LedgerService {
                         tournamentPayments.findAll(BY_POSITION).stream()
                                 .map(x -> new PaymentDto(x.getId(), x.getDate(), x.getAmount(), x.getMethod(), x.getNote()))
                                 .toList()),
-                settingsDto, parseTwelfth(s.get(TWELFTH)));
+                settingsDto, parseTwelfth(s.get(TWELFTH)), parseBatting(s));
     }
 
     /** Replaces the whole ledger with the given state (admin only). */
@@ -154,6 +158,9 @@ public class LedgerService {
         // Without twelfth (an older app or backup file), keep the stored 12th men.
         Map<String, String> twelfthIn = in.twelfth() != null ? in.twelfth()
                 : parseTwelfth(settings.findById(TWELFTH).map(Setting::getValue).orElse(null));
+        Map<String, String> stored = new HashMap<>();
+        settings.findAll().forEach(x -> stored.put(x.getKey(), x.getValue()));
+        Map<String, List<String>> battingIn = in.battingOrder() != null ? in.battingOrder() : parseBatting(stored);
 
         // A save without phone numbers (an older app, or a backup file) keeps the stored ones.
         Map<String, String> storedPhones = new HashMap<>();
@@ -233,7 +240,15 @@ public class LedgerService {
             Set<String> att = attendedBy.get(playerId);
             if (MATCH_IDS.contains(match) && att != null && !att.contains(match)) twelfth.add(match + "=" + playerId);
         });
-        settings.save(new Setting(TWELFTH, twelfth.toString()));
+        if (twelfth.length() <= SETTING_MAX) settings.save(new Setting(TWELFTH, twelfth.toString()));
+
+        // A batting order only lists players who are playing that match, each once.
+        for (String match : MATCH_IDS) {
+            List<String> ids = battingIn.get(match);
+            String value = ids == null ? "" : String.join(",", ids.stream().distinct()
+                    .filter(id -> attendedBy.containsKey(id) && attendedBy.get(id).contains(match)).toList());
+            if (value.length() <= SETTING_MAX) settings.save(new Setting(BATTING + match, value));
+        }
 
         SettingsDto s = in.settings();
         if (s != null) {
@@ -252,6 +267,15 @@ public class LedgerService {
             }
         }
         return load();
+    }
+
+    private static Map<String, List<String>> parseBatting(Map<String, String> settingsByKey) {
+        Map<String, List<String>> out = new LinkedHashMap<>();
+        for (String match : MATCH_IDS) {
+            String v = settingsByKey.get(BATTING + match);
+            if (v != null && !v.isEmpty()) out.put(match, List.of(v.split(",")));
+        }
+        return out;
     }
 
     private static Map<String, String> parseTwelfth(String stored) {
