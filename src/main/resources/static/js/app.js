@@ -766,41 +766,55 @@
   }
 
   function tournamentPanel() {
+    const admin = isAdmin();
     const tour = C.tournamentStats(state);
+    const count = C.leagueMatchCount(state);
+    const played = count - tour.unplayed;
+    const xi = state.settings.maxPerMatch;
     const out = state.players.length - tour.n;
-    return `<section class="tour-panel">
-      <div class="tour-text">
-        <span class="day-kind">Whole series · league fee</span>
-        ${isAdmin()
-          ? `<input class="field league-name" type="text" placeholder="League name (e.g. Hundred Premier League)" value="${esc(state.tournament.name)}" maxlength="80" data-input="tournament-name" data-focus="tour-name" aria-label="League name">`
-          : `<h3>${esc(leagueName())}</h3>`}
-        <p class="muted">Charged per match: each match’s part is split among the XI who played it (not the 12th man). Matches with no XI yet are split across everyone taking part${out ? ` (${out} left out on the Players page)` : ''}.</p>
-      </div>
-      <div class="tour-figs">
-        ${isAdmin()
-          ? `<span class="money-input big"><em>${esc(cur().trim())}</em><input type="text" inputmode="decimal" placeholder="e.g. 65000" value="${esc(state.tournament.fee)}" data-input="tournament-fee" data-focus="tour-fee" aria-label="Tournament fee"></span>`
-          : `<strong class="tour-fee">${tour.fee > 0 ? fmt(tour.fee) : '—'}</strong>`}
-        <span class="tour-share">${tour.fee > 0 ? `<strong>${fmt(tour.perMatch)}</strong> per match · ${C.leagueMatchCount(state) - tour.unplayed} of ${C.leagueMatchCount(state)} played` : `${tour.n} player${tour.n === 1 ? '' : 's'} taking part`}</span>
-        ${isAdmin() ? `<label class="tour-advance"><span>League matches</span>
-          <input class="field small" type="text" inputmode="numeric" value="${esc(state.tournament.matchCount)}" data-input="tournament-matches" data-focus="tour-matches" aria-label="Matches the league fee covers"></label>` : ''}
-        ${advanceField()}
-      </div>
-    </section>`;
-  }
+    const unit = esc(cur().trim());
 
-  // Advance asked of each player up front; left empty it follows the money sent to management.
-  function advanceField() {
     const advance = C.advancePerPlayer(state);
     const pending = state.players.filter(p => advanceNow(p, C.playerCalc(state, p, null, fmt).net) > 0).length;
-    const status = advance > 0 ? (pending ? `${pending} still to pay it` : 'everyone has paid it') : '';
-    if (!isAdmin()) {
-      return advance > 0 ? `<span class="tour-share">Advance <strong>${fmt(advance)}</strong> each · ${status}</span>` : '';
-    }
+    const advStatus = advance > 0 ? (pending ? `${pending} still to pay it` : 'Everyone has paid it') : 'No advance asked';
     const suggested = C.advanceShare(state);
-    return `<label class="tour-advance"><span>Advance each</span>
-        <span class="money-input"><em>${esc(cur().trim())}</em><input type="text" inputmode="decimal" placeholder="${suggested > 0 ? suggested : '0'}" value="${esc(state.tournament.advance)}" data-input="tournament-advance" data-focus="tour-adv" aria-label="Advance per player"></span>
-      </label>
-      <small class="muted">${state.tournament.advance === '' ? 'Empty = paid to management ÷ players' : 'Clear it to follow paid to management ÷ players'}${status ? ` · ${status}` : ''}</small>`;
+
+    const money = (key, value, placeholder, label) => `<span class="money-input"><em>${unit}</em>
+      <input type="text" inputmode="decimal" placeholder="${placeholder}" value="${esc(value)}" data-input="${key}" data-focus="${key}" aria-label="${label}"></span>`;
+    const tile = (label, body, note, cls = '') => `<div class="lg-tile ${cls}"><span class="lg-label">${label}</span>${body}<small>${note}</small></div>`;
+
+    return `<section class="tour-panel">
+      <div class="lg-head">
+        <div class="lg-title">
+          <span class="day-kind">League · whole series</span>
+          ${admin
+            ? `<input class="lg-name" type="text" placeholder="League name" value="${esc(state.tournament.name)}" maxlength="80" data-input="tournament-name" data-focus="tour-name" aria-label="League name">`
+            : `<h3>${esc(leagueName())}</h3>`}
+        </div>
+        <div class="lg-progress" title="${played} of ${count} matches played">
+          <span class="lg-pill">${played} of ${count} played</span>
+          <span class="lg-segs">${Array.from({ length: count }, (_, i) => `<i class="${i < played ? 'on' : ''}"></i>`).join('')}</span>
+        </div>
+      </div>
+
+      <div class="lg-tiles">
+        ${tile('League fee',
+          admin ? money('tournament-fee', state.tournament.fee, 'e.g. 65000', 'League fee') : `<strong>${tour.fee > 0 ? fmt(tour.fee) : '—'}</strong>`,
+          'Total for the series')}
+        ${tile('League matches',
+          admin ? `<input class="field lg-count" type="text" inputmode="numeric" value="${esc(state.tournament.matchCount)}" data-input="tournament-matches" data-focus="tour-matches" aria-label="Matches the league fee covers">` : `<strong>${count}</strong>`,
+          tour.fee > 0 ? `${fmt(tour.perMatch)} per match` : 'Set the league fee')}
+        ${tile('Advance each',
+          admin ? money('tournament-advance', state.tournament.advance, suggested > 0 ? suggested : '0', 'Advance per player') : `<strong>${advance > 0 ? fmt(advance) : '—'}</strong>`,
+          advStatus)}
+        ${tile('Each player per match',
+          `<strong>${tour.fee > 0 ? fmt(C.round2(tour.perMatch / xi)) : '—'}</strong>`,
+          tour.fee > 0 ? `${fmt(tour.perMatch)} ÷ ${xi} in the XI` : '—', 'lg-result')}
+      </div>
+
+      <p class="lg-note">${icon('<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>', 16)}
+        <span>Each match is paid by the XI who played it, not the 12th man. Matches not played yet are shared by everyone taking part${out ? ` (${out} left out on the Players page)` : ''}.</span></p>
+    </section>`;
   }
 
   function viewDays() {
