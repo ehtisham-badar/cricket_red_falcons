@@ -7,7 +7,8 @@ import java.util.Map;
  * Wire format, also used as the backup file. Version 3 adds {@code expenses}, {@code tournament} and
  * per-player {@code payments}; {@code twelfth} maps a match id to its 12th man's player id (not charged
  * for the match, and null on save keeps the stored ones); {@code battingOrder} maps a match id to its XI's
- * player ids in batting order (null on save keeps the stored ones);
+ * player ids in batting order (null on save keeps the stored ones); {@code matches} are the league matches
+ * added so far (null on save keeps the stored ones);
  * {@code amounts} (per-day totals) is still written so older readers keep working, and is read
  * as a single expense per day when a file has no {@code expenses}.
  */
@@ -22,7 +23,8 @@ public record LedgerDto(
         TournamentDto tournament,
         SettingsDto settings,
         Map<String, String> twelfth,
-        Map<String, List<String>> battingOrder) {
+        Map<String, List<String>> battingOrder,
+        List<MatchDto> matches) {
 
     /**
      * {@code paid} is the total of {@code payments}; files without payments are read from {@code paid}.
@@ -40,9 +42,13 @@ public record LedgerDto(
 
     /**
      * {@code payments} are transfers from the admin to the tournament management; {@code advance} is the
-     * amount asked per player up front ('' means the money sent so far, split across the players).
+     * amount asked per player up front ('' means the money sent so far, split across the players);
+     * {@code matchCount} is how many matches the league fee covers (null means 5).
      */
-    public record TournamentDto(String name, String fee, String advance, List<PaymentDto> payments) {
+    public record TournamentDto(String name, String fee, String advance, List<PaymentDto> payments, Integer matchCount) {
+    }
+
+    public record MatchDto(String id, String date, String opponent, String venue) {
     }
 
     public record TrainingDto(String id, String desc) {

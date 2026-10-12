@@ -842,3 +842,12 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
 @media (min-width: 1360px) {
   .day-grid.matches { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 }
+
+/* Matches added one by one */
+.group-row { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+.group-row .group-head { flex: 1; margin-bottom: 0; }
+.match-fields { display: grid; gap: 8px; }
+.match-fields input[type="date"] { color-scheme: dark; }
+.match-info { margin: 4px 0 0; color: var(--gold-light); font-size: 13px; font-weight: 600; }
+.empty-matches { margin: 0; padding: 22px; border-radius: var(--radius); border: 1px dashed rgba(226, 182, 92, .3); text-align: center; }
+.tour-advance .field.small { width: 70px; min-height: 40px; }

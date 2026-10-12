@@ -61,7 +61,7 @@
 
   function emptyState() {
     return {
-      players: [], trainings: [{ id: 't1', desc: '' }], expenses: {}, tournament: { name: '', fee: '', advance: '', payments: [] }, twelfth: {}, battingOrder: {},
+      players: [], trainings: [{ id: 't1', desc: '' }], expenses: {}, tournament: { name: '', fee: '', advance: '', matchCount: 5, payments: [] }, twelfth: {}, battingOrder: {}, matches: [],
       settings: { currency: 'Rs ', maxPerMatch: 11, roundUp: false, ...DEFAULT_PAY_TO }
     };
   }
@@ -109,21 +109,32 @@
     const ids = new Set(players.map(p => p.id));
     const expenses = expensesFrom(d);
     Object.values(expenses).forEach(list => list.forEach(e => { if (!ids.has(e.paidBy)) e.paidBy = ''; }));
+    // Matches added so far. Files from before matches were added one by one had five fixed ones
+    // (m1–m5); keep those that hold any attendance, expenses or 12th man.
+    let matches;
+    if (Array.isArray(d.matches)) {
+      matches = d.matches.filter(m => m && m.id).map(m => ({ id: m.id, date: m.date || '', opponent: m.opponent || '', venue: m.venue || '' }));
+    } else {
+      const used = id => players.some(p => p.att[id]) || (expenses[id] || []).length || (d.twelfth || {})[id];
+      matches = ['m1', 'm2', 'm3', 'm4', 'm5'].filter(used).map(id => ({ id, date: '', opponent: '', venue: '' }));
+    }
+    const isMatch = id => matches.some(m => m.id === id);
     // match id -> the 12th man's player id; never someone also playing that match
     const twelfth = {};
     Object.entries(d.twelfth || {}).forEach(([match, id]) => {
       const p = players.find(x => x.id === id);
-      if (C.MATCHES.some(m => m.id === match) && p && !p.att[match]) twelfth[match] = id;
+      if (isMatch(match) && p && !p.att[match]) twelfth[match] = id;
     });
     // match id -> player ids in batting order; only players playing that match, each once
     const battingOrder = {};
     Object.entries(d.battingOrder || {}).forEach(([match, list]) => {
-      if (!C.MATCHES.some(m => m.id === match) || !Array.isArray(list)) return;
+      if (!isMatch(match) || !Array.isArray(list)) return;
       const kept = [...new Set(list)].filter(id => players.some(p => p.id === id && p.att[match]));
       if (kept.length) battingOrder[match] = kept;
     });
     return {
       players,
+      matches,
       twelfth,
       battingOrder,
       trainings: d.trainings && d.trainings.length ? d.trainings.map(t => ({ id: t.id, desc: t.desc || '' })) : [{ id: 't1', desc: '' }],
@@ -132,6 +143,7 @@
         name: (d.tournament && d.tournament.name) || '',
         fee: d.tournament && d.tournament.fee != null ? String(d.tournament.fee) : '',
         advance: d.tournament && d.tournament.advance != null ? String(d.tournament.advance) : '',
+        matchCount: d.tournament && d.tournament.matchCount > 0 ? d.tournament.matchCount : 5,
         payments: paymentsFrom(null, { payments: (d.tournament && d.tournament.payments) || [] })
       },
       settings: {
@@ -146,8 +158,8 @@
   }
 
   function comparable(d) {
-    const { players, trainings, expenses, tournament, settings, twelfth, battingOrder } = d;
-    return JSON.stringify({ players, trainings, expenses, tournament, settings, twelfth, battingOrder });
+    const { players, trainings, matches, expenses, tournament, settings, twelfth, battingOrder } = d;
+    return JSON.stringify({ players, trainings, matches, expenses, tournament, settings, twelfth, battingOrder });
   }
 
   // ---------- API ----------
@@ -242,6 +254,16 @@
     setTimeout(() => $('#login-name').focus(), 50);
   }
 
+  // A new user starts on Summary with nothing open.
+  function resetView() {
+    tab = 'summary';
+    writeStore(TAB_KEY, tab);
+    sheet = null;
+    draftNames = '';
+    $('#dialog-root').innerHTML = '';
+    window.scrollTo({ top: 0 });
+  }
+
   async function login(name) {
     const err = $('#login-error');
     err.textContent = '';
@@ -250,6 +272,7 @@
       session = { name: r.name, admin: r.admin, token: r.token };
       writeStore(SESSION_KEY, session);
       writeStore(ME_KEY, null); // a new name may be a different person on this device
+      resetView();
       await enterApp();
     } catch (e) {
       err.textContent = 'Could not reach the server. Is it running?';
@@ -504,7 +527,7 @@
       <div class="dialog image-dialog" role="dialog" aria-modal="true" aria-labelledby="img-title">
         <h3 id="img-title">${esc(opts.title)}</h3>
         ${fields.length ? `<div class="image-fields">${fields.map(f => `<label><span>${esc(f.label)}</span>
-          <input class="field" type="text" maxlength="60" placeholder="${esc(f.placeholder)}" data-img-field="${f.key}"></label>`).join('')}</div>` : ''}
+          <input class="field" type="text" maxlength="60" placeholder="${esc(f.placeholder)}" value="${esc(f.value || '')}" data-img-field="${f.key}"></label>`).join('')}</div>` : ''}
         <div class="image-preview"><img src="${url}" alt="${esc(opts.alt)}"></div>
         <div class="dialog-actions">
           <button class="btn btn-ghost" data-img="close">Close</button>
@@ -756,7 +779,9 @@
         ${isAdmin()
           ? `<span class="money-input big"><em>${esc(cur().trim())}</em><input type="text" inputmode="decimal" placeholder="e.g. 65000" value="${esc(state.tournament.fee)}" data-input="tournament-fee" data-focus="tour-fee" aria-label="Tournament fee"></span>`
           : `<strong class="tour-fee">${tour.fee > 0 ? fmt(tour.fee) : '—'}</strong>`}
-        <span class="tour-share">${tour.fee > 0 ? `<strong>${fmt(tour.perMatch)}</strong> per match · ${C.MATCHES.length - tour.unplayed.length} of ${C.MATCHES.length} XIs picked` : `${tour.n} player${tour.n === 1 ? '' : 's'} taking part`}</span>
+        <span class="tour-share">${tour.fee > 0 ? `<strong>${fmt(tour.perMatch)}</strong> per match · ${C.leagueMatchCount(state) - tour.unplayed} of ${C.leagueMatchCount(state)} played` : `${tour.n} player${tour.n === 1 ? '' : 's'} taking part`}</span>
+        ${isAdmin() ? `<label class="tour-advance"><span>League matches</span>
+          <input class="field small" type="text" inputmode="numeric" value="${esc(state.tournament.matchCount)}" data-input="tournament-matches" data-focus="tour-matches" aria-label="Matches the league fee covers"></label>` : ''}
         ${advanceField()}
       </div>
     </section>`;
@@ -788,13 +813,19 @@
       const share = s.n > 0 && s.amount > 0 ? `${fmt(s.share)} each` : '—';
       const tour = d.type === 'match' ? C.tournamentStats(state, stats) : null;
       const leagueEach = tour && tour.fee > 0 && s.n > 0 ? `<div class="amount league-each"><span>League share</span><strong>${fmt(C.round2(tour.perMatch / s.n))} each</strong></div>` : '';
-      const removable = admin && d.type === 'training' && state.trainings.length > 1;
+      const removable = admin && (d.type === 'match' || state.trainings.length > 1);
       return `<article class="day-card ${d.type}">
         <header>
           <span class="day-kind">${d.type === 'match' ? 'Match' : 'Training'}</span>
           <h3>${d.label}</h3>
-          ${removable ? `<button class="icon-btn danger" data-action="remove-training" data-id="${esc(d.id)}" aria-label="Remove ${d.label}">${X_ICON}</button>` : ''}
+          ${removable ? `<button class="icon-btn danger" data-action="remove-${d.type}" data-id="${esc(d.id)}" aria-label="Remove ${d.label}">${X_ICON}</button>` : ''}
+          ${d.type === 'match' && !admin && matchInfo(d) ? `<p class="match-info">${esc(matchInfo(d))}</p>` : ''}
         </header>
+        ${d.type === 'match' && admin ? `<div class="match-fields">
+          <input class="field" type="date" value="${esc(d.date)}" data-input="match-date" data-id="${esc(d.id)}" aria-label="Match date">
+          <input class="field" type="text" placeholder="Opponent" value="${esc(d.opponent)}" maxlength="80" data-input="match-opponent" data-id="${esc(d.id)}" data-focus="mopp-${esc(d.id)}" aria-label="Opponent">
+          <input class="field" type="text" placeholder="Venue" value="${esc(d.venue)}" maxlength="80" data-input="match-venue" data-id="${esc(d.id)}" data-focus="mven-${esc(d.id)}" aria-label="Venue">
+        </div>` : ''}
         ${d.type === 'training' ? (admin
           ? `<input class="field" type="text" placeholder="Description (e.g. Nets at club)" value="${esc(d.desc)}" data-input="training-desc" data-id="${esc(d.id)}" data-focus="desc-${esc(d.id)}" maxlength="200">`
           : `<p class="desc">${esc(d.desc) || '<span class="muted">No description</span>'}</p>`) : ''}
@@ -821,9 +852,24 @@
         <div class="day-grid">${trainings.map(card).join('')}</div>
       </section>
       <section class="day-group">
-        <h3 class="group-head match">Matches <span>${matches.length}</span></h3>
-        <div class="day-grid matches">${matches.map(card).join('')}</div>
+        <div class="group-row">
+          <h3 class="group-head match">Matches <span>${matches.length}</span></h3>
+          ${admin ? `<button class="btn btn-gold" data-action="add-match">${icon('<path d="M12 5v14M5 12h14"/>', 18)} Add match</button>` : ''}
+        </div>
+        ${matches.length ? `<div class="day-grid matches">${matches.map(card).join('')}</div>`
+          : `<p class="muted empty-matches">No matches yet.${admin ? ' Add one on match day.' : ''}</p>`}
       </section>`;
+  }
+
+  function formatMatchDate(iso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+    if (!m) return '';
+    return new Date(+m[1], m[2] - 1, +m[3]).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  // "Sat, 24 Oct 2026 · vs Lahore Lions · Model Town" — whatever is set.
+  function matchInfo(d) {
+    return [formatMatchDate(d.date), d.opponent && 'vs ' + d.opponent, d.venue].filter(Boolean).join(' · ');
   }
 
   function tourToggle(p) {
@@ -1029,6 +1075,7 @@
           <span class="day-kind">${isMatch ? 'Match' : 'Training'}</span>
           <h2>${d.label}</h2>
           ${d.desc ? `<p class="muted">${esc(d.desc)}</p>` : ''}
+          ${isMatch && matchInfo(d) ? `<p class="muted">${esc(matchInfo(d))}</p>` : ''}
         </div>
         <button class="icon-btn" data-action="close-sheet" aria-label="Close">${X_ICON}</button>
       </header>
@@ -1208,6 +1255,7 @@
       })),
       amounts,
       trainings: state.trainings,
+      matches: state.matches,
       expenses: state.expenses,
       tournament: state.tournament,
       twelfth: state.twelfth,
@@ -1261,6 +1309,7 @@
 
   // ---------- events ----------
   function findPlayer(id) { return state.players.find(p => p.id === id); }
+  function findMatch(id) { return C.matches(state).find(m => m.id === id); }
   function findPayment(el) {
     const list = paymentsOf(el.dataset.player);
     return list && list.find(x => x.id === el.dataset.id);
@@ -1279,7 +1328,7 @@
       session = null;
       writeStore(SESSION_KEY, null);
       writeStore(ME_KEY, null);
-      sheet = null;
+      resetView();
       showSplash();
     },
     'toggle-att'(el) {
@@ -1304,7 +1353,7 @@
       if (!isAdmin()) return;
       const p = findPlayer(el.dataset.player);
       const day = el.dataset.day;
-      if (!p || !C.MATCHES.some(m => m.id === day)) return;
+      if (!p || !findMatch(day)) return;
       if (state.twelfth[day] === p.id) {
         delete state.twelfth[day];
       } else {
@@ -1330,7 +1379,7 @@
       commit();
     },
     async 'clear-xi'(el) {
-      const day = C.MATCHES.find(m => m.id === el.dataset.id);
+      const day = findMatch(el.dataset.id);
       if (!day || !isAdmin()) return;
       const n = state.players.filter(p => p.att[day.id]).length;
       const ok = await confirmDialog(`Clear the XI for ${day.label}?`,
@@ -1344,7 +1393,7 @@
       toast(`${day.label} XI cleared.`);
     },
     async 'random-xi'(el) {
-      const day = C.MATCHES.find(m => m.id === el.dataset.id);
+      const day = findMatch(el.dataset.id);
       if (!day) return;
       const pool = state.players.filter(C.inTournament);
       if (!pool.length) { toast('No players in the tournament to pick from.'); return; }
@@ -1362,6 +1411,25 @@
       if (shuffled[xi.length]) state.twelfth[day.id] = shuffled[xi.length].id; else delete state.twelfth[day.id];
       commit();
       toast(`Picked ${xi.length} players${shuffled[xi.length] ? ` and ${shuffled[xi.length].name} as 12th man` : ''}.`);
+    },
+    'add-match'() {
+      if (!isAdmin()) return;
+      state.matches.push({ id: 'm' + rid(), date: today(), opponent: '', venue: '' });
+      commit();
+      toast(`Match ${state.matches.length} added — set its date and opponent.`);
+    },
+    async 'remove-match'(el) {
+      const day = findMatch(el.dataset.id);
+      if (!day) return;
+      const ok = await confirmDialog(`Remove ${day.label}?`, 'Its XI, 12th man, batting order and expenses will be removed. Later matches are renumbered.', 'Remove', true);
+      if (!ok) return;
+      state.matches = state.matches.filter(m => m.id !== day.id);
+      delete state.expenses[day.id];
+      delete state.twelfth[day.id];
+      delete state.battingOrder[day.id];
+      state.players.forEach(p => { delete p.att[day.id]; });
+      if (sheet && sheet.dayId === day.id) sheet = null;
+      commit();
     },
     'add-training'() {
       if (!isAdmin()) return;
@@ -1406,11 +1474,12 @@
     export() { exportBackup(); },
     import() { $('#import-file').click(); },
     async 'new-series'() {
-      const ok = await confirmDialog('Start a new series?', 'Keeps players, names and roles. Clears attendance, payments, expenses, the league fee, advance and payments to management, and resets trainings to just Training 1.', 'Start new series', true);
+      const ok = await confirmDialog('Start a new series?', 'Keeps players, names and roles. Clears attendance, payments, expenses, matches, the league fee, advance and payments to management, and resets trainings to just Training 1.', 'Start new series', true);
       if (!ok) return;
       state.players.forEach(p => { p.att = {}; p.payments = []; });
       state.expenses = {};
-      state.tournament = { name: '', fee: '', advance: '', payments: [] };
+      state.tournament = { name: '', fee: '', advance: '', matchCount: 5, payments: [] };
+      state.matches = [];
       state.twelfth = {};
       state.battingOrder = {};
       state.trainings = [{ id: 't1', desc: '' }];
@@ -1479,10 +1548,11 @@
       el.disabled = true;
       el.textContent = 'Creating…';
       try {
-        showImageDialog(await xiImage(day, {}), {
+        const details = { opponent: day.opponent, when: formatMatchDate(day.date), venue: day.venue };
+        showImageDialog(await xiImage(day, details), {
           title: `${day.label} · Playing XI`, alt: `${day.label} Playing XI`, shareTitle: `Red Falcons · ${day.label} Playing XI`,
           fileName: () => `red-falcons-${day.short.toLowerCase()}-playing-xi.png`,
-          fields: XI_FIELDS, redraw: values => xiImage(day, values)
+          fields: XI_FIELDS.map(f => ({ ...f, value: details[f.key] })), redraw: values => xiImage(day, values)
         });
       } catch (e) {
         toast('Could not create the picture.');
@@ -1518,6 +1588,14 @@
     'exp-paidby'(el) { const e = findExpense(el); if (e) e.paidBy = el.value; },
     'tournament-fee'(el) { el.value = cleanNumber(el.value); state.tournament.fee = el.value; },
     'tournament-name'(el) { state.tournament.name = el.value; },
+    'tournament-matches'(el) {
+      el.value = el.value.replace(/\D/g, '').slice(0, 2);
+      const n = parseInt(el.value, 10);
+      if (n > 0) state.tournament.matchCount = n;
+    },
+    'match-date'(el) { const m = state.matches.find(x => x.id === el.dataset.id); if (m) m.date = el.value; },
+    'match-opponent'(el) { const m = state.matches.find(x => x.id === el.dataset.id); if (m) m.opponent = el.value; },
+    'match-venue'(el) { const m = state.matches.find(x => x.id === el.dataset.id); if (m) m.venue = el.value; },
     'tournament-advance'(el) { el.value = cleanNumber(el.value); state.tournament.advance = el.value; },
     'pay-bank'(el) { state.settings.payBank = el.value; },
     'pay-title'(el) { state.settings.payTitle = el.value; },

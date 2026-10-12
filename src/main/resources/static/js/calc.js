@@ -4,21 +4,36 @@
 //  - Each day has a list of expenses ({ id, item, amount, paidBy }). A day's amount is their sum.
 //    paidBy '' means the team fund paid it; otherwise it is the id of the player who paid out of pocket.
 //  - A player who paid for an expense gets that amount credited to their balance.
-//  - The series-wide league (tournament) fee is a fee per match (fee ÷ 5). Each match's part is split among
-//    the players who played it (the 12th man isn't marked as playing, so pays nothing). Matches with no XI
-//    marked yet are split across everyone taking part (player.tournament !== false) until they are.
+//  - The series-wide league (tournament) fee is a fee per match (fee ÷ the league's match count, 5 unless
+//    set). Each match's part is split among the players who played it (the 12th man isn't marked as playing,
+//    so pays nothing). Matches not added yet, or with no XI marked, are split across everyone taking part
+//    (player.tournament !== false) until they are.
 //    With roundUp each player's league total is rounded once, to whole rupees that add up to the fee.
 //  - A player's payments ({ id, date, amount, method, note }) add up to what they have paid.
 //  - tournament.payments are transfers from the admin to the tournament management; only money
 //    actually sent leaves the admin's account (cash in hand), the rest is still owed to management.
 (function (root) {
-  const MATCHES = [1, 2, 3, 4, 5].map(i => ({ id: 'm' + i, label: 'Match ' + i, short: 'M' + i, type: 'match' }));
+  const DEFAULT_MATCH_COUNT = 5;
+
+  // Matches are added as they come ({ id, date, opponent, venue }), numbered in order.
+  function matches(state) {
+    return (state.matches || []).map((m, i) => ({
+      id: m.id, label: 'Match ' + (i + 1), short: 'M' + (i + 1), type: 'match',
+      date: m.date || '', opponent: m.opponent || '', venue: m.venue || ''
+    }));
+  }
+
+  // How many matches the league fee covers: the setting, or more if more were added.
+  function leagueMatchCount(state) {
+    const set = parseInt(state.tournament && state.tournament.matchCount, 10);
+    return Math.max(set > 0 ? set : DEFAULT_MATCH_COUNT, (state.matches || []).length);
+  }
 
   function days(state) {
     const trainings = state.trainings.map((t, i) => ({
       id: t.id, label: 'Training ' + (i + 1), short: 'T' + (i + 1), type: 'training', desc: t.desc || ''
     }));
-    return trainings.concat(MATCHES);
+    return trainings.concat(matches(state));
   }
 
   function num(v) {
@@ -64,14 +79,16 @@
 
   // League fee per player, from the matches each one played. charges[id] = { amount, exact, parts }.
   function leagueCharges(state, stats, fee) {
-    const perMatch = fee / MATCHES.length;
+    const all = matches(state);
+    const perMatch = fee / leagueMatchCount(state);
     const squad = state.players.filter(inTournament);
     const charges = {};
     state.players.forEach(p => { charges[p.id] = { amount: 0, exact: 0, parts: [] }; });
-    if (!(fee > 0)) return { perMatch, unplayed: [], charges };
+    const played = all.filter(m => stats[m.id] && stats[m.id].n > 0);
+    const unplayed = leagueMatchCount(state) - played.length;
+    if (!(fee > 0)) return { perMatch, unplayed, charges };
 
-    const unplayed = MATCHES.filter(m => !stats[m.id] || stats[m.id].n === 0);
-    MATCHES.forEach(m => {
+    played.forEach(m => {
       const n = stats[m.id] ? stats[m.id].n : 0;
       if (!n) return;
       state.players.filter(p => p.att && p.att[m.id]).forEach(p => {
@@ -79,9 +96,9 @@
         charges[p.id].parts.push({ label: m.label, amount: perMatch, n, share: perMatch / n });
       });
     });
-    if (unplayed.length && squad.length) {
-      const amount = perMatch * unplayed.length;
-      const label = unplayed.length === 1 ? unplayed[0].label + ' (no XI yet)' : unplayed.length + ' matches with no XI yet';
+    if (unplayed > 0 && squad.length) {
+      const amount = perMatch * unplayed;
+      const label = unplayed === 1 ? '1 match not played yet' : unplayed + ' matches not played yet';
       squad.forEach(p => {
         charges[p.id].exact += amount / squad.length;
         charges[p.id].parts.push({ label, amount, n: squad.length, share: amount / squad.length });
@@ -201,7 +218,7 @@
     const stats = allStats(state);
     const out = days(state).filter(d => stats[d.id].amount > 0 && stats[d.id].n === 0).map(d => d.label);
     const tour = tournamentStats(state, stats);
-    if (tour.fee > 0 && tour.n === 0 && tour.unplayed.length) out.push('Tournament fee');
+    if (tour.fee > 0 && tour.n === 0 && tour.unplayed > 0) out.push('Tournament fee');
     return out;
   }
 
@@ -225,7 +242,7 @@
   }
 
   const api = {
-    MATCHES, days, num, round2, inTournament, paidTotal, dayExpenses, dayAmount, dayStats, allStats,
+    matches, leagueMatchCount, days, num, round2, inTournament, paidTotal, dayExpenses, dayAmount, dayStats, allStats,
     tournamentStats, advanceShare, advancePerPlayer, advanceDue, playerCalc, totals, warnings, money, signedMoney, netLabel
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

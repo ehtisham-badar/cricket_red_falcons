@@ -2,6 +2,7 @@ package com.redfalcons.ledger.service;
 
 import com.redfalcons.ledger.model.DayAmount;
 import com.redfalcons.ledger.model.Expense;
+import com.redfalcons.ledger.model.MatchDay;
 import com.redfalcons.ledger.model.Payment;
 import com.redfalcons.ledger.model.Player;
 import com.redfalcons.ledger.model.Setting;
@@ -9,6 +10,7 @@ import com.redfalcons.ledger.model.Training;
 import com.redfalcons.ledger.model.TournamentPayment;
 import com.redfalcons.ledger.repo.DayAmountRepository;
 import com.redfalcons.ledger.repo.ExpenseRepository;
+import com.redfalcons.ledger.repo.MatchDayRepository;
 import com.redfalcons.ledger.repo.PaymentRepository;
 import com.redfalcons.ledger.repo.PlayerRepository;
 import com.redfalcons.ledger.repo.SettingRepository;
@@ -16,6 +18,7 @@ import com.redfalcons.ledger.repo.TournamentPaymentRepository;
 import com.redfalcons.ledger.repo.TrainingRepository;
 import com.redfalcons.ledger.web.LedgerDto;
 import com.redfalcons.ledger.web.LedgerDto.ExpenseDto;
+import com.redfalcons.ledger.web.LedgerDto.MatchDto;
 import com.redfalcons.ledger.web.LedgerDto.PaymentDto;
 import com.redfalcons.ledger.web.LedgerDto.PlayerDto;
 import com.redfalcons.ledger.web.LedgerDto.SettingsDto;
@@ -33,7 +36,8 @@ import java.util.regex.Pattern;
 @Service
 public class LedgerService {
 
-    public static final List<String> MATCH_IDS = List.of("m1", "m2", "m3", "m4", "m5");
+    private static final String MATCH_COUNT = "tournamentMatches";
+    private static final int DEFAULT_MATCH_COUNT = 5;
     private static final Set<String> CURRENCIES = Set.of("Rs ", "PKR ", "₹", "$", "£");
     private static final Sort BY_POSITION = Sort.by("position");
     private static final String TOURNAMENT_FEE = "tournamentFee";
@@ -59,10 +63,13 @@ public class LedgerService {
     private final PaymentRepository payments;
     private final TournamentPaymentRepository tournamentPayments;
     private final SettingRepository settings;
+    private final MatchDayRepository matches;
 
     public LedgerService(PlayerRepository players, TrainingRepository trainings, DayAmountRepository legacyAmounts,
                          ExpenseRepository expenses, PaymentRepository payments,
-                         TournamentPaymentRepository tournamentPayments, SettingRepository settings) {
+                         TournamentPaymentRepository tournamentPayments, SettingRepository settings,
+                         MatchDayRepository matches) {
+        this.matches = matches;
         this.players = players;
         this.trainings = trainings;
         this.legacyAmounts = legacyAmounts;
@@ -129,8 +136,8 @@ public class LedgerService {
                         s.getOrDefault(TOURNAMENT_ADVANCE, ""),
                         tournamentPayments.findAll(BY_POSITION).stream()
                                 .map(x -> new PaymentDto(x.getId(), x.getDate(), x.getAmount(), x.getMethod(), x.getNote()))
-                                .toList()),
-                settingsDto, parseTwelfth(s.get(TWELFTH)), parseBatting(s));
+                                .toList(), parseIntOr(s.get(MATCH_COUNT), DEFAULT_MATCH_COUNT)),
+                settingsDto, parseTwelfth(s.get(TWELFTH)), parseBatting(s), storedMatches());
     }
 
     /** Replaces the whole ledger with the given state (admin only). */
@@ -152,8 +159,17 @@ public class LedgerService {
             trainingIds.add("t1");
         }
 
+        // Without matches (an older app), keep the stored ones.
+        List<MatchDto> matchIn = in.matches() != null ? in.matches() : storedMatches();
+        List<MatchDay> newMatches = new ArrayList<>();
+        Set<String> matchIds = new LinkedHashSet<>();
+        for (MatchDto m : matchIn) {
+            if (m == null || blank(m.id()) || trainingIds.contains(m.id()) || !matchIds.add(m.id())) continue;
+            newMatches.add(new MatchDay(m.id(), newMatches.size(), isoDate(m.date()), clip(m.opponent(), 80), clip(m.venue(), 80)));
+        }
+
         Set<String> validDays = new HashSet<>(trainingIds);
-        validDays.addAll(MATCH_IDS);
+        validDays.addAll(matchIds);
 
         // Without twelfth (an older app or backup file), keep the stored 12th men.
         Map<String, String> twelfthIn = in.twelfth() != null ? in.twelfth()
@@ -206,6 +222,9 @@ public class LedgerService {
 
         players.deleteAll(); // not InBatch, so Hibernate also removes the player_attendance rows
         trainings.deleteAllInBatch();
+        // Matches may already be loaded (kept when the save has none), so remove only dropped ones
+        // and update the rest; a bulk delete would leave stale copies that "update" missing rows.
+        matches.deleteAll(matches.findAll().stream().filter(m -> !matchIds.contains(m.getId())).toList());
         expenses.deleteAllInBatch();
         payments.deleteAllInBatch();
         tournamentPayments.deleteAllInBatch();
@@ -213,6 +232,7 @@ public class LedgerService {
         players.flush();
 
         trainings.saveAll(newTrainings);
+        matches.saveAll(newMatches);
         players.saveAll(newPlayers);
         expenses.saveAll(newExpenses);
         payments.saveAll(newPayments);
@@ -221,6 +241,9 @@ public class LedgerService {
         settings.save(new Setting(TOURNAMENT_FEE, tour == null ? "" : numeric(tour.fee())));
         settings.save(new Setting(TOURNAMENT_NAME, tour == null ? "" : clip(tour.name(), 80)));
         settings.save(new Setting(TOURNAMENT_ADVANCE, tour == null ? "" : numeric(tour.advance())));
+        if (tour != null && tour.matchCount() != null && tour.matchCount() > 0 && tour.matchCount() <= 50) {
+            settings.save(new Setting(MATCH_COUNT, tour.matchCount().toString()));
+        }
         List<TournamentPayment> sent = new ArrayList<>();
         Set<String> sentIds = new HashSet<>();
         if (tour != null && tour.payments() != null) {
@@ -238,17 +261,23 @@ public class LedgerService {
         StringJoiner twelfth = new StringJoiner(";");
         twelfthIn.forEach((match, playerId) -> {
             Set<String> att = attendedBy.get(playerId);
-            if (MATCH_IDS.contains(match) && att != null && !att.contains(match)) twelfth.add(match + "=" + playerId);
+            if (matchIds.contains(match) && att != null && !att.contains(match)) twelfth.add(match + "=" + playerId);
         });
         if (twelfth.length() <= SETTING_MAX) settings.save(new Setting(TWELFTH, twelfth.toString()));
 
         // A batting order only lists players who are playing that match, each once.
-        for (String match : MATCH_IDS) {
+        Set<String> battingKeys = new HashSet<>();
+        for (String match : matchIds) {
             List<String> ids = battingIn.get(match);
             String value = ids == null ? "" : String.join(",", ids.stream().distinct()
                     .filter(id -> attendedBy.containsKey(id) && attendedBy.get(id).contains(match)).toList());
-            if (value.length() <= SETTING_MAX) settings.save(new Setting(BATTING + match, value));
+            if (!value.isEmpty() && value.length() <= SETTING_MAX) {
+                settings.save(new Setting(BATTING + match, value));
+                battingKeys.add(BATTING + match);
+            }
         }
+        settings.deleteAll(settings.findAll().stream()
+                .filter(x -> x.getKey().startsWith(BATTING) && !battingKeys.contains(x.getKey())).toList());
 
         SettingsDto s = in.settings();
         if (s != null) {
@@ -271,11 +300,15 @@ public class LedgerService {
 
     private static Map<String, List<String>> parseBatting(Map<String, String> settingsByKey) {
         Map<String, List<String>> out = new LinkedHashMap<>();
-        for (String match : MATCH_IDS) {
-            String v = settingsByKey.get(BATTING + match);
-            if (v != null && !v.isEmpty()) out.put(match, List.of(v.split(",")));
-        }
+        settingsByKey.forEach((key, v) -> {
+            if (key.startsWith(BATTING) && v != null && !v.isEmpty()) out.put(key.substring(BATTING.length()), List.of(v.split(",")));
+        });
         return out;
+    }
+
+    private List<MatchDto> storedMatches() {
+        return matches.findAll(BY_POSITION).stream()
+                .map(m -> new MatchDto(m.getId(), m.getDate(), m.getOpponent(), m.getVenue())).toList();
     }
 
     private static Map<String, String> parseTwelfth(String stored) {
