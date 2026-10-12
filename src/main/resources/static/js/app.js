@@ -382,7 +382,7 @@
     const back = rows.filter(r => r.net > 0);
     const settled = rows.filter(r => r.net === 0);
     const out = ['*Red Falcons CC — balances*'];
-    if (tour.fee > 0) out.push(`Tournament fee ${fmt(tour.fee)} (${fmt(tour.share)} each)`);
+    if (tour.fee > 0) out.push(`League fee ${fmt(tour.fee)}: ${fmt(tour.perMatch)} per match, split among the XI who played it`);
     const advance = C.advancePerPlayer(state);
     if (advance > 0) out.push(`Advance ${fmt(advance)} each, to pay now`);
     if (due.length) {
@@ -420,7 +420,7 @@
     const chips = [];
     if (t.owed > 0) chips.push({ text: `Still to pay ${fmt(t.owed)}`, color: '#ff6b6b', bg: 'rgba(208,34,44,0.18)' });
     if (t.payBack > 0) chips.push({ text: `To pay back ${fmt(t.payBack)}`, color: '#e2b65c', bg: 'rgba(226,182,92,0.14)' });
-    if (tour.fee > 0 && tour.n) chips.push({ text: `Tournament ${fmt(tour.share)} each`, color: '#f5eee2', bg: 'rgba(255,255,255,0.07)' });
+    if (tour.fee > 0) chips.push({ text: `League ${fmt(tour.perMatch)} per match ÷ XI`, color: '#f5eee2', bg: 'rgba(255,255,255,0.07)' });
     const league = t.tournamentFee > 0 || state.tournament.payments.length ? {
       name: leagueName(),
       figures: [
@@ -654,7 +654,7 @@
     const admin = isAdmin();
     const cards = [
       { label: 'Collected', value: fmt(t.collected), cls: '', note: 'Paid in by players' },
-      { label: 'League fee', value: t.tournamentFee > 0 ? fmt(t.tournamentFee) : '—', cls: '', note: tour.n ? `${fmt(tour.share)} each · ${tour.n} players` : 'Not set' },
+      { label: 'League fee', value: t.tournamentFee > 0 ? fmt(t.tournamentFee) : '—', cls: '', note: tour.fee > 0 ? `${fmt(tour.perMatch)} per match · split among each XI` : 'Not set' },
       { label: 'Day expenses', value: fmt(t.daySpent), cls: '', note: t.fronted > 0 ? `${fmt(t.fronted)} bought by players` : 'Trainings & matches' },
       { label: admin ? 'In my account' : 'With the manager', value: fmtNet(t.cashInHand).replace(/^\+/, ''), cls: t.cashInHand < 0 ? 'neg' : '', note: 'Collected − sent to management − expenses' },
       { label: admin ? 'You pay back' : 'To be paid back', value: fmt(t.payBack), cls: 'pos', note: 'Players in credit' },
@@ -682,7 +682,7 @@
             <thead>
               <tr><th class="sticky">#</th><th class="sticky sticky-2">Player</th>
                 ${days.map(d => `<th class="day-col ${d.type}" title="${esc(d.label)}${d.desc ? ' — ' + esc(d.desc) : ''}">${d.short}<small>${stats[d.id].n > 0 && stats[d.id].amount > 0 ? fmt(stats[d.id].share) : '—'}</small></th>`).join('')}
-                <th class="day-col tour" title="Tournament fee share">Tour.<small>${tour.fee > 0 && tour.n ? fmt(tour.share) : '—'}</small></th>
+                <th class="day-col tour" title="League fee for the matches each player played">League<small>${tour.fee > 0 ? fmt(tour.perMatch) + '/match' : '—'}</small></th>
                 <th>Cost</th><th>Paid</th><th title="Items bought for the team">Bought</th><th>Balance</th></tr>
             </thead>
             <tbody>
@@ -691,13 +691,13 @@
                 return `<tr data-action="open-player" data-id="${esc(p.id)}">
                   <td class="sticky">${i + 1}</td><td class="sticky sticky-2 name-cell">${esc(p.name)}</td>
                   ${days.map(d => `<td class="dot-cell">${p.att[d.id] ? `<span class="dot ${d.type}" title="${d.type === 'match' ? 'Played' : 'Arrived'}"></span>` : isTwelfth(p, d) ? '<span class="dot twelfth" title="12th man"></span>' : '<span class="dot-empty"></span>'}</td>`).join('')}
-                  <td class="dot-cell">${C.inTournament(p) ? '<span class="dot tour" title="In tournament"></span>' : '<span class="dot-empty"></span>'}</td>
+                  <td class="league-cell">${tour.charges[p.id].amount > 0 ? fmt(tour.charges[p.id].amount) : '—'}</td>
                   <td>${fmt(c.cost)}</td><td>${fmt(c.paid)}</td><td>${c.credit > 0 ? fmt(c.credit) : '—'}</td>
                   <td class="${netClass(c.net)} strong">${fmtNet(c.net)}</td></tr>`;
               }).join('')}
             </tbody>
             <tfoot><tr><td class="sticky"></td><td class="sticky sticky-2">Attended</td>
-              ${days.map(d => `<td>${stats[d.id].n}</td>`).join('')}<td>${tour.n}</td>
+              ${days.map(d => `<td>${stats[d.id].n}</td>`).join('')}<td>${fmt(Object.values(tour.charges).reduce((x, c) => x + c.amount, 0))}</td>
               <td>${fmt(t.spent)}</td><td>${fmt(t.collected)}</td><td>${t.fronted > 0 ? fmt(t.fronted) : '—'}</td><td></td></tr></tfoot>
           </table>
         </div>
@@ -741,13 +741,13 @@
         ${isAdmin()
           ? `<input class="field league-name" type="text" placeholder="League name (e.g. Hundred Premier League)" value="${esc(state.tournament.name)}" maxlength="80" data-input="tournament-name" data-focus="tour-name" aria-label="League name">`
           : `<h3>${esc(leagueName())}</h3>`}
-        <p class="muted">Split equally among players taking part${out ? ` (${out} left out — change this on the Players page)` : '. Leave someone out on the Players page'}.</p>
+        <p class="muted">Charged per match: each match’s part is split among the XI who played it (not the 12th man). Matches with no XI yet are split across everyone taking part${out ? ` (${out} left out on the Players page)` : ''}.</p>
       </div>
       <div class="tour-figs">
         ${isAdmin()
           ? `<span class="money-input big"><em>${esc(cur().trim())}</em><input type="text" inputmode="decimal" placeholder="e.g. 65000" value="${esc(state.tournament.fee)}" data-input="tournament-fee" data-focus="tour-fee" aria-label="Tournament fee"></span>`
           : `<strong class="tour-fee">${tour.fee > 0 ? fmt(tour.fee) : '—'}</strong>`}
-        <span class="tour-share">${tour.fee > 0 && tour.n ? `<strong>${fmt(tour.share)}</strong> each · ${tour.n} player${tour.n === 1 ? '' : 's'}` : `${tour.n} player${tour.n === 1 ? '' : 's'} taking part`}</span>
+        <span class="tour-share">${tour.fee > 0 ? `<strong>${fmt(tour.perMatch)}</strong> per match · ${C.MATCHES.length - tour.unplayed.length} of ${C.MATCHES.length} XIs picked` : `${tour.n} player${tour.n === 1 ? '' : 's'} taking part`}</span>
         ${advanceField()}
       </div>
     </section>`;
@@ -777,6 +777,8 @@
       const items = C.dayExpenses(state, d.id).filter(e => e.item || C.num(e.amount) > 0);
       const count = d.type === 'match' ? `${s.n} / ${max} played${state.twelfth[d.id] ? ' + 12th' : ''}` : `${s.n} arrived`;
       const share = s.n > 0 && s.amount > 0 ? `${fmt(s.share)} each` : '—';
+      const tour = d.type === 'match' ? C.tournamentStats(state, stats) : null;
+      const leagueEach = tour && tour.fee > 0 && s.n > 0 ? `<div class="amount league-each"><span>League share</span><strong>${fmt(C.round2(tour.perMatch / s.n))} each</strong></div>` : '';
       const removable = admin && d.type === 'training' && state.trainings.length > 1;
       return `<article class="day-card ${d.type}">
         <header>
@@ -788,6 +790,7 @@
           ? `<input class="field" type="text" placeholder="Description (e.g. Nets at club)" value="${esc(d.desc)}" data-input="training-desc" data-id="${esc(d.id)}" data-focus="desc-${esc(d.id)}" maxlength="200">`
           : `<p class="desc">${esc(d.desc) || '<span class="muted">No description</span>'}</p>`) : ''}
         <div class="amount"><span>Total spent</span><strong>${s.amount > 0 ? fmt(s.amount) : '—'}</strong></div>
+        ${leagueEach}
         ${items.length ? `<ul class="mini-items">${items.slice(0, 3).map(e => `<li><span>${esc(e.item) || 'Item'}<small>${esc(playerName(e.paidBy))}</small></span><span>${fmt(C.num(e.amount))}</span></li>`).join('')}
           ${items.length > 3 ? `<li class="more">+${items.length - 3} more</li>` : ''}</ul>` : '<p class="muted mini-empty">No expenses yet</p>'}
         <div class="day-meta"><span>${count}</span><span class="share">${share}</span></div>
@@ -807,7 +810,7 @@
   function tourToggle(p) {
     const on = C.inTournament(p);
     return `<button class="tog tour-tog ${on ? 'on' : ''} ${isAdmin() ? '' : 'ro'}" data-action="toggle-tournament" data-id="${esc(p.id)}"
-      ${isAdmin() ? '' : 'disabled'} aria-pressed="${on}" title="Shares the tournament fee">${on ? 'In' : 'Out'}</button>`;
+      ${isAdmin() ? '' : 'disabled'} aria-pressed="${on}" title="Taking part in the league">${on ? 'In' : 'Out'}</button>`;
   }
 
   function viewPlayers() {
@@ -955,6 +958,12 @@
       </div>`;
   }
 
+  function leagueLine(d, s) {
+    const tour = C.tournamentStats(state);
+    if (!(tour.fee > 0)) return '';
+    return `<p class="league-line">League fee for ${d.label}: <strong>${fmt(tour.perMatch)} ÷ ${s.n || '—'}${s.n ? ` = ${fmt(C.round2(tour.perMatch / s.n))} each` : ''}</strong>${s.n ? '' : ' · split across everyone until the XI is picked'}</p>`;
+  }
+
   function sheetDay() {
     const d = C.days(state).find(x => x.id === sheet.dayId);
     if (!d) return '';
@@ -994,6 +1003,7 @@
           ${s.n > 0 ? `<button class="btn btn-gold" data-action="share-xi" data-id="${esc(d.id)}">${IMAGE_ICON} Share Playing XI</button>` : ''}
         </div>
         ${s.n > 0 ? '' : '<p class="muted xi-hint">Mark who’s playing below, or pick at random, to share the Playing XI picture.</p>'}` : ''}
+        ${isMatch ? leagueLine(d, s) : ''}
         ${twelfthId ? `<p class="twelfth-line">12th man: <strong>${esc(playerName(twelfthId))}</strong> · not charged for this match</p>` : ''}
         <h3 class="sub first">Expenses <span class="muted">${fmt(s.amount)}</span></h3>
         ${expenseRows(d)}
@@ -1075,7 +1085,7 @@
         <label><span>WhatsApp</span><input class="field ${p.phone && !waNumber(p.phone) ? 'invalid' : ''}" type="tel" inputmode="tel" placeholder="03xx xxxxxxx" value="${esc(p.phone)}" data-input="phone" data-id="${esc(p.id)}" data-focus="pphone-${esc(p.id)}" maxlength="20"></label>
         ${p.phone && !waNumber(p.phone) ? '<p class="field-hint">Not a valid mobile number, so reminders open the chat picker.</p>' : ''}
         <div class="form-row"><span>Tournament</span>
-          <span class="tour-row">${tourToggle(p)}<small class="muted">${inTour ? 'Shares the tournament fee' : 'Not charged the tournament fee'}</small></span></div>
+          <span class="tour-row">${tourToggle(p)}<small class="muted">${inTour ? 'Taking part · pays league fee for matches played' : 'Not taking part in the league'}</small></span></div>
       </div>` : `
       <dl class="kv"><dt>Role</dt><dd>${esc(p.role) || '—'}</dd>
         <dt>Tournament</dt><dd>${inTour ? 'Taking part' : 'Not taking part'}</dd></dl>`;

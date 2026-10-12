@@ -4,7 +4,10 @@
 //  - Each day has a list of expenses ({ id, item, amount, paidBy }). A day's amount is their sum.
 //    paidBy '' means the team fund paid it; otherwise it is the id of the player who paid out of pocket.
 //  - A player who paid for an expense gets that amount credited to their balance.
-//  - A series-wide tournament fee is split equally among players taking part (player.tournament !== false).
+//  - The series-wide league (tournament) fee is a fee per match (fee ÷ 5). Each match's part is split among
+//    the players who played it (the 12th man isn't marked as playing, so pays nothing). Matches with no XI
+//    marked yet are split across everyone taking part (player.tournament !== false) until they are.
+//    With roundUp each player's league total is rounded once, to whole rupees that add up to the fee.
 //  - A player's payments ({ id, date, amount, method, note }) add up to what they have paid.
 //  - tournament.payments are transfers from the admin to the tournament management; only money
 //    actually sent leaves the admin's account (cash in hand), the rest is still owed to management.
@@ -59,10 +62,53 @@
     return map;
   }
 
-  function tournamentStats(state) {
+  // League fee per player, from the matches each one played. charges[id] = { amount, exact, parts }.
+  function leagueCharges(state, stats, fee) {
+    const perMatch = fee / MATCHES.length;
+    const squad = state.players.filter(inTournament);
+    const charges = {};
+    state.players.forEach(p => { charges[p.id] = { amount: 0, exact: 0, parts: [] }; });
+    if (!(fee > 0)) return { perMatch, unplayed: [], charges };
+
+    const unplayed = MATCHES.filter(m => !stats[m.id] || stats[m.id].n === 0);
+    MATCHES.forEach(m => {
+      const n = stats[m.id] ? stats[m.id].n : 0;
+      if (!n) return;
+      state.players.filter(p => p.att && p.att[m.id]).forEach(p => {
+        charges[p.id].exact += perMatch / n;
+        charges[p.id].parts.push({ label: m.label, amount: perMatch, n, share: perMatch / n });
+      });
+    });
+    if (unplayed.length && squad.length) {
+      const amount = perMatch * unplayed.length;
+      const label = unplayed.length === 1 ? unplayed[0].label + ' (no XI yet)' : unplayed.length + ' matches with no XI yet';
+      squad.forEach(p => {
+        charges[p.id].exact += amount / squad.length;
+        charges[p.id].parts.push({ label, amount, n: squad.length, share: amount / squad.length });
+      });
+    }
+
+    const list = state.players.map(p => charges[p.id]);
+    if (state.settings.roundUp) {
+      // Largest remainder: whole rupees whose sum is the fee (to the rupee), fairest to the biggest fractions.
+      const target = Math.round(list.reduce((s, c) => s + c.exact, 0));
+      list.forEach(c => { c.amount = Math.floor(c.exact + 1e-9); });
+      let left = target - list.reduce((s, c) => s + c.amount, 0);
+      list.map((c, i) => ({ c, i, frac: c.exact - c.amount }))
+        .filter(x => x.frac > 1e-9)
+        .sort((a, b) => b.frac - a.frac || a.i - b.i)
+        .forEach(x => { if (left > 0) { x.c.amount += 1; left -= 1; } });
+    } else {
+      list.forEach(c => { c.amount = round2(c.exact); });
+    }
+    return { perMatch, unplayed, charges };
+  }
+
+  function tournamentStats(state, stats) {
     const fee = num(state.tournament && state.tournament.fee);
     const n = state.players.filter(inTournament).length;
-    return { fee, n, share: split(fee, n, state.settings.roundUp) };
+    const league = leagueCharges(state, stats || allStats(state), fee);
+    return { fee, n, share: split(fee, n, state.settings.roundUp), perMatch: league.perMatch, unplayed: league.unplayed, charges: league.charges };
   }
 
   // Money already sent to management, split over the players taking part: the suggested advance.
@@ -85,15 +131,19 @@
 
   function playerCalc(state, player, stats, fmt, tour) {
     stats = stats || allStats(state);
-    tour = tour || tournamentStats(state);
+    tour = tour || tournamentStats(state, stats);
     let cost = 0;
     let credit = 0;
     const lines = [];
     const creditLines = [];
 
-    if (tour.fee > 0 && inTournament(player)) {
-      cost += tour.share;
-      lines.push({ type: 'tournament', text: 'Tournament fee: ' + fmt(tour.fee) + ' ÷ ' + tour.n + ' = ' + fmt(tour.share) });
+    const league = tour.charges[player.id];
+    if (league && league.amount > 0) {
+      cost += league.amount;
+      league.parts.forEach(x => lines.push({ type: 'tournament', text: 'League · ' + x.label + ': ' + fmt(x.amount) + ' ÷ ' + x.n + ' = ' + fmt(round2(x.share)) }));
+      if (Math.abs(league.amount - round2(league.exact)) >= 0.005) {
+        lines.push({ type: 'tournament', text: 'League total ' + fmt(round2(league.exact)) + ' → ' + fmt(league.amount) + ' in whole rupees' });
+      }
     }
     days(state).forEach(d => {
       const s = stats[d.id];
@@ -119,7 +169,7 @@
 
   function totals(state, fmt) {
     const stats = allStats(state);
-    const tour = tournamentStats(state);
+    const tour = tournamentStats(state, stats);
     const sent = round2(((state.tournament && state.tournament.payments) || []).reduce((s, x) => s + num(x.amount), 0));
     let collected = 0, payBack = 0, owed = 0, fronted = 0, daySpent = 0, fundSpent = sent;
     state.players.forEach(p => {
@@ -150,8 +200,8 @@
   function warnings(state) {
     const stats = allStats(state);
     const out = days(state).filter(d => stats[d.id].amount > 0 && stats[d.id].n === 0).map(d => d.label);
-    const tour = tournamentStats(state);
-    if (tour.fee > 0 && tour.n === 0) out.push('Tournament fee');
+    const tour = tournamentStats(state, stats);
+    if (tour.fee > 0 && tour.n === 0 && tour.unplayed.length) out.push('Tournament fee');
     return out;
   }
 
