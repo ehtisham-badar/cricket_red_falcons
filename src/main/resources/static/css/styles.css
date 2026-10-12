@@ -448,6 +448,7 @@ h1, h2, h3 { margin: 0; font-weight: 400; }
   .lg-progress { align-items: flex-start; }
   .lg-tile { padding: 12px; }
   .lg-tile strong { font-size: 20px; }
+  .lg-tile.lg-result strong { font-size: 18px; overflow: visible; white-space: normal; }
   .lg-tile .money-input input, .lg-tile .lg-count { font-size: 17px; }
 }
 
