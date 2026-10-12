@@ -79,7 +79,135 @@
     if (state) { render(); toast('Red Falcons is on your home screen.'); }
   });
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+    // The worker is told where the API lives so it can fetch notifications for this device.
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?api=' + encodeURIComponent(API)).catch(() => {}));
+  }
+
+  // ---------- notifications ----------
+  let push = { ready: false, supported: false, enabled: false, key: '', permission: 'default', subscribed: false };
+  let pushDraft = { title: 'Red Falcons', body: '', audience: 'all' };
+  const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+
+  function keyBytes(b64) {
+    const s = (b64 + '='.repeat((4 - b64.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/');
+    return Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  }
+
+  // Who this device belongs to, so player-targeted messages reach it ('' for the admin or unknown).
+  const pushPlayerId = () => (realAdmin() ? '' : (myPlayer() || {}).id || '');
+
+  async function refreshPush() {
+    push.supported = pushSupported();
+    if (!push.supported) { push.ready = true; renderIfSettings(); return; }
+    try {
+      const k = await api('GET', '/api/push/key');
+      push.enabled = !!k.enabled;
+      push.key = k.publicKey || '';
+      push.permission = Notification.permission;
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      push.subscribed = !!sub;
+      // Keep the server's record of this device current (who it is, admin or not).
+      if (sub && push.enabled) await api('POST', '/api/push/subscribe', { endpoint: sub.endpoint, playerId: pushPlayerId() });
+    } catch { /* leave as is */ }
+    push.ready = true;
+    renderIfSettings();
+  }
+
+  function renderIfSettings() { if (state && tab === 'settings') render(); }
+
+  async function enablePush() {
+    try {
+      const perm = await Notification.requestPermission();
+      push.permission = perm;
+      if (perm !== 'granted') { toast('Notifications weren’t allowed.'); renderIfSettings(); return; }
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(push.key) });
+      await api('POST', '/api/push/subscribe', { endpoint: sub.endpoint, playerId: pushPlayerId() });
+      push.subscribed = true;
+      toast('Notifications are on for this device.');
+    } catch {
+      toast('Could not turn notifications on here.');
+    }
+    renderIfSettings();
+  }
+
+  async function disablePush() {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await api('POST', '/api/push/unsubscribe', { endpoint: sub.endpoint }).catch(() => {});
+        await sub.unsubscribe();
+      }
+      push.subscribed = false;
+      toast('Notifications are off for this device.');
+    } catch {
+      toast('Could not turn notifications off.');
+    }
+    renderIfSettings();
+  }
+
+  // Players a notification goes to: null means every device.
+  function pushAudience() {
+    const a = pushDraft.audience;
+    if (a === 'all') return { ids: null, label: 'everyone with notifications on' };
+    if (a === 'owe') {
+      const stats = C.allStats(state);
+      const tour = C.tournamentStats(state, stats);
+      const ids = state.players.filter(p => C.playerCalc(state, p, stats, fmt, tour).net < 0).map(p => p.id);
+      return { ids, label: `${ids.length} player${ids.length === 1 ? '' : 's'} who owe money` };
+    }
+    const m = findMatch(a.replace(/^xi:/, ''));
+    if (!m) return { ids: [], label: 'nobody' };
+    const ids = state.players.filter(p => p.att[m.id]).map(p => p.id).concat(state.twelfth[m.id] ? [state.twelfth[m.id]] : []);
+    return { ids, label: `${m.label}’s XI and 12th man (${ids.length})` };
+  }
+
+  function notifyPanels() {
+    const ios = isIOS() && !isInstalled();
+    let status;
+    if (!push.ready) status = '<p class="muted">Checking…</p>';
+    else if (!push.supported) status = '<p class="muted">This browser can’t show notifications.</p>';
+    else if (ios) status = '<p class="muted">On iPhone, install the app first (Appearance → Install on phone), then turn notifications on from the installed app.</p>';
+    else if (!push.enabled) status = '<p class="muted">Notifications aren’t set up on the server yet.</p>';
+    else if (push.permission === 'denied') status = '<p class="muted">Notifications are blocked for this site. Allow them in your browser’s site settings, then come back.</p>';
+    else if (push.subscribed) {
+      const me = !realAdmin() && myPlayer();
+      status = `<p class="install-done">${icon('<path d="M20 6 9 17l-5-5"/>', 18)} On for this device${me ? ` · ${esc(me.name)}` : ''}</p>
+        ${!realAdmin() && !me ? '<p class="muted notify-note">Pick your name on Summary so messages meant for you reach you.</p>' : ''}
+        <button class="btn btn-ghost" data-action="push-off">Turn off</button>`;
+    } else {
+      status = `<button class="btn btn-gold btn-block" data-action="push-on">${BELL_ICON} Turn on notifications</button>`;
+    }
+    const device = `<section class="panel">
+      <div class="panel-head"><h3>This device</h3><p class="muted">Get match updates and payment reminders as notifications.</p></div>
+      ${status}
+    </section>`;
+    if (!isAdmin()) return device;
+
+    const aud = pushAudience();
+    const options = [['all', 'Everyone'], ['owe', 'Players who owe money']]
+      .concat(C.matches(state).map(m => ['xi:' + m.id, `${m.label} XI + 12th`]));
+    const templates = [
+      ['Payment reminder', 'Please clear your balance — your amount and the NayaPay details are in the app.'],
+      ['Match day', 'Match today! Check the Playing XI and reporting time in the app.'],
+      ['Training', 'Training today — see you there!']
+    ];
+    const compose = `<section class="panel">
+      <div class="panel-head"><h3>Send a notification</h3><p class="muted">Goes to players’ phones that have notifications on.</p></div>
+      <div class="notify-form">
+        <div class="quick-add">${templates.map(([t, b]) => `<button class="chip" data-action="push-template" data-title="${esc(t)}" data-body="${esc(b)}">${esc(t)}</button>`).join('')}</div>
+        <input class="field" type="text" maxlength="80" placeholder="Title" value="${esc(pushDraft.title)}" data-input="push-title" data-focus="push-title" aria-label="Title">
+        <textarea class="field textarea notify-body" maxlength="300" placeholder="Message" data-input="push-body" data-focus="push-body" aria-label="Message">${esc(pushDraft.body)}</textarea>
+        <select class="field select" data-input="push-audience" aria-label="Send to">
+          ${options.map(([v, l]) => `<option value="${esc(v)}" ${v === pushDraft.audience ? 'selected' : ''}>${esc(l)}</option>`).join('')}
+        </select>
+        <p class="muted notify-note">To: ${esc(aud.label)}</p>
+        <button class="btn btn-primary" data-action="push-send" ${push.enabled && pushDraft.body.trim() ? '' : 'disabled'}>${BELL_ICON} Send</button>
+      </div>
+    </section>`;
+    return device + compose;
   }
 
   function installPanel() {
@@ -126,6 +254,7 @@
   const X_ICON = icon('<path d="M18 6 6 18M6 6l12 12"/>', 18);
   const IMAGE_ICON = icon('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>', 18);
   const DICE_ICON = icon('<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="16" cy="16" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="16" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="16" r="1.2" fill="currentColor"/>', 18);
+  const BELL_ICON = icon('<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>', 18);
   const COPY_ICON = icon('<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>', 18);
   const WA_ICON = icon('<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>', 18);
 
@@ -322,6 +451,9 @@
   }
 
   // ---------- season archive ----------
+  // An ISO instant as this device's local YYYY-MM-DD.
+  const localDay = iso => new Date(iso).toLocaleDateString('en-CA');
+
   function seasonName() {
     const month = new Date().toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
     return `${state.tournament.name.trim() || 'Season'} · ${month}`;
@@ -373,7 +505,7 @@
     if (!archive) return '';
     return `<div class="archive-bar">
       ${icon('<path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/>', 20)}
-      <span><strong>${esc(archive.name)}</strong><small>Archived season · ${esc(formatDate(archive.archivedAt.slice(0, 10)))} · read-only</small></span>
+      <span><strong>${esc(archive.name)}</strong><small>Archived season · ${esc(formatDate(localDay(archive.archivedAt)))} · read-only</small></span>
       <button class="btn btn-gold" data-action="leave-season">Back to current season</button>
     </div>`;
   }
@@ -385,7 +517,7 @@
       <div class="panel-head"><h3>Season archive</h3><p class="muted">Past seasons, kept read-only. ${admin ? 'Starting a new series archives the current one first.' : ''}</p></div>
       ${seasons === null ? '<p class="muted">Loading…</p>' : list.length ? `<ul class="season-list">${list.map(x => `<li>
           <span class="season-icon">${icon('<path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/>', 18)}</span>
-          <span class="season-text"><strong>${esc(x.name)}</strong><small>Archived ${esc(formatDate(x.archivedAt.slice(0, 10)))}</small></span>
+          <span class="season-text"><strong>${esc(x.name)}</strong><small>Archived ${esc(formatDate(localDay(x.archivedAt)))}</small></span>
           <button class="btn btn-ghost small" data-action="open-season" data-id="${esc(x.id)}">View</button>
           ${admin ? `<button class="icon-btn danger" data-action="delete-season" data-id="${esc(x.id)}" aria-label="Delete ${esc(x.name)}">${X_ICON}</button>` : ''}
         </li>`).join('')}</ul>` : '<p class="muted season-empty">No archived seasons yet.</p>'}
@@ -472,6 +604,7 @@
     render();
     animateView();
     loadSeasons();
+    refreshPush();
     startPolling();
   }
 
@@ -1363,6 +1496,7 @@
       { id: 'look', title: 'Appearance', note: 'How the app looks on this device.', cards: themePanel + installPanel() },
       { id: 'team', title: 'Team & payments', note: admin ? 'Where players pay and how shares are worked out.' : 'Where to send your payments.', cards: payPanel + prefs },
       admin && { id: 'access', title: 'Who can see what', note: 'What players see when they sign in with their name.', cards: accessPanel + statsPanel },
+      { id: 'notify', title: 'Notifications', note: realAdmin() ? 'Turn them on for this device, and message the team.' : 'Turn them on for this device.', cards: notifyPanels() },
       { id: 'data', title: 'Data', note: admin ? 'Backups, clean-up and resets.' : 'Keep a copy of the ledger.', cards: backupPanel + seasonPanel() + cleanupPanel + dangerPanel },
       { id: 'account', title: 'Account', note: 'Who is signed in on this device.', cards: accountPanel }
     ].filter(Boolean);
@@ -1940,6 +2074,24 @@
       commit();
       toast('All stats cleared.');
     },
+    'push-on'() { enablePush(); },
+    'push-off'() { disablePush(); },
+    'push-template'(el) { pushDraft.title = el.dataset.title; pushDraft.body = el.dataset.body; render(); },
+    async 'push-send'(el) {
+      if (!isAdmin() || !pushDraft.body.trim()) return;
+      const aud = pushAudience();
+      if (aud.ids && !aud.ids.length) { toast('Nobody to send to.'); return; }
+      el.disabled = true;
+      try {
+        const r = await api('POST', '/api/push/send', { title: pushDraft.title, body: pushDraft.body, playerIds: aud.ids });
+        toast(r.devices ? `Sent to ${r.devices} device${r.devices === 1 ? '' : 's'}.` : 'No one in that group has notifications on yet.');
+        if (r.devices) { pushDraft.body = ''; render(); }
+      } catch {
+        toast('Could not send. Try again.');
+      } finally {
+        el.disabled = false;
+      }
+    },
     'open-season'(el) { openSeason(el.dataset.id); },
     'leave-season'() { leaveSeason(); },
     async 'archive-season'() {
@@ -2260,7 +2412,13 @@
       const fn = el.dataset && inputs[el.dataset.input];
       if (el.id === 'add-names') { draftNames = el.value; return; }
       if (el.dataset && el.dataset.input === 'season-name') { seasonDraft = el.value; return; }
-      if (el.dataset && el.dataset.input === 'pick-me') { writeStore(ME_KEY, el.value || NOT_ME); refetchForViewer(); return; }
+      if (el.dataset && /^push-/.test(el.dataset.input || '')) {
+        const key = el.dataset.input.slice(5);
+        pushDraft[key] = el.value;
+        if (key !== 'title') render();
+        return;
+      }
+      if (el.dataset && el.dataset.input === 'pick-me') { writeStore(ME_KEY, el.value || NOT_ME); refetchForViewer(); refreshPush(); return; }
       if (!fn || !isAdmin()) return;
       fn(el);
       commit();

@@ -1161,3 +1161,9 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
 .season-empty { margin: 0 0 14px; }
 .season-new { display: flex; gap: 8px; flex-wrap: wrap; }
 .season-new .field { flex: 1 1 180px; }
+
+/* Notifications */
+.notify-form { display: flex; flex-direction: column; gap: 10px; }
+.notify-body { min-height: 90px; margin-bottom: 0; }
+.notify-note { margin: 0; font-size: 13px; }
+.panel .install-done + .btn { margin-top: 12px; }
