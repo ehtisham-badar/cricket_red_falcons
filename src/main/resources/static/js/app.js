@@ -58,6 +58,46 @@
     if (meta) meta.setAttribute('content', theme.bar);
   }
 
+  // ---------- install as an app ----------
+  let installPrompt = null;                   // Chrome/Android's install prompt, kept until used
+  const isInstalled = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    installPrompt = e;
+    if (state && tab === 'settings') render();
+  });
+  window.addEventListener('appinstalled', () => {
+    installPrompt = null;
+    if (state) { render(); toast('Red Falcons is on your home screen.'); }
+  });
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  }
+
+  function installPanel() {
+    const SHARE = icon('<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="m16 6-4-4-4 4"/><path d="M12 2v13"/>', 16);
+    let body;
+    if (isInstalled()) {
+      body = `<p class="install-done">${icon('<path d="M20 6 9 17l-5-5"/>', 18)} Installed — you’re using the app.</p>`;
+    } else if (installPrompt) {
+      body = `<button class="btn btn-gold btn-block" data-action="install-app">${icon('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>', 18)} Install app</button>`;
+    } else if (isIOS()) {
+      body = `<ol class="install-steps">
+        <li>Tap the <strong>Share</strong> button ${SHARE} in Safari</li>
+        <li>Scroll and tap <strong>Add to Home Screen</strong></li>
+        <li>Tap <strong>Add</strong></li>
+      </ol>`;
+    } else {
+      body = `<p class="muted install-hint">Open your browser menu (⋮) and choose <strong>Install app</strong> or <strong>Add to Home screen</strong>.</p>`;
+    }
+    return `<section class="panel install-panel">
+      <div class="panel-head"><h3>Install on phone</h3><p class="muted">Adds Red Falcons to your home screen with the crest. It opens full-screen like a real app.</p></div>
+      <div class="install-row"><img src="img/icon-192.png" alt="" class="install-icon">${body}</div>
+    </section>`;
+  }
+
   // ---------- helpers ----------
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1053,7 +1093,7 @@
 
     return `
       ${pageHead('Settings', '')}
-      <div class="settings-grid">${themePanel}${dataPanel}${payPanel}${accessPanel}${prefs}
+      <div class="settings-grid">${themePanel}${installPanel()}${dataPanel}${payPanel}${accessPanel}${prefs}
         <section class="panel">
           <div class="panel-head"><h3>Signed in as ${isAdmin() ? 'Admin' : esc(session.name)}</h3></div>
           <button class="btn btn-ghost" data-action="logout">Switch user</button>
@@ -1510,6 +1550,15 @@
       if (!isAdmin()) return;
       state.settings.viewerAccess = el.dataset.access === 'own' ? 'own' : 'all';
       commit();
+    },
+    async 'install-app'() {
+      if (!installPrompt) return;
+      // The browser's prompt can only be shown once; it offers a fresh one later if dismissed.
+      const prompt = installPrompt;
+      installPrompt = null;
+      prompt.prompt();
+      await prompt.userChoice.catch(() => null);
+      render();
     },
     'set-theme'(el) {
       writeStore(THEME_KEY, el.dataset.theme);

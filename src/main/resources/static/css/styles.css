@@ -1022,3 +1022,12 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
 .access-icon { display: inline-grid; place-items: center; width: 44px; height: 38px; border-radius: 10px; background: rgba(var(--hi-rgb), .05); color: var(--gold); }
 .access-hint { margin: 12px 0 0; font-size: 13px; }
 .private-note { margin: 0 0 18px; padding: 14px; border-radius: var(--radius); border: 1px dashed var(--line-2); color: var(--muted); text-align: center; font-size: 14px; }
+
+/* Install on phone */
+.install-row { display: flex; align-items: center; gap: 14px; }
+.install-row > :not(img) { flex: 1; min-width: 0; }
+.install-icon { width: 56px; height: 56px; flex: none; border-radius: 14px; box-shadow: 0 0 0 1px var(--line-2), 0 6px 16px rgba(var(--shadow-rgb), .3); }
+.install-done { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--pos); font-weight: 700; }
+.install-hint { margin: 0; font-size: 14px; }
+.install-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.install-steps svg { vertical-align: -3px; color: var(--gold); }
