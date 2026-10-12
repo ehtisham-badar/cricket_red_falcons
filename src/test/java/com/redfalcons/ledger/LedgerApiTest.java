@@ -161,10 +161,27 @@ class LedgerApiTest {
         assertThat(send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{\"m1\":true}},{\"id\":\"p2\",\"name\":\"Rizwan\",\"att\":{\"m1\":true}}]}", token).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"battingOrder\":{\"m1\":[\"p2\",\"p1\"]}");
 
+        // Match stats: admin only, kept per match and player; negatives clamp to 0, unknown players drop,
+        // and a save without stats keeps them.
+        String withStats = """
+                {"players":[{"id":"p1","name":"Babar","att":{"m1":true}}],
+                 "matches":[{"id":"m1","date":"2026-10-24"}],
+                 "stats":{"m1":{"p1":{"balls":18,"ones":5,"fours":3,"sixes":1,"out":true,"bowlBalls":10,"bowlRuns":14,"wickets":2,"catches":1,"drops":-3},
+                                "ghost":{"balls":4}}}}
+                """;
+        assertThat(send("PUT", "/api/ledger", withStats, token).statusCode()).isEqualTo(200);
+        String statsJson = "\"stats\":{\"m1\":{\"p1\":{\"balls\":18,\"ones\":5,\"twos\":0,\"threes\":0,\"fours\":3,\"sixes\":1,\"out\":true,"
+                + "\"bowlBalls\":10,\"bowlRuns\":14,\"wickets\":2,\"catches\":1,\"drops\":0,\"misfields\":0,\"goodFielding\":0}}}";
+        assertThat(send("GET", "/api/ledger", null, token).body()).contains(statsJson).doesNotContain("ghost");
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"stats\":{}");
+        assertThat(send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{\"m1\":true}}]}", token).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/ledger", null, token).body()).contains(statsJson);
+
         // Removing a match drops its attendance, 12th man and batting order.
         assertThat(send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{\"m1\":true}},{\"id\":\"p2\",\"name\":\"Rizwan\",\"att\":{\"m1\":true}}],\"matches\":[]}", token).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/ledger", null, null).body())
                 .contains("\"matches\":[]").contains("\"twelfth\":{}").contains("\"battingOrder\":{}").doesNotContain("\"m1\":true");
+        assertThat(send("GET", "/api/ledger", null, token).body()).contains("\"stats\":{}");
 
         // Replacing again with fewer players removes the old ones and their attendance.
         assertThat(send("PUT", "/api/ledger", "{\"players\":[]}", token).statusCode()).isEqualTo(200);

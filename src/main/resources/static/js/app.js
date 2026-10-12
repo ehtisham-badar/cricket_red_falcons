@@ -22,6 +22,7 @@
   const TABS = [
     { id: 'summary', label: 'Summary', icon: '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>' },
     { id: 'days', label: 'Days', icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' },
+    { id: 'stats', label: 'Stats', adminOnly: true, icon: '<path d="M18 20V10M12 20V4M6 20v-6"/>' },
     { id: 'players', label: 'Players', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>' },
     { id: 'settings', label: 'Settings', icon: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>' }
   ];
@@ -32,7 +33,8 @@
   let sheet = null;                           // { type: 'day', dayId } | { type: 'player', id }
   let saveTimer = null;
   let pollTimer = null;
-  let draftNames = '';                        // unsent text in the Add players box
+  let draftNames = '';
+  let statsSel = 'league';                    // Stats tab: 'league' or a match id                        // unsent text in the Add players box
 
   const $ = sel => document.querySelector(sel);
 
@@ -125,7 +127,7 @@
 
   function emptyState() {
     return {
-      players: [], trainings: [{ id: 't1', desc: '' }], expenses: {}, tournament: { name: '', fee: '', advance: '', matchCount: 5, payments: [] }, twelfth: {}, battingOrder: {}, matches: [],
+      players: [], trainings: [{ id: 't1', desc: '' }], expenses: {}, tournament: { name: '', fee: '', advance: '', matchCount: 5, payments: [] }, twelfth: {}, battingOrder: {}, matches: [], stats: {},
       settings: { currency: 'Rs ', maxPerMatch: 11, roundUp: false, ...DEFAULT_PAY_TO }
     };
   }
@@ -196,9 +198,19 @@
       const kept = [...new Set(list)].filter(id => players.some(p => p.id === id && p.att[match]));
       if (kept.length) battingOrder[match] = kept;
     });
+    // match id -> player id -> stats (admin only); keep known matches and players
+    const stats = {};
+    Object.entries(d.stats || {}).forEach(([match, byPlayer]) => {
+      if (!isMatch(match) || !byPlayer) return;
+      Object.entries(byPlayer).forEach(([pid, e]) => {
+        if (!e || !players.some(p => p.id === pid)) return;
+        (stats[match] = stats[match] || {})[pid] = { ...C.statOf({ stats: { m: { p: e } } }, 'm', 'p') };
+      });
+    });
     return {
       players,
       matches,
+      stats,
       twelfth,
       battingOrder,
       trainings: d.trainings && d.trainings.length ? d.trainings.map(t => ({ id: t.id, desc: t.desc || '' })) : [{ id: 't1', desc: '' }],
@@ -223,8 +235,8 @@
   }
 
   function comparable(d) {
-    const { players, trainings, matches, expenses, tournament, settings, twelfth, battingOrder } = d;
-    return JSON.stringify({ players, trainings, matches, expenses, tournament, settings, twelfth, battingOrder });
+    const { players, trainings, matches, expenses, tournament, settings, twelfth, battingOrder, stats } = d;
+    return JSON.stringify({ players, trainings, matches, expenses, tournament, settings, twelfth, battingOrder, stats });
   }
 
   // ---------- API ----------
@@ -388,14 +400,15 @@
     if (focusKey && typeof active.selectionStart === 'number') sel = [active.selectionStart, active.selectionEnd];
 
     document.body.classList.toggle('is-admin', isAdmin());
-    $('#tabs').innerHTML = TABS.map(t =>
+    if (!isAdmin() && TABS.some(t => t.id === tab && t.adminOnly)) tab = 'summary';
+    $('#tabs').innerHTML = TABS.filter(t => !t.adminOnly || isAdmin()).map(t =>
       `<button class="tab ${t.id === tab ? 'active' : ''}" data-action="tab" data-tab="${t.id}" ${t.id === tab ? 'aria-current="page"' : ''}>
         ${icon(t.icon)}<span>${t.label}</span></button>`).join('');
     $('#who-badge').innerHTML = isAdmin()
       ? `<span class="badge badge-admin">${icon('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>', 14)} Admin</span>`
       : `<span class="badge badge-view">${icon('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>', 14)} ${esc(session.name)} · view only</span>`;
 
-    const views = { summary: viewSummary, days: viewDays, players: viewPlayers, settings: viewSettings };
+    const views = { summary: viewSummary, days: viewDays, stats: viewStats, players: viewPlayers, settings: viewSettings };
     $('#view').innerHTML = (views[tab] || viewSummary)();
     $('#sheet-root').innerHTML = sheet ? renderSheet() : '';
     document.body.classList.toggle('sheet-open', !!sheet);
@@ -982,6 +995,126 @@
       ${isAdmin() ? '' : 'disabled'} aria-pressed="${on}" title="Taking part in the league">${on ? 'In' : 'Out'}</button>`;
   }
 
+  // ---------- stats (admin) ----------
+  const SR = (runs, balls) => { const v = C.strikeRate(runs, balls); return v == null ? '—' : v.toFixed(2); };
+  const ECON = (runs, balls) => { const v = C.economy(runs, balls); return v == null ? '—' : v.toFixed(2); };
+
+  function viewStats() {
+    const ms = C.matches(state);
+    if (statsSel !== 'league' && !ms.some(m => m.id === statsSel)) statsSel = 'league';
+    const seg = `<div class="seg" role="tablist" aria-label="Stats view">
+      <button class="seg-btn ${statsSel === 'league' ? 'on' : ''}" data-action="stats-sel" data-id="league">League</button>
+      ${ms.map(m => `<button class="seg-btn ${statsSel === m.id ? 'on' : ''}" data-action="stats-sel" data-id="${esc(m.id)}">${m.label}${m.date ? `<small>${esc(formatDate(m.date).replace(/ \d{4}$/, ''))}</small>` : ''}</button>`).join('')}
+    </div>`;
+    const body = statsSel === 'league' ? leagueStatsView() : matchStatsView(ms.find(m => m.id === statsSel));
+    return `${pageHead('Stats', 'The Hundred: 5-ball overs, 20 overs an innings. Only you can see this for now.')}
+      ${seg}${body}`;
+  }
+
+  function stepper(m, pid, key, label, value) {
+    const attrs = `data-m="${esc(m)}" data-p="${esc(pid)}" data-k="${key}"`;
+    return `<div class="step">
+      <span class="step-label">${label}</span>
+      <span class="step-ctl">
+        <button type="button" data-action="stat-step" ${attrs} data-d="-1" aria-label="${label} minus one" ${value > 0 ? '' : 'disabled'}>−</button>
+        <input type="text" inputmode="numeric" value="${value}" data-input="stat" ${attrs} data-focus="st-${esc(m)}-${esc(pid)}-${key}" aria-label="${label}">
+        <button type="button" data-action="stat-step" ${attrs} data-d="1" aria-label="${label} plus one">+</button>
+      </span>
+    </div>`;
+  }
+
+  function statCard(d, p, pos, twelfthMan) {
+    const e = C.statOf(state, d.id, p.id);
+    const runs = C.runsOf(e);
+    const st = (key, label) => stepper(d.id, p.id, key, label, e[key]);
+    const bat = C.batted(e) ? `${runs}${e.out ? '' : '*'} (${e.balls}) · SR ${SR(runs, e.balls)}` : 'Did not bat';
+    const bowl = e.bowlBalls > 0 ? `${e.wickets}/${e.bowlRuns} (${C.oversOf(e.bowlBalls)})` : '';
+    const field = [e.catches && `${e.catches} ct`, e.drops && `${e.drops} drop${e.drops > 1 ? 's' : ''}`].filter(Boolean).join(' · ');
+    const tooFew = C.shotsOf(e) > e.balls;
+    return `<article class="st-card ${twelfthMan ? 'twelfth' : ''}">
+      <header class="st-head">
+        <span class="bat-pos ${pos <= 2 && !twelfthMan ? 'opener' : ''}">${twelfthMan ? '12' : pos}</span>
+        <span class="pname"><strong>${esc(p.name)}</strong><small>${twelfthMan ? '12th man · fielding only' : esc([bat, bowl, field].filter(Boolean).join('  ·  '))}</small></span>
+      </header>
+      ${twelfthMan ? '' : `<div class="st-group bat">
+        <div class="st-title"><span>Batting</span><strong>${runs} runs · SR ${SR(runs, e.balls)}</strong>
+          <button class="tog st-out ${e.out ? 'on' : ''}" data-action="stat-out" data-m="${esc(d.id)}" data-p="${esc(p.id)}" aria-pressed="${e.out}">${e.out ? 'Out' : 'Not out'}</button></div>
+        <div class="st-steps">${st('balls', 'Balls')}${st('ones', '1s')}${st('twos', '2s')}${st('threes', '3s')}${st('fours', '4s')}${st('sixes', '6s')}</div>
+        ${tooFew ? '<p class="st-warn">More scoring shots than balls faced.</p>' : ''}
+      </div>
+      <div class="st-group bowl">
+        <div class="st-title"><span>Bowling</span><strong>${C.oversOf(e.bowlBalls)} ov · ${e.wickets}/${e.bowlRuns} · Econ ${ECON(e.bowlRuns, e.bowlBalls)}</strong></div>
+        <div class="st-steps">${st('bowlBalls', 'Balls')}${st('bowlRuns', 'Runs')}${st('wickets', 'Wickets')}</div>
+      </div>`}
+      <div class="st-group field">
+        <div class="st-title"><span>Fielding</span></div>
+        <div class="st-steps">${st('catches', 'Catches')}${st('drops', 'Drops')}${st('misfields', 'Misfields')}${st('goodFielding', 'Good fielding')}</div>
+      </div>
+    </article>`;
+  }
+
+  function matchStatsView(d) {
+    const xi = battingOrderOf(d.id);
+    const twelfth = findPlayer(state.twelfth[d.id]);
+    const info = matchInfo(d);
+    if (!xi.length) {
+      return `<div class="empty st-empty"><p>Pick the XI for ${d.label} first, then add its stats here.</p>
+        <button class="btn btn-gold" data-action="open-day" data-id="${esc(d.id)}">Pick the XI</button></div>`;
+    }
+    const all = xi.concat(twelfth ? [twelfth] : []).map(p => C.statOf(state, d.id, p.id));
+    const sum = k => all.reduce((x, e) => x + e[k], 0);
+    const runs = all.reduce((x, e) => x + C.runsOf(e), 0);
+    const outs = all.filter(e => e.out).length;
+    return `<section class="st-match">
+      <div class="st-summary">
+        <div><span>${d.label}${info ? ` · ${esc(info)}` : ''}</span>
+          <strong>${runs}/${outs}</strong><small>${sum('balls')} balls (${C.oversOf(sum('balls'))} ov) · SR ${SR(runs, sum('balls'))}</small></div>
+        <div><span>Bowling</span><strong>${sum('wickets')}/${sum('bowlRuns')}</strong><small>${C.oversOf(sum('bowlBalls'))} of 20 ov · Econ ${ECON(sum('bowlRuns'), sum('bowlBalls'))}</small></div>
+        <div><span>Fielding</span><strong>${sum('catches')} ct</strong><small>${sum('drops')} dropped · ${sum('misfields')} misfields · ${sum('goodFielding')} good</small></div>
+      </div>
+      <p class="muted st-hint">Tapping + on a 1, 2, 3, 4 or 6 also adds a ball faced. Runs are the sum of the shots (extras aren’t tracked).</p>
+      <div class="st-list">
+        ${xi.map((p, i) => statCard(d, p, i + 1, false)).join('')}
+        ${twelfth ? statCard(d, twelfth, 12, true) : ''}
+      </div>
+    </section>`;
+  }
+
+  function leagueStatsView() {
+    const all = C.leagueStats(state).filter(t => t.matches > 0);
+    if (!all.length) {
+      return `<div class="empty st-empty"><p>No stats yet. Pick a match above and add them as you play — the season totals build up here.</p></div>`;
+    }
+    const top = (list, key, fmtFn) => { const t = list.slice().sort((a, b) => b[key] - a[key])[0]; return t && t[key] > 0 ? { t, v: fmtFn(t) } : null; };
+    const srList = all.filter(t => t.balls >= 20 && t.strikeRate != null);
+    const leaders = [
+      { label: 'Most runs', x: top(all, 'runs', t => `${t.runs}`) },
+      { label: 'Most wickets', x: top(all, 'wickets', t => `${t.wickets}`) },
+      { label: 'Most catches', x: top(all, 'catches', t => `${t.catches}`) },
+      { label: 'Best strike rate', note: 'min 20 balls', x: top(srList, 'strikeRate', t => SR(t.runs, t.balls)) }
+    ];
+    const name = t => `<td class="st-name">${esc(t.player.name)}</td>`;
+    const batting = all.filter(t => t.innings > 0).sort((a, b) => b.runs - a.runs || (b.strikeRate || 0) - (a.strikeRate || 0));
+    const bowling = all.filter(t => t.bowlBalls > 0).sort((a, b) => b.wickets - a.wickets || (a.economy || 99) - (b.economy || 99));
+    const fielding = all.filter(t => t.catches + t.drops + t.misfields + t.goodFielding > 0).sort((a, b) => b.catches - a.catches || a.drops - b.drops);
+    const table = (title, head, rows) => `<section class="panel st-table">
+      <div class="panel-head"><h3>${title}</h3></div>
+      ${rows.length ? `<div class="table-wrap"><table class="sheet-table"><thead><tr>${head.map((h, i) => `<th ${i === 0 ? 'class="st-name"' : ''}>${h}</th>`).join('')}</tr></thead>
+        <tbody>${rows.join('')}</tbody></table></div>` : '<p class="muted">Nothing yet.</p>'}
+    </section>`;
+    return `<div class="st-leaders">${leaders.map(l => `<div class="stat ${l.x ? 'pos' : ''}"><span>${l.label}</span>
+        <strong>${l.x ? l.x.v : '—'}</strong><small>${l.x ? esc(l.x.t.player.name) : (l.note || 'No one yet')}</small></div>`).join('')}</div>
+      ${table('Batting', ['Player', 'M', 'Inns', 'Runs', 'Balls', 'SR', 'HS', 'Avg', '4s', '6s', '1s', '2s', '3s'], batting.map(t => `<tr>${name(t)}
+        <td>${t.matches}</td><td>${t.innings}</td><td class="strong">${t.runs}</td><td>${t.balls}</td><td>${SR(t.runs, t.balls)}</td>
+        <td>${t.high ? t.high.runs + (t.high.out ? '' : '*') : '—'}</td><td>${t.average == null ? '—' : t.average.toFixed(2)}</td>
+        <td>${t.fours}</td><td>${t.sixes}</td><td>${t.ones}</td><td>${t.twos}</td><td>${t.threes}</td></tr>`))}
+      ${table('Bowling', ['Player', 'Overs', 'Runs', 'Wkts', 'Econ', 'Best'], bowling.map(t => `<tr>${name(t)}
+        <td>${C.oversOf(t.bowlBalls)}</td><td>${t.bowlRuns}</td><td class="strong">${t.wickets}</td><td>${ECON(t.bowlRuns, t.bowlBalls)}</td>
+        <td>${t.best ? `${t.best.wickets}/${t.best.runs}` : '—'}</td></tr>`))}
+      ${table('Fielding', ['Player', 'Catches', 'Drops', 'Misfields', 'Good fielding'], fielding.map(t => `<tr>${name(t)}
+        <td class="strong">${t.catches}</td><td>${t.drops}</td><td>${t.misfields}</td><td>${t.goodFielding}</td></tr>`))}`;
+  }
+
   function viewPlayers() {
     const admin = isAdmin();
     const list = state.players.map((p, i) => `
@@ -1393,7 +1526,8 @@
       expenses: state.expenses,
       tournament: state.tournament,
       twelfth: state.twelfth,
-      battingOrder: state.battingOrder
+      battingOrder: state.battingOrder,
+      stats: state.stats
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
@@ -1443,6 +1577,11 @@
 
   // ---------- events ----------
   function findPlayer(id) { return state.players.find(p => p.id === id); }
+  function statEntry(m, pid) {
+    state.stats[m] = state.stats[m] || {};
+    if (!state.stats[m][pid]) state.stats[m][pid] = C.statOf(state, m, pid);
+    return state.stats[m][pid];
+  }
   function findMatch(id) { return C.matches(state).find(m => m.id === id); }
   function findPayment(el) {
     const list = paymentsOf(el.dataset.player);
@@ -1560,6 +1699,24 @@
       await prompt.userChoice.catch(() => null);
       render();
     },
+    'stats-sel'(el) { statsSel = el.dataset.id; render(); },
+    'stat-step'(el) {
+      if (!isAdmin()) return;
+      const e = statEntry(el.dataset.m, el.dataset.p);
+      const d = parseInt(el.dataset.d, 10);
+      const k = el.dataset.k;
+      if (e[k] + d < 0) return;
+      e[k] += d;
+      // A scoring shot is a ball faced, so live scoring only needs one tap.
+      if (['ones', 'twos', 'threes', 'fours', 'sixes'].includes(k)) e.balls = Math.max(0, e.balls + d);
+      commit();
+    },
+    'stat-out'(el) {
+      if (!isAdmin()) return;
+      const e = statEntry(el.dataset.m, el.dataset.p);
+      e.out = !e.out;
+      commit();
+    },
     'set-theme'(el) {
       writeStore(THEME_KEY, el.dataset.theme);
       applyTheme(el.dataset.theme);
@@ -1588,6 +1745,7 @@
       delete state.expenses[day.id];
       delete state.twelfth[day.id];
       delete state.battingOrder[day.id];
+      delete state.stats[day.id];
       state.players.forEach(p => { delete p.att[day.id]; });
       if (sheet && sheet.dayId === day.id) sheet = null;
       commit();
@@ -1624,23 +1782,25 @@
       if (!p) return;
       const bought = Object.values(state.expenses).flat().filter(e => e.paidBy === p.id).length;
       const ok = await confirmDialog(`Remove ${p.name || 'this player'}?`,
-        'Their attendance and payments will be removed.' + (bought ? ` ${bought} item${bought === 1 ? '' : 's'} they paid for will be marked as paid by the team fund.` : ''),
+        'Their attendance, payments and stats will be removed.' + (bought ? ` ${bought} item${bought === 1 ? '' : 's'} they paid for will be marked as paid by the team fund.` : ''),
         'Remove', true);
       if (!ok) return;
       state.players = state.players.filter(x => x.id !== p.id);
       Object.keys(state.twelfth).forEach(m => { if (state.twelfth[m] === p.id) delete state.twelfth[m]; });
+      Object.values(state.stats).forEach(byPlayer => { delete byPlayer[p.id]; });
       Object.values(state.expenses).forEach(list => list.forEach(e => { if (e.paidBy === p.id) e.paidBy = ''; }));
       commit();
     },
     export() { exportBackup(); },
     import() { $('#import-file').click(); },
     async 'new-series'() {
-      const ok = await confirmDialog('Start a new series?', 'Keeps players, names and roles. Clears attendance, payments, expenses, matches, the league fee, advance and payments to management, and resets trainings to just Training 1.', 'Start new series', true);
+      const ok = await confirmDialog('Start a new series?', 'Keeps players, names and roles. Clears attendance, payments, expenses, matches and stats, the league fee, advance and payments to management, and resets trainings to just Training 1.', 'Start new series', true);
       if (!ok) return;
       state.players.forEach(p => { p.att = {}; p.payments = []; });
       state.expenses = {};
       state.tournament = { name: '', fee: '', advance: '', matchCount: 5, payments: [] };
       state.matches = [];
+      state.stats = {};
       state.twelfth = {};
       state.battingOrder = {};
       state.trainings = [{ id: 't1', desc: '' }];
@@ -1749,6 +1909,10 @@
     'exp-paidby'(el) { const e = findExpense(el); if (e) e.paidBy = el.value; },
     'tournament-fee'(el) { el.value = cleanNumber(el.value); state.tournament.fee = el.value; },
     'tournament-name'(el) { state.tournament.name = el.value; },
+    stat(el) {
+      el.value = el.value.replace(/\D/g, '').slice(0, 3);
+      statEntry(el.dataset.m, el.dataset.p)[el.dataset.k] = parseInt(el.value, 10) || 0;
+    },
     'tournament-matches'(el) {
       el.value = el.value.replace(/\D/g, '').slice(0, 2);
       const n = parseInt(el.value, 10);

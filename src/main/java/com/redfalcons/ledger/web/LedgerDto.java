@@ -8,7 +8,8 @@ import java.util.Map;
  * per-player {@code payments}; {@code twelfth} maps a match id to its 12th man's player id (not charged
  * for the match, and null on save keeps the stored ones); {@code battingOrder} maps a match id to its XI's
  * player ids in batting order (null on save keeps the stored ones); {@code matches} are the league matches
- * added so far (null on save keeps the stored ones);
+ * added so far (null on save keeps the stored ones); {@code stats} maps match id -> player id -> that player's
+ * stats in the match (admin only; null on save keeps the stored ones);
  * {@code amounts} (per-day totals) is still written so older readers keep working, and is read
  * as a single expense per day when a file has no {@code expenses}.
  */
@@ -24,7 +25,8 @@ public record LedgerDto(
         SettingsDto settings,
         Map<String, String> twelfth,
         Map<String, List<String>> battingOrder,
-        List<MatchDto> matches) {
+        List<MatchDto> matches,
+        Map<String, Map<String, StatDto>> stats) {
 
     /**
      * {@code paid} is the total of {@code payments}; files without payments are read from {@code paid}.
@@ -49,6 +51,12 @@ public record LedgerDto(
     }
 
     public record MatchDto(String id, String date, String opponent, String venue) {
+    }
+
+    /** Batting (balls faced and scoring shots), bowling (balls, runs conceded, wickets) and fielding counts. */
+    public record StatDto(Integer balls, Integer ones, Integer twos, Integer threes, Integer fours, Integer sixes, Boolean out,
+                          Integer bowlBalls, Integer bowlRuns, Integer wickets,
+                          Integer catches, Integer drops, Integer misfields, Integer goodFielding) {
     }
 
     public record TrainingDto(String id, String desc) {

@@ -3,6 +3,7 @@ package com.redfalcons.ledger.service;
 import com.redfalcons.ledger.model.DayAmount;
 import com.redfalcons.ledger.model.Expense;
 import com.redfalcons.ledger.model.MatchDay;
+import com.redfalcons.ledger.model.MatchStat;
 import com.redfalcons.ledger.model.Payment;
 import com.redfalcons.ledger.model.Player;
 import com.redfalcons.ledger.model.Setting;
@@ -11,6 +12,7 @@ import com.redfalcons.ledger.model.TournamentPayment;
 import com.redfalcons.ledger.repo.DayAmountRepository;
 import com.redfalcons.ledger.repo.ExpenseRepository;
 import com.redfalcons.ledger.repo.MatchDayRepository;
+import com.redfalcons.ledger.repo.MatchStatRepository;
 import com.redfalcons.ledger.repo.PaymentRepository;
 import com.redfalcons.ledger.repo.PlayerRepository;
 import com.redfalcons.ledger.repo.SettingRepository;
@@ -19,6 +21,7 @@ import com.redfalcons.ledger.repo.TrainingRepository;
 import com.redfalcons.ledger.web.LedgerDto;
 import com.redfalcons.ledger.web.LedgerDto.ExpenseDto;
 import com.redfalcons.ledger.web.LedgerDto.MatchDto;
+import com.redfalcons.ledger.web.LedgerDto.StatDto;
 import com.redfalcons.ledger.web.LedgerDto.PaymentDto;
 import com.redfalcons.ledger.web.LedgerDto.PlayerDto;
 import com.redfalcons.ledger.web.LedgerDto.SettingsDto;
@@ -66,12 +69,16 @@ public class LedgerService {
     private final TournamentPaymentRepository tournamentPayments;
     private final SettingRepository settings;
     private final MatchDayRepository matches;
+    private final MatchStatRepository stats;
+    /** Largest count a single stat can hold. */
+    private static final int STAT_MAX = 999;
 
     public LedgerService(PlayerRepository players, TrainingRepository trainings, DayAmountRepository legacyAmounts,
                          ExpenseRepository expenses, PaymentRepository payments,
                          TournamentPaymentRepository tournamentPayments, SettingRepository settings,
-                         MatchDayRepository matches) {
+                         MatchDayRepository matches, MatchStatRepository stats) {
         this.matches = matches;
+        this.stats = stats;
         this.players = players;
         this.trainings = trainings;
         this.legacyAmounts = legacyAmounts;
@@ -145,7 +152,8 @@ public class LedgerService {
                         tournamentPayments.findAll(BY_POSITION).stream()
                                 .map(x -> new PaymentDto(x.getId(), x.getDate(), x.getAmount(), x.getMethod(), x.getNote()))
                                 .toList(), parseIntOr(s.get(MATCH_COUNT), DEFAULT_MATCH_COUNT)),
-                settingsDto, parseTwelfth(s.get(TWELFTH)), parseBatting(s), storedMatches());
+                settingsDto, parseTwelfth(s.get(TWELFTH)), parseBatting(s), storedMatches(),
+                admin ? storedStats() : Map.of());
     }
 
     /** Replaces the whole ledger with the given state (admin only). */
@@ -273,6 +281,28 @@ public class LedgerService {
         });
         if (twelfth.length() <= SETTING_MAX) settings.save(new Setting(TWELFTH, twelfth.toString()));
 
+        // Stats for known matches and players; without stats (an older app), keep the stored ones.
+        Map<String, Map<String, StatDto>> statsIn = in.stats() != null ? in.stats() : storedStats();
+        Map<String, MatchStat> newStats = new LinkedHashMap<>();
+        statsIn.forEach((match, byPlayer) -> {
+            if (!matchIds.contains(match) || byPlayer == null) return;
+            byPlayer.forEach((playerId, st) -> {
+                if (st == null || !playerIds.contains(playerId)) return;
+                int[] n = {
+                        count(st.balls()), count(st.ones()), count(st.twos()), count(st.threes()), count(st.fours()), count(st.sixes()),
+                        count(st.bowlBalls()), count(st.bowlRuns()), count(st.wickets()),
+                        count(st.catches()), count(st.drops()), count(st.misfields()), count(st.goodFielding())};
+                boolean out = Boolean.TRUE.equals(st.out());
+                if (out || Arrays.stream(n).anyMatch(v -> v > 0)) {
+                    MatchStat row = new MatchStat(match, playerId, n, out);
+                    newStats.put(row.getId(), row);
+                }
+            });
+        });
+        // Remove dropped rows and update the rest (no bulk delete: stored rows may already be loaded).
+        stats.deleteAll(stats.findAll().stream().filter(x -> !newStats.containsKey(x.getId())).toList());
+        stats.saveAll(newStats.values());
+
         // A batting order only lists players who are playing that match, each once.
         Set<String> battingKeys = new HashSet<>();
         for (String match : matchIds) {
@@ -315,6 +345,20 @@ public class LedgerService {
             if (key.startsWith(BATTING) && v != null && !v.isEmpty()) out.put(key.substring(BATTING.length()), List.of(v.split(",")));
         });
         return out;
+    }
+
+    private Map<String, Map<String, StatDto>> storedStats() {
+        Map<String, Map<String, StatDto>> out = new LinkedHashMap<>();
+        stats.findAll().forEach(x -> {
+            int[] n = x.numbers();
+            out.computeIfAbsent(x.getMatchId(), k -> new LinkedHashMap<>()).put(x.getPlayerId(),
+                    new StatDto(n[0], n[1], n[2], n[3], n[4], n[5], x.isOut(), n[6], n[7], n[8], n[9], n[10], n[11], n[12]));
+        });
+        return out;
+    }
+
+    private static int count(Integer v) {
+        return v == null ? 0 : Math.max(0, Math.min(STAT_MAX, v));
     }
 
     private List<MatchDto> storedMatches() {

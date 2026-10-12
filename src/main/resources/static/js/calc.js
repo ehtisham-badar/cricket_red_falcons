@@ -214,6 +214,59 @@
     };
   }
 
+  // ---------- match stats (The Hundred: 5-ball overs) ----------
+  const BALLS_PER_OVER = 5;
+  const STAT_KEYS = ['balls', 'ones', 'twos', 'threes', 'fours', 'sixes', 'bowlBalls', 'bowlRuns', 'wickets',
+    'catches', 'drops', 'misfields', 'goodFielding'];
+
+  function statOf(state, matchId, playerId) {
+    const e = (state.stats && state.stats[matchId] && state.stats[matchId][playerId]) || {};
+    const out = { out: !!e.out };
+    STAT_KEYS.forEach(k => { out[k] = Math.max(0, parseInt(e[k], 10) || 0); });
+    return out;
+  }
+
+  const runsOf = e => e.ones + 2 * e.twos + 3 * e.threes + 4 * e.fours + 6 * e.sixes;
+  const shotsOf = e => e.ones + e.twos + e.threes + e.fours + e.sixes;
+  const strikeRate = (runs, balls) => balls > 0 ? round2(runs / balls * 100) : null;
+  // 13 balls -> "2.3" (2 overs and 3 balls of 5)
+  const oversOf = balls => Math.floor(balls / BALLS_PER_OVER) + '.' + (balls % BALLS_PER_OVER);
+  const economy = (runs, balls) => balls > 0 ? round2(runs / (balls / BALLS_PER_OVER)) : null;
+  const batted = e => e.balls > 0 || e.out || shotsOf(e) > 0;
+
+  // Season totals per player, from every match that has stats.
+  function leagueStats(state) {
+    const ms = matches(state);
+    return state.players.map(p => {
+      const t = { player: p, matches: 0, innings: 0, outs: 0, runs: 0, balls: 0, ones: 0, twos: 0, threes: 0, fours: 0, sixes: 0,
+        high: null, bowlBalls: 0, bowlRuns: 0, wickets: 0, best: null, catches: 0, drops: 0, misfields: 0, goodFielding: 0 };
+      ms.forEach(m => {
+        if (!(state.stats && state.stats[m.id] && state.stats[m.id][p.id])) return;
+        const e = statOf(state, m.id, p.id);
+        t.matches += 1;
+        if (batted(e)) {
+          const r = runsOf(e);
+          t.innings += 1;
+          if (e.out) t.outs += 1;
+          t.runs += r;
+          if (!t.high || r > t.high.runs || (r === t.high.runs && !e.out && t.high.out)) t.high = { runs: r, out: e.out };
+        }
+        t.balls += e.balls;
+        ['ones', 'twos', 'threes', 'fours', 'sixes', 'catches', 'drops', 'misfields', 'goodFielding'].forEach(k => { t[k] += e[k]; });
+        if (e.bowlBalls > 0) {
+          t.bowlBalls += e.bowlBalls; t.bowlRuns += e.bowlRuns; t.wickets += e.wickets;
+          if (!t.best || e.wickets > t.best.wickets || (e.wickets === t.best.wickets && e.bowlRuns < t.best.runs)) {
+            t.best = { wickets: e.wickets, runs: e.bowlRuns };
+          }
+        }
+      });
+      t.strikeRate = strikeRate(t.runs, t.balls);
+      t.average = t.outs > 0 ? round2(t.runs / t.outs) : null;
+      t.economy = economy(t.bowlRuns, t.bowlBalls);
+      return t;
+    });
+  }
+
   function warnings(state) {
     const stats = allStats(state);
     const out = days(state).filter(d => stats[d.id].amount > 0 && stats[d.id].n === 0).map(d => d.label);
@@ -242,7 +295,8 @@
   }
 
   const api = {
-    matches, leagueMatchCount, days, num, round2, inTournament, paidTotal, dayExpenses, dayAmount, dayStats, allStats,
+    matches, leagueMatchCount, days, num,
+    BALLS_PER_OVER, STAT_KEYS, statOf, runsOf, shotsOf, strikeRate, oversOf, economy, batted, leagueStats, round2, inTournament, paidTotal, dayExpenses, dayAmount, dayStats, allStats,
     tournamentStats, advanceShare, advancePerPlayer, advanceDue, playerCalc, totals, warnings, money, signedMoney, netLabel
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
