@@ -1139,3 +1139,25 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
   .account-card { flex-wrap: wrap; }
   .account-card .btn { width: 100%; }
 }
+
+/* Season archive */
+.archive-bar {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin: -8px 0 22px; padding: 12px 16px; border-radius: var(--radius);
+  border: 1px solid rgba(var(--gold-rgb), .45);
+  background: linear-gradient(110deg, rgba(var(--gold-rgb), .16), rgba(var(--gold-rgb), .04));
+  color: var(--gold-light);
+}
+.archive-bar > span { display: flex; flex-direction: column; flex: 1; min-width: 180px; }
+.archive-bar strong { color: var(--text); font-size: 16px; }
+.archive-bar small { color: var(--muted); font-size: 13px; }
+.season-list { list-style: none; margin: 0 0 14px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.season-list li { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 8px 8px 8px 10px; border-radius: 12px; border: 1px solid var(--line); background: rgba(var(--hi-rgb), .025); }
+.season-icon { display: inline-grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; background: rgba(var(--gold-rgb), .12); color: var(--gold); }
+.season-text { display: flex; flex-direction: column; min-width: 0; }
+.season-text strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.season-text small { color: var(--muted); font-size: 12px; }
+.season-list .icon-btn { width: 38px; height: 38px; }
+.season-empty { margin: 0 0 14px; }
+.season-new { display: flex; gap: 8px; flex-wrap: wrap; }
+.season-new .field { flex: 1 1 180px; }

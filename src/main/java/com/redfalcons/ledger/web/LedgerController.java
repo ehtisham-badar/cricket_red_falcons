@@ -1,10 +1,12 @@
 package com.redfalcons.ledger.web;
 
 import com.redfalcons.ledger.service.LedgerService;
+import com.redfalcons.ledger.service.SeasonService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -16,11 +18,48 @@ public class LedgerController {
     static final String VIEWER_HEADER = "X-Viewer";
 
     private final LedgerService service;
+    private final SeasonService seasons;
     private final AdminAuth auth;
 
-    public LedgerController(LedgerService service, AdminAuth auth) {
+    public LedgerController(LedgerService service, SeasonService seasons, AdminAuth auth) {
         this.service = service;
+        this.seasons = seasons;
         this.auth = auth;
+    }
+
+    public record ArchiveRequest(String name) {
+    }
+
+    private static final ResponseEntity<?> FORBIDDEN = ResponseEntity.status(HttpStatus.FORBIDDEN)
+            .body(Map.of("error", "View-only access. Only the admin can make changes."));
+
+    @GetMapping("/seasons")
+    public List<SeasonService.SeasonInfo> listSeasons() {
+        return seasons.list();
+    }
+
+    @GetMapping("/seasons/{id}")
+    public ResponseEntity<?> season(@PathVariable String id,
+                                    @RequestHeader(value = TOKEN_HEADER, required = false) String token,
+                                    @RequestHeader(value = VIEWER_HEADER, required = false) String viewer) {
+        return seasons.get(id, auth.isValidToken(token), viewer)
+                .<ResponseEntity<?>>map(ResponseEntity::ok)
+                .orElse(ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "No such season.")));
+    }
+
+    @PostMapping("/seasons")
+    public ResponseEntity<?> archive(@RequestHeader(value = TOKEN_HEADER, required = false) String token,
+                                     @RequestBody(required = false) ArchiveRequest req) {
+        if (!auth.isValidToken(token)) return FORBIDDEN;
+        return ResponseEntity.ok(seasons.archive(req == null ? null : req.name()));
+    }
+
+    @DeleteMapping("/seasons/{id}")
+    public ResponseEntity<?> deleteSeason(@PathVariable String id,
+                                          @RequestHeader(value = TOKEN_HEADER, required = false) String token) {
+        if (!auth.isValidToken(token)) return FORBIDDEN;
+        return seasons.delete(id) ? ResponseEntity.ok(Map.of("deleted", id))
+                : ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "No such season."));
     }
 
     public record LoginRequest(String name) {

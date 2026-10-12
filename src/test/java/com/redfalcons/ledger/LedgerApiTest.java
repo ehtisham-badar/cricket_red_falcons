@@ -188,6 +188,21 @@ class LedgerApiTest {
                 .contains("\"matches\":[]").contains("\"twelfth\":{}").contains("\"battingOrder\":{}").doesNotContain("\"m1\":true");
         assertThat(send("GET", "/api/ledger", null, token).body()).contains("\"stats\":{}");
 
+        // Season archive: admin-only to create/delete, a frozen copy that survives later changes;
+        // viewers never get phone numbers from it.
+        assertThat(send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p9\",\"name\":\"Fakhar\",\"att\":{},\"phone\":\"03001112223\"}]}", token).statusCode()).isEqualTo(200);
+        assertThat(send("POST", "/api/seasons", "{\"name\":\"Spring Cup\"}", null).statusCode()).isEqualTo(403);
+        String archived = send("POST", "/api/seasons", "{\"name\":\"Spring Cup\"}", token).body();
+        assertThat(archived).contains("\"name\":\"Spring Cup\"");
+        String seasonId = archived.replaceAll(".*\"id\":\"([^\"]+)\".*", "$1");
+        assertThat(send("PUT", "/api/ledger", "{\"players\":[]}", token).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/seasons", null, null).body()).contains("\"id\":\"" + seasonId + "\"");
+        assertThat(send("GET", "/api/seasons/" + seasonId, null, token).body()).contains("Fakhar").contains("03001112223");
+        assertThat(send("GET", "/api/seasons/" + seasonId, null, null).body()).contains("Fakhar").doesNotContain("03001112223");
+        assertThat(send("DELETE", "/api/seasons/" + seasonId, null, null).statusCode()).isEqualTo(403);
+        assertThat(send("DELETE", "/api/seasons/" + seasonId, null, token).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/seasons/" + seasonId, null, token).statusCode()).isEqualTo(404);
+
         // Replacing again with fewer players removes the old ones and their attendance.
         assertThat(send("PUT", "/api/ledger", "{\"players\":[]}", token).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/ledger", null, null).body())

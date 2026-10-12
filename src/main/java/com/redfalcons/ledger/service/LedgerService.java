@@ -90,20 +90,35 @@ public class LedgerService {
         this.settings = settings;
     }
 
-    /** The full ledger for the admin. */
+    /** The ledger as a viewer may see it (see {@link #forViewer}). */
     @Transactional(readOnly = true)
-    public LedgerDto load() {
-        return load(true, null);
+    public LedgerDto load(boolean admin, String viewerId) {
+        return forViewer(load(), admin, viewerId);
     }
 
     /**
-     * The ledger; players' phone numbers are left out unless {@code admin}. With viewer access "own", a
-     * viewer only gets the payments of the player they say they are ({@code viewerId}); attendance stays,
-     * since everyone's shares depend on it.
+     * What a viewer may see of a ledger (the live one or an archived season): never phone numbers; with
+     * viewer access "own" only the payments of the player they say they are ({@code viewerId}); stats only
+     * when they are shown to everyone. Attendance stays, since everyone's shares depend on it.
      */
+    public static LedgerDto forViewer(LedgerDto full, boolean admin, String viewerId) {
+        if (admin) return full;
+        SettingsDto st = full.settings();
+        boolean ownOnly = st != null && "own".equals(st.viewerAccess());
+        boolean showStats = st != null && "all".equals(st.statsVisibility());
+        List<PlayerDto> ps = full.players() == null ? List.of() : full.players().stream().map(p -> {
+            boolean hide = ownOnly && !p.id().equals(viewerId);
+            return new PlayerDto(p.id(), p.name(), p.role(), hide ? "" : p.paid(), p.tournament(), p.att(),
+                    hide ? List.of() : p.payments(), null);
+        }).toList();
+        return new LedgerDto(full.app(), full.version(), full.savedAt(), ps, full.amounts(), full.trainings(), full.expenses(),
+                full.tournament(), st, full.twelfth(), full.battingOrder(), full.matches(),
+                showStats && full.stats() != null ? full.stats() : Map.of());
+    }
+
+    /** The full ledger, as the admin sees it. */
     @Transactional(readOnly = true)
-    public LedgerDto load(boolean admin, String viewerId) {
-        boolean ownOnly = !admin && "own".equals(settings.findById(VIEWER_ACCESS).map(Setting::getValue).orElse("all"));
+    public LedgerDto load() {
         Map<String, List<PaymentDto>> paymentsByPlayer = new HashMap<>();
         payments.findAll(BY_POSITION).forEach(x -> paymentsByPlayer
                 .computeIfAbsent(x.getPlayerId(), k -> new ArrayList<>())
@@ -114,9 +129,8 @@ public class LedgerService {
                     Map<String, Boolean> att = new LinkedHashMap<>();
                     p.getAttended().forEach(d -> att.put(d, true));
                     List<PaymentDto> paid = paymentsByPlayer.getOrDefault(p.getId(), legacyPayments(p.getId(), p.getPaid()));
-                    if (ownOnly && !p.getId().equals(viewerId)) paid = List.of();
                     return new PlayerDto(p.getId(), p.getName(), p.getRole(), sum(paid.stream().map(PaymentDto::amount)),
-                            p.isInTournament(), att, paid, admin ? p.getPhone() : null);
+                            p.isInTournament(), att, paid, p.getPhone());
                 })
                 .toList();
 
@@ -155,8 +169,7 @@ public class LedgerService {
                         tournamentPayments.findAll(BY_POSITION).stream()
                                 .map(x -> new PaymentDto(x.getId(), x.getDate(), x.getAmount(), x.getMethod(), x.getNote()))
                                 .toList(), parseIntOr(s.get(MATCH_COUNT), DEFAULT_MATCH_COUNT)),
-                settingsDto, parseTwelfth(s.get(TWELFTH)), parseBatting(s), storedMatches(),
-                admin || "all".equals(settingsDto.statsVisibility()) ? storedStats() : Map.of());
+                settingsDto, parseTwelfth(s.get(TWELFTH)), parseBatting(s), storedMatches(), storedStats());
     }
 
     /** Replaces the whole ledger with the given state (admin only). */

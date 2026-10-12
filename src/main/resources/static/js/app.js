@@ -34,7 +34,11 @@
   let saveTimer = null;
   let pollTimer = null;
   let draftNames = '';
-  let statsSel = 'league';                    // Stats tab: 'league' or a match id                        // unsent text in the Add players box
+  let statsSel = 'league';
+  let archive = null;                         // { id, name, archivedAt } while an archived season is open
+  let liveState = null;                       // the live ledger, kept while an archive is open
+  let seasons = null;
+  let seasonDraft = null;                     // name typed for the next archive                         // archived seasons list (null until loaded)                    // Stats tab: 'league' or a match id                        // unsent text in the Add players box
 
   const $ = sel => document.querySelector(sel);
 
@@ -104,10 +108,12 @@
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
-  const isAdmin = () => !!(session && session.admin && session.token);
+  // The admin edits the live ledger only; while an archived season is open everything is read-only.
+  const realAdmin = () => !!(session && session.admin && session.token);
+  const isAdmin = () => !archive && realAdmin();
   // Viewer access "own": viewers see only their own balance and payments.
-  const ownOnly = () => !isAdmin() && state && state.settings.viewerAccess === 'own';
-  const statsVisible = () => isAdmin() || (!!state && state.settings.statsVisibility === 'all');
+  const ownOnly = () => !realAdmin() && state && state.settings.viewerAccess === 'own';
+  const statsVisible = () => realAdmin() || (!!state && state.settings.statsVisibility === 'all');
   const seesMoneyOf = p => !ownOnly() || (myPlayer() || {}).id === p.id;
   const cur = () => state.settings.currency;
   const fmt = n => C.money(n, cur());
@@ -315,11 +321,86 @@
     try { state = await fetchLedger(); render(); } catch { /* the next poll will catch up */ }
   }
 
+  // ---------- season archive ----------
+  function seasonName() {
+    const month = new Date().toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+    return `${state.tournament.name.trim() || 'Season'} · ${month}`;
+  }
+
+  async function loadSeasons() {
+    try { seasons = await api('GET', '/api/seasons'); } catch { seasons = seasons || []; }
+    if (tab === 'settings') render();
+  }
+
+  // Saves the live ledger as a season; saves pending edits first so the copy is up to date.
+  async function archiveSeason(name) {
+    if (saveTimer) { clearTimeout(saveTimer); await flushSave(); }
+    const info = await api('POST', '/api/seasons', { name });
+    await loadSeasons();
+    return info;
+  }
+
+  async function openSeason(id) {
+    const info = (seasons || []).find(x => x.id === id);
+    if (!info) return;
+    try {
+      const data = normalize(await api('GET', '/api/seasons/' + encodeURIComponent(id)));
+      if (!archive) liveState = state;
+      archive = info;
+      state = data;
+      tab = 'summary';
+      statsSel = 'league';
+      sheet = null;
+      render();
+      animateView();
+      window.scrollTo({ top: 0 });
+    } catch {
+      toast('Could not open that season.');
+    }
+  }
+
+  async function leaveSeason() {
+    archive = null;
+    state = liveState || state;
+    liveState = null;
+    tab = 'settings';
+    sheet = null;
+    render();
+    try { state = await fetchLedger(); render(); } catch { /* keep what we had */ }
+  }
+
+  function archiveBar() {
+    if (!archive) return '';
+    return `<div class="archive-bar">
+      ${icon('<path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/>', 20)}
+      <span><strong>${esc(archive.name)}</strong><small>Archived season · ${esc(formatDate(archive.archivedAt.slice(0, 10)))} · read-only</small></span>
+      <button class="btn btn-gold" data-action="leave-season">Back to current season</button>
+    </div>`;
+  }
+
+  function seasonPanel() {
+    const list = seasons || [];
+    const admin = isAdmin();
+    return `<section class="panel season-panel">
+      <div class="panel-head"><h3>Season archive</h3><p class="muted">Past seasons, kept read-only. ${admin ? 'Starting a new series archives the current one first.' : ''}</p></div>
+      ${seasons === null ? '<p class="muted">Loading…</p>' : list.length ? `<ul class="season-list">${list.map(x => `<li>
+          <span class="season-icon">${icon('<path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/>', 18)}</span>
+          <span class="season-text"><strong>${esc(x.name)}</strong><small>Archived ${esc(formatDate(x.archivedAt.slice(0, 10)))}</small></span>
+          <button class="btn btn-ghost small" data-action="open-season" data-id="${esc(x.id)}">View</button>
+          ${admin ? `<button class="icon-btn danger" data-action="delete-season" data-id="${esc(x.id)}" aria-label="Delete ${esc(x.name)}">${X_ICON}</button>` : ''}
+        </li>`).join('')}</ul>` : '<p class="muted season-empty">No archived seasons yet.</p>'}
+      ${admin ? `<div class="season-new">
+        <input class="field" type="text" maxlength="120" value="${esc(seasonDraft === null ? seasonName() : seasonDraft)}" data-input="season-name" data-focus="season-name" aria-label="Season name">
+        <button class="btn btn-ghost" data-action="archive-season">Archive current season</button>
+      </div>` : ''}
+    </section>`;
+  }
+
   // ---------- polling (viewers) ----------
   function startPolling() {
     clearInterval(pollTimer);
     pollTimer = setInterval(async () => {
-      if (isAdmin() || document.visibilityState !== 'visible') return;
+      if (archive || isAdmin() || document.visibilityState !== 'visible') return;
       try {
         const d = await fetchLedger();
         if (comparable(d) !== comparable(state)) { state = d; render(); }
@@ -390,6 +471,7 @@
     setSaveStatus('');
     render();
     animateView();
+    loadSeasons();
     startPolling();
   }
 
@@ -402,7 +484,7 @@
     if (focusKey && typeof active.selectionStart === 'number') sel = [active.selectionStart, active.selectionEnd];
 
     document.body.classList.toggle('is-admin', isAdmin());
-    const shown = t => !t.statsTab || statsVisible();
+    const shown = t => (!t.statsTab || statsVisible()) && !(archive && t.id === 'settings');
     if (TABS.some(t => t.id === tab && !shown(t))) tab = 'summary';
     $('#tabs').innerHTML = TABS.filter(shown).map(t =>
       `<button class="tab ${t.id === tab ? 'active' : ''}" data-action="tab" data-tab="${t.id}" ${t.id === tab ? 'aria-current="page"' : ''}>
@@ -412,7 +494,7 @@
       : `<span class="badge badge-view">${icon('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>', 14)} ${esc(session.name)} · view only</span>`;
 
     const views = { summary: viewSummary, days: viewDays, stats: viewStats, players: viewPlayers, settings: viewSettings };
-    $('#view').innerHTML = (views[tab] || viewSummary)();
+    $('#view').innerHTML = archiveBar() + (views[tab] || viewSummary)();
     $('#sheet-root').innerHTML = sheet ? renderSheet() : '';
     document.body.classList.toggle('sheet-open', !!sheet);
 
@@ -706,7 +788,7 @@
 
   // The player this viewer is: their own pick, else a unique match on full name or first name.
   function myPlayer() {
-    if (isAdmin()) return null;
+    if (realAdmin()) return null;
     const chosen = readStore(ME_KEY);
     if (chosen === NOT_ME) return null;
     if (chosen && findPlayer(chosen)) return findPlayer(chosen);
@@ -718,7 +800,7 @@
   }
 
   function myBalance() {
-    if (isAdmin() || !state.players.length) return '';
+    if (realAdmin() || !state.players.length) return '';
     const me = myPlayer();
     if (!me) {
       return `<section class="me-card me-pick">
@@ -1281,7 +1363,7 @@
       { id: 'look', title: 'Appearance', note: 'How the app looks on this device.', cards: themePanel + installPanel() },
       { id: 'team', title: 'Team & payments', note: admin ? 'Where players pay and how shares are worked out.' : 'Where to send your payments.', cards: payPanel + prefs },
       admin && { id: 'access', title: 'Who can see what', note: 'What players see when they sign in with their name.', cards: accessPanel + statsPanel },
-      { id: 'data', title: 'Data', note: admin ? 'Backups, clean-up and resets.' : 'Keep a copy of the ledger.', cards: backupPanel + cleanupPanel + dangerPanel },
+      { id: 'data', title: 'Data', note: admin ? 'Backups, clean-up and resets.' : 'Keep a copy of the ledger.', cards: backupPanel + seasonPanel() + cleanupPanel + dangerPanel },
       { id: 'account', title: 'Account', note: 'Who is signed in on this device.', cards: accountPanel }
     ].filter(Boolean);
 
@@ -1858,6 +1940,29 @@
       commit();
       toast('All stats cleared.');
     },
+    'open-season'(el) { openSeason(el.dataset.id); },
+    'leave-season'() { leaveSeason(); },
+    async 'archive-season'() {
+      if (!isAdmin()) return;
+      const name = (seasonDraft === null ? seasonName() : seasonDraft).trim() || seasonName();
+      try {
+        await archiveSeason(name);
+        seasonDraft = null;
+        render();
+        toast(`“${name}” saved to the archive. The current season carries on.`);
+      } catch {
+        toast('Could not archive the season. Try again.');
+      }
+    },
+    async 'delete-season'(el) {
+      if (!isAdmin()) return;
+      const x = (seasons || []).find(s => s.id === el.dataset.id);
+      if (!x) return;
+      const ok = await confirmDialog(`Delete “${x.name}”?`, 'This archived season is removed for good.', 'Delete', true);
+      if (!ok) return;
+      try { await api('DELETE', '/api/seasons/' + encodeURIComponent(x.id)); } catch { toast('Could not delete it.'); }
+      await loadSeasons();
+    },
     'set-jump'(el) {
       const target = document.getElementById('set-' + el.dataset.id);
       if (target) window.scrollTo({ top: target.getBoundingClientRect().top + window.scrollY - 90, behavior: 'smooth' });
@@ -1989,8 +2094,15 @@
     export() { exportBackup(); },
     import() { $('#import-file').click(); },
     async 'new-series'() {
-      const ok = await confirmDialog('Start a new series?', 'Keeps players, names and roles. Clears attendance, payments, expenses, matches and stats, the league fee, advance and payments to management, and resets trainings to just Training 1.', 'Start new series', true);
+      const name = seasonName();
+      const ok = await confirmDialog('Start a new series?', `The current season is saved to the archive first as “${name}”. Then players, names and roles stay; attendance, payments, expenses, matches, stats, the league fee, advance and payments to management are cleared, and trainings reset to Training 1.`, 'Archive & start new', true);
       if (!ok) return;
+      try {
+        await archiveSeason(name);
+      } catch {
+        toast('Could not archive the season, so nothing was cleared. Try again.');
+        return;
+      }
       state.players.forEach(p => { p.att = {}; p.payments = []; });
       state.expenses = {};
       state.tournament = { name: '', fee: '', advance: '', matchCount: 5, payments: [] };
@@ -2000,7 +2112,7 @@
       state.battingOrder = {};
       state.trainings = [{ id: 't1', desc: '' }];
       commit();
-      toast('New series started.');
+      toast(`“${name}” archived. New series started.`);
     },
     async 'clear-all'() {
       const ok = await confirmDialog('Clear everything?', 'This removes all players, trainings, expenses, the tournament fee and payments. Save a backup first if you might need it.', 'Clear all', true);
@@ -2147,6 +2259,7 @@
       const el = e.target;
       const fn = el.dataset && inputs[el.dataset.input];
       if (el.id === 'add-names') { draftNames = el.value; return; }
+      if (el.dataset && el.dataset.input === 'season-name') { seasonDraft = el.value; return; }
       if (el.dataset && el.dataset.input === 'pick-me') { writeStore(ME_KEY, el.value || NOT_ME); refetchForViewer(); return; }
       if (!fn || !isAdmin()) return;
       fn(el);
