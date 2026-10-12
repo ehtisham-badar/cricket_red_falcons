@@ -1000,6 +1000,7 @@
       <div class="sheet-body">
         ${isMatch && isAdmin() ? `<div class="xi-actions">
           <button class="btn btn-ghost" data-action="random-xi" data-id="${esc(d.id)}">${DICE_ICON} Random XI + 12th</button>
+          ${s.n > 0 || twelfthId ? `<button class="btn btn-danger" data-action="clear-xi" data-id="${esc(d.id)}">${X_ICON} Clear XI</button>` : ''}
           ${s.n > 0 ? `<button class="btn btn-gold" data-action="share-xi" data-id="${esc(d.id)}">${IMAGE_ICON} Share Playing XI</button>` : ''}
         </div>
         ${s.n > 0 ? '' : '<p class="muted xi-hint">Mark who’s playing below, or pick at random, to share the Playing XI picture.</p>'}` : ''}
@@ -1262,6 +1263,19 @@
         state.twelfth[day] = p.id;
       }
       commit();
+    },
+    async 'clear-xi'(el) {
+      const day = C.MATCHES.find(m => m.id === el.dataset.id);
+      if (!day || !isAdmin()) return;
+      const n = state.players.filter(p => p.att[day.id]).length;
+      const ok = await confirmDialog(`Clear the XI for ${day.label}?`,
+        `Removes the ${n} playing${state.twelfth[day.id] ? ' and the 12th man' : ''}. Until a new XI is picked, this match's league fee${C.dayAmount(state, day.id) > 0 ? ' is split across everyone taking part, and its expenses aren\'t assigned to anyone' : ' is split across everyone taking part'}.`,
+        'Clear XI', true);
+      if (!ok) return;
+      state.players.forEach(p => { delete p.att[day.id]; });
+      delete state.twelfth[day.id];
+      commit();
+      toast(`${day.label} XI cleared.`);
     },
     async 'random-xi'(el) {
       const day = C.MATCHES.find(m => m.id === el.dataset.id);
