@@ -1104,7 +1104,7 @@
   function leagueLine(d, s) {
     const tour = C.tournamentStats(state);
     if (!(tour.fee > 0)) return '';
-    return `<p class="league-line">League fee for ${d.label}: <strong>${fmt(tour.perMatch)} ÷ ${s.n || '—'}${s.n ? ` = ${fmt(C.round2(tour.perMatch / s.n))} each` : ''}</strong>${s.n ? '' : ' · split across everyone until the XI is picked'}</p>`;
+    return `<p class="league-line">League fee for ${d.label}: <strong>${s.n ? `${fmt(tour.perMatch)} ÷ ${s.n} = ${fmt(C.round2(tour.perMatch / s.n))} each` : fmt(tour.perMatch)}</strong>${s.n ? '' : ' · split across everyone until the XI is picked'}</p>`;
   }
 
   function sheetDay() {
