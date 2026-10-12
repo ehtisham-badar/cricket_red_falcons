@@ -8,6 +8,7 @@
   const PAYMENT_METHODS = ['Cash', 'JazzCash', 'Easypaisa', 'Bank transfer', 'Other'];
   const SESSION_KEY = 'rf.session';
   const TAB_KEY = 'rf.tab';
+  const COLLAPSED_KEY = 'rf.collapsed';      // Days sections this viewer has folded: { training, match }
   const ME_KEY = 'rf.me';                     // viewer's chosen player id, or NOT_ME to show the picker
   const NOT_ME = '__none';
   const POLL_MS = 15000;
@@ -839,6 +840,7 @@
       </article>`;
     };
     const all = C.days(state);
+    const folded = readStore(COLLAPSED_KEY) || {};
     const trainings = all.filter(d => d.type === 'training');
     const matches = all.filter(d => d.type === 'match');
 
@@ -847,18 +849,26 @@
         admin ? `<button class="btn btn-primary" data-action="add-training">${icon('<path d="M12 5v14M5 12h14"/>', 18)} Add training</button>` : '')}
       ${warningBanner()}
       ${tournamentPanel()}
-      <section class="day-group">
-        <h3 class="group-head training">Trainings <span>${trainings.length}</span></h3>
-        <div class="day-grid">${trainings.map(card).join('')}</div>
+      <section class="day-group ${folded.training ? 'folded' : ''}">
+        <div class="group-row">${groupHead('training', 'Trainings', trainings.length)}</div>
+        ${folded.training ? '' : `<div class="day-grid">${trainings.map(card).join('')}</div>`}
       </section>
-      <section class="day-group">
+      <section class="day-group ${folded.match ? 'folded' : ''}">
         <div class="group-row">
-          <h3 class="group-head match">Matches <span>${matches.length}</span></h3>
+          ${groupHead('match', 'Matches', matches.length)}
           ${admin ? `<button class="btn btn-gold" data-action="add-match">${icon('<path d="M12 5v14M5 12h14"/>', 18)} Add match</button>` : ''}
         </div>
-        ${matches.length ? `<div class="day-grid matches">${matches.map(card).join('')}</div>`
+        ${folded.match ? '' : matches.length ? `<div class="day-grid matches">${matches.map(card).join('')}</div>`
           : `<p class="muted empty-matches">No matches yet.${admin ? ' Add one on match day.' : ''}</p>`}
       </section>`;
+  }
+
+  // A Days section heading that folds its cards away (remembered on this device).
+  function groupHead(type, title, count) {
+    const open = !(readStore(COLLAPSED_KEY) || {})[type];
+    return `<button class="group-head ${type}" data-action="fold-group" data-type="${type}" aria-expanded="${open}"
+      title="${open ? 'Minimise' : 'Expand'} ${title.toLowerCase()}">${title} <span>${count}</span>
+      <i class="fold-icon">${icon(open ? '<path d="m18 15-6-6-6 6"/>' : '<path d="m6 9 6 6 6-6"/>', 18)}</i></button>`;
   }
 
   function formatMatchDate(iso) {
@@ -1412,8 +1422,16 @@
       commit();
       toast(`Picked ${xi.length} players${shuffled[xi.length] ? ` and ${shuffled[xi.length].name} as 12th man` : ''}.`);
     },
+    'fold-group'(el) {
+      const folded = readStore(COLLAPSED_KEY) || {};
+      folded[el.dataset.type] = !folded[el.dataset.type];
+      writeStore(COLLAPSED_KEY, folded);
+      render();
+    },
     'add-match'() {
       if (!isAdmin()) return;
+      const folded = readStore(COLLAPSED_KEY) || {};
+      if (folded.match) { folded.match = false; writeStore(COLLAPSED_KEY, folded); }
       state.matches.push({ id: 'm' + rid(), date: today(), opponent: '', venue: '' });
       commit();
       toast(`Match ${state.matches.length} added — set its date and opponent.`);

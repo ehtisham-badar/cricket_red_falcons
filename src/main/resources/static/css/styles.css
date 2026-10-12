@@ -832,7 +832,15 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
 
 /* Days: trainings and matches in their own rows */
 .day-group + .day-group { margin-top: 28px; }
-.group-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; font-family: var(--head-font); font-size: 22px; }
+.group-head {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 14px; padding: 0;
+  border: 0; background: transparent; text-align: left; cursor: pointer;
+  font-family: var(--head-font); font-size: 22px;
+}
+.group-head .fold-icon { display: inline-grid; place-items: center; order: 3; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line-2); color: var(--muted); font-style: normal; transition: color .15s, border-color .15s, background .15s; }
+.group-head:hover .fold-icon { color: var(--text); border-color: currentColor; background: rgba(255, 255, 255, .04); }
+.group-head::after { order: 2; }
+.day-group.folded .group-row { margin-bottom: 0; }
 .group-head::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, var(--line-2), transparent); }
 .group-head span { display: inline-grid; place-items: center; min-width: 26px; height: 26px; padding: 0 8px; border-radius: var(--pill); font-family: var(--body-font); font-size: 13px; font-weight: 800; }
 .group-head.training { color: var(--red-soft); }
