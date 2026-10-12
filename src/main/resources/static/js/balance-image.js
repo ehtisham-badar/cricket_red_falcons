@@ -1,4 +1,4 @@
-// Draws the team's balances as one shareable PNG (a reminder picture for the WhatsApp group).
+// Draws the shareable PNGs for the WhatsApp group: the team's balances and a match's Playing XI.
 // Input rows are already calculated by the app; this file only does layout and drawing.
 (function (root) {
   const W = 1080;
@@ -56,6 +56,74 @@
     ctx.textAlign = prev;
   }
 
+  // Background, crest, club name, subtitle and a red–gold rule ending at headerH.
+  function drawHeader(ctx, H, logo, subtitle, dateText, headerH) {
+    // Background with a red glow behind the crest.
+    const bg = ctx.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, C.bgTop);
+    bg.addColorStop(1, C.bgBottom);
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+    const glow = ctx.createRadialGradient(170, 150, 10, 170, 150, 520);
+    glow.addColorStop(0, 'rgba(208,34,44,0.35)');
+    glow.addColorStop(1, 'rgba(208,34,44,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, W, H);
+
+    // Header: the whole crest, faded softly into the background (like the start screen).
+    const LOGO = 220;
+    if (logo) {
+      const crest = document.createElement('canvas');
+      crest.width = crest.height = LOGO;
+      const cc = crest.getContext('2d');
+      cc.drawImage(logo, 0, 0, LOGO, LOGO);
+      const fade = cc.createRadialGradient(LOGO / 2, LOGO / 2, LOGO * 0.36, LOGO / 2, LOGO / 2, LOGO * 0.5);
+      fade.addColorStop(0, 'rgba(0,0,0,1)');
+      fade.addColorStop(1, 'rgba(0,0,0,0)');
+      cc.globalCompositeOperation = 'destination-in';
+      cc.fillStyle = fade;
+      cc.fillRect(0, 0, LOGO, LOGO);
+      ctx.drawImage(crest, PAD - 24, 150 - LOGO / 2);
+    }
+    const tx = PAD + LOGO + 8;
+    const nameGrad = ctx.createLinearGradient(0, 90, 0, 160);
+    nameGrad.addColorStop(0, C.goldLight);
+    nameGrad.addColorStop(0.5, C.gold);
+    nameGrad.addColorStop(1, C.goldDeep);
+    ctx.fillStyle = nameGrad;
+    ctx.font = `76px ${HEAD}`;
+    ctx.fillText('RED FALCONS', tx, 122);
+    ctx.fillStyle = C.text;
+    ctx.font = `700 24px ${BODY}`;
+    spaced(ctx, subtitle, tx + 4, 182, 5);
+    ctx.fillStyle = C.muted;
+    ctx.font = `500 24px ${BODY}`;
+    ctx.fillText(dateText, tx + 4, 226);
+
+    // Red–gold rule under the header.
+    const rule = ctx.createLinearGradient(PAD, 0, W - PAD, 0);
+    rule.addColorStop(0, 'rgba(208,34,44,0)');
+    rule.addColorStop(0.2, C.red);
+    rule.addColorStop(0.5, C.gold);
+    rule.addColorStop(0.8, C.red);
+    rule.addColorStop(1, 'rgba(208,34,44,0)');
+    ctx.fillStyle = rule;
+    ctx.fillRect(PAD, headerH - 24, W - PAD * 2, 3);
+  }
+
+  function drawFooter(ctx, fy, title, link) {
+    ctx.fillStyle = C.line;
+    ctx.fillRect(PAD, fy, W - PAD * 2, 2);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = C.text;
+    ctx.font = `700 26px ${BODY}`;
+    ctx.fillText(title, W / 2, fy + 44);
+    ctx.fillStyle = C.gold;
+    ctx.font = `800 28px ${BODY}`;
+    ctx.fillText(link, W / 2, fy + 86);
+    ctx.textAlign = 'left';
+  }
+
   /**
    * @param {object} o
    * @param {{name: string, net: number, cells?: {text: string, color: string}[]}[]} o.rows
@@ -98,57 +166,7 @@
     const ctx = canvas.getContext('2d');
     ctx.textBaseline = 'middle';
 
-    // Background with a red glow behind the crest.
-    const bg = ctx.createLinearGradient(0, 0, 0, H);
-    bg.addColorStop(0, C.bgTop);
-    bg.addColorStop(1, C.bgBottom);
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, W, H);
-    const glow = ctx.createRadialGradient(170, 150, 10, 170, 150, 520);
-    glow.addColorStop(0, 'rgba(208,34,44,0.35)');
-    glow.addColorStop(1, 'rgba(208,34,44,0)');
-    ctx.fillStyle = glow;
-    ctx.fillRect(0, 0, W, H);
-
-    // Header: the whole crest, faded softly into the background (like the start screen).
-    const LOGO = 220;
-    if (logo) {
-      const crest = document.createElement('canvas');
-      crest.width = crest.height = LOGO;
-      const cc = crest.getContext('2d');
-      cc.drawImage(logo, 0, 0, LOGO, LOGO);
-      const fade = cc.createRadialGradient(LOGO / 2, LOGO / 2, LOGO * 0.36, LOGO / 2, LOGO / 2, LOGO * 0.5);
-      fade.addColorStop(0, 'rgba(0,0,0,1)');
-      fade.addColorStop(1, 'rgba(0,0,0,0)');
-      cc.globalCompositeOperation = 'destination-in';
-      cc.fillStyle = fade;
-      cc.fillRect(0, 0, LOGO, LOGO);
-      ctx.drawImage(crest, PAD - 24, 150 - LOGO / 2);
-    }
-    const tx = PAD + LOGO + 8;
-    const nameGrad = ctx.createLinearGradient(0, 90, 0, 160);
-    nameGrad.addColorStop(0, C.goldLight);
-    nameGrad.addColorStop(0.5, C.gold);
-    nameGrad.addColorStop(1, C.goldDeep);
-    ctx.fillStyle = nameGrad;
-    ctx.font = `76px ${HEAD}`;
-    ctx.fillText('RED FALCONS', tx, 122);
-    ctx.fillStyle = C.text;
-    ctx.font = `700 24px ${BODY}`;
-    spaced(ctx, 'CRICKET CLUB · BALANCES', tx + 4, 182, 5);
-    ctx.fillStyle = C.muted;
-    ctx.font = `500 24px ${BODY}`;
-    ctx.fillText(o.dateText, tx + 4, 226);
-
-    // Red–gold rule under the header.
-    const rule = ctx.createLinearGradient(PAD, 0, W - PAD, 0);
-    rule.addColorStop(0, 'rgba(208,34,44,0)');
-    rule.addColorStop(0.2, C.red);
-    rule.addColorStop(0.5, C.gold);
-    rule.addColorStop(0.8, C.red);
-    rule.addColorStop(1, 'rgba(208,34,44,0)');
-    ctx.fillStyle = rule;
-    ctx.fillRect(PAD, headerH - 24, W - PAD * 2, 3);
+    drawHeader(ctx, H, logo, 'CRICKET CLUB · BALANCES', o.dateText, headerH);
 
     // Summary chips.
     if (o.chips.length) {
@@ -289,20 +307,129 @@
       });
     }
 
-    // Footer
-    const fy = listTop + listH + PAY_H + 30;
-    ctx.fillStyle = C.line;
-    ctx.fillRect(PAD, fy, W - PAD * 2, 2);
-    ctx.textAlign = 'center';
-    ctx.fillStyle = C.text;
-    ctx.font = `700 26px ${BODY}`;
-    ctx.fillText('See your full breakdown', W / 2, fy + 44);
-    ctx.fillStyle = C.gold;
-    ctx.font = `800 28px ${BODY}`;
-    ctx.fillText(o.link, W / 2, fy + 86);
+    drawFooter(ctx, listTop + listH + PAY_H + 30, 'See your full breakdown', o.link);
 
     return new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
   }
 
-  root.RFBalanceImage = { render };
+  /**
+   * A match's Playing XI.
+   * @param {object} o
+   * @param {string} o.matchLabel                     e.g. "Match 1"
+   * @param {string} o.leagueName                     shown under the club name
+   * @param {string} [o.opponent], [o.when], [o.venue] optional details typed in before sharing
+   * @param {{name: string, role: string, captain: boolean, keeper: boolean}[]} o.players
+   * @param {string} o.link, o.logoSrc
+   * @returns {Promise<Blob>}
+   */
+  async function renderXI(o) {
+    await ensureFonts();
+    const logo = await loadImage(o.logoSrc);
+
+    const opponent = (o.opponent || '').trim();
+    const info = [o.when, o.venue].map(x => (x || '').trim()).filter(Boolean).join('  ·  ');
+    const headerH = 300;
+    const bannerTop = headerH + 10;
+    const bannerH = 120 + (opponent ? 56 : 0) + (info ? 44 : 0);
+    const listTop = bannerTop + bannerH + 36;
+    const ROW_H = 84;
+    const GAP = 10;
+    const listH = Math.max(o.players.length, 1) * (ROW_H + GAP);
+    const H = listTop + listH + 150;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    ctx.textBaseline = 'middle';
+    drawHeader(ctx, H, logo, 'CRICKET CLUB · PLAYING XI', o.leagueName, headerH);
+
+    // Match banner: match name, opponent, then date and venue.
+    roundRect(ctx, PAD, bannerTop, W - PAD * 2, bannerH, 22);
+    ctx.fillStyle = 'rgba(226,182,92,0.07)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(226,182,92,0.3)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.textAlign = 'center';
+    const titleGrad = ctx.createLinearGradient(0, bannerTop + 30, 0, bannerTop + 90);
+    titleGrad.addColorStop(0, C.goldLight);
+    titleGrad.addColorStop(1, C.gold);
+    ctx.fillStyle = titleGrad;
+    ctx.font = `60px ${HEAD}`;
+    ctx.fillText(o.matchLabel.toUpperCase(), W / 2, bannerTop + 66);
+    let by = bannerTop + 120;
+    if (opponent) {
+      ctx.fillStyle = C.text;
+      ctx.font = `800 36px ${BODY}`;
+      ctx.fillText(fit(ctx, 'vs ' + opponent, W - PAD * 2 - 60), W / 2, by + 6);
+      by += 56;
+    }
+    if (info) {
+      ctx.fillStyle = C.muted;
+      ctx.font = `600 24px ${BODY}`;
+      ctx.fillText(fit(ctx, info, W - PAD * 2 - 60), W / 2, by);
+    }
+    ctx.textAlign = 'left';
+
+    // Players, in squad order, with captain and keeper badges.
+    const colW = W - PAD * 2;
+    o.players.forEach((p, i) => {
+      const x = PAD;
+      const y = listTop + i * (ROW_H + GAP);
+      const cy = y + ROW_H / 2;
+      roundRect(ctx, x, y, colW, ROW_H, 18);
+      ctx.fillStyle = C.card;
+      ctx.fill();
+      ctx.fillStyle = p.captain ? C.gold : C.red;
+      roundRect(ctx, x, y, 6, ROW_H, 3);
+      ctx.fill();
+
+      const bx = x + 46;
+      ctx.beginPath();
+      ctx.arc(bx, cy, 22, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(208,34,44,0.18)';
+      ctx.fill();
+      ctx.fillStyle = C.due;
+      ctx.font = `800 20px ${BODY}`;
+      ctx.textAlign = 'center';
+      ctx.fillText(String(i + 1), bx, cy + 1);
+
+      const right = x + colW - 24;
+      ctx.textAlign = 'right';
+      ctx.fillStyle = C.muted;
+      ctx.font = `600 22px ${BODY}`;
+      const role = p.role || '';
+      ctx.fillText(role, right, cy + 1);
+      const roleW = role ? ctx.measureText(role).width + 24 : 0;
+      ctx.textAlign = 'left';
+
+      const badges = [p.captain && { text: 'C', bg: C.gold, color: '#1c1c21' }, p.keeper && { text: 'WK', bg: 'rgba(208,34,44,0.85)', color: C.text }].filter(Boolean);
+      ctx.font = `800 18px ${BODY}`;
+      const badgesW = badges.reduce((w, b) => w + ctx.measureText(b.text).width + 22 + 8, 0);
+      const nameX = x + 86;
+      ctx.fillStyle = C.text;
+      ctx.font = `700 30px ${BODY}`;
+      const name = fit(ctx, p.name || 'Unnamed', right - roleW - badgesW - 12 - nameX);
+      ctx.fillText(name, nameX, cy + 1);
+      let tx = nameX + ctx.measureText(name).width + 14;
+      ctx.font = `800 18px ${BODY}`;
+      badges.forEach(b => {
+        const w = ctx.measureText(b.text).width + 22;
+        roundRect(ctx, tx, cy - 16, w, 32, 16);
+        ctx.fillStyle = b.bg;
+        ctx.fill();
+        ctx.fillStyle = b.color;
+        ctx.textAlign = 'center';
+        ctx.fillText(b.text, tx + w / 2, cy + 1);
+        ctx.textAlign = 'left';
+        tx += w + 8;
+      });
+    });
+
+    drawFooter(ctx, listTop + listH + 30, 'Follow the team', o.link);
+    return new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+  }
+
+  root.RFBalanceImage = { render, renderXI };
 })(this);

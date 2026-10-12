@@ -425,21 +425,54 @@
     });
   }
 
-  function imageFileName() {
-    return `red-falcons-balances-${today()}.png`;
+  const BALANCES_IMAGE = { title: 'Balances picture', alt: 'Team balances', shareTitle: 'Red Falcons balances', fileName: () => `red-falcons-balances-${today()}.png` };
+
+  // ---------- Playing XI picture ----------
+  const XI_FIELDS = [
+    { key: 'opponent', label: 'Opponent', placeholder: 'e.g. Lahore Lions' },
+    { key: 'when', label: 'Date & time', placeholder: 'e.g. Sat 18 Oct · 3 pm' },
+    { key: 'venue', label: 'Venue', placeholder: 'e.g. Model Town ground' }
+  ];
+
+  // The players marked as playing this match, in squad order, with captain and keeper from their role.
+  function playingXI(dayId) {
+    return state.players.filter(p => p.att[dayId]).map(p => {
+      const keeper = /keeper/i.test(p.role);
+      return {
+        name: p.name,
+        role: keeper ? '' : p.role.replace(/\s*\+?\s*captain\s*/i, '').trim(),
+        captain: /captain/i.test(p.role),
+        keeper
+      };
+    });
   }
 
-  // Preview with Share (phones: straight into WhatsApp), Download and Copy.
-  function showImageDialog(blob) {
-    const file = new File([blob], imageFileName(), { type: 'image/png' });
+  function xiImage(day, details) {
+    return window.RFBalanceImage.renderXI({
+      matchLabel: day.label,
+      leagueName: leagueName(),
+      ...details,
+      players: playingXI(day.id),
+      link: location.host,
+      logoSrc: 'img/logo.jpeg'
+    });
+  }
+
+  // Preview with Share (phones: straight into WhatsApp), Download and Copy. With opts.fields, the
+  // typed details redraw the picture.
+  function showImageDialog(blob, opts = BALANCES_IMAGE) {
+    let file = new File([blob], opts.fileName(), { type: 'image/png' });
     const canShare = !!(navigator.canShare && navigator.canShare({ files: [file] }));
     const canCopy = !!(navigator.clipboard && window.ClipboardItem);
-    const url = URL.createObjectURL(blob);
+    let url = URL.createObjectURL(blob);
     const root = $('#dialog-root');
+    const fields = opts.fields || [];
     root.innerHTML = `<div class="dialog-backdrop"></div>
       <div class="dialog image-dialog" role="dialog" aria-modal="true" aria-labelledby="img-title">
-        <h3 id="img-title">Balances picture</h3>
-        <div class="image-preview"><img src="${url}" alt="Team balances"></div>
+        <h3 id="img-title">${esc(opts.title)}</h3>
+        ${fields.length ? `<div class="image-fields">${fields.map(f => `<label><span>${esc(f.label)}</span>
+          <input class="field" type="text" maxlength="60" placeholder="${esc(f.placeholder)}" data-img-field="${f.key}"></label>`).join('')}</div>` : ''}
+        <div class="image-preview"><img src="${url}" alt="${esc(opts.alt)}"></div>
         <div class="dialog-actions">
           <button class="btn btn-ghost" data-img="close">Close</button>
           ${canCopy ? `<button class="btn btn-ghost" data-img="copy">${COPY_ICON} Copy image</button>` : ''}
@@ -448,6 +481,20 @@
         </div>
       </div>`;
     const close = () => { root.innerHTML = ''; URL.revokeObjectURL(url); document.removeEventListener('keydown', onKey); };
+    let redrawTimer;
+    root.querySelectorAll('[data-img-field]').forEach(input => input.addEventListener('input', () => {
+      clearTimeout(redrawTimer);
+      redrawTimer = setTimeout(async () => {
+        const values = {};
+        root.querySelectorAll('[data-img-field]').forEach(i => { values[i.dataset.imgField] = i.value; });
+        blob = await opts.redraw(values);
+        if (!root.querySelector('.image-preview img')) return; // closed meanwhile
+        URL.revokeObjectURL(url);
+        url = URL.createObjectURL(blob);
+        file = new File([blob], opts.fileName(), { type: 'image/png' });
+        root.querySelector('.image-preview img').src = url;
+      }, 350);
+    }));
     const onKey = e => { if (e.key === 'Escape') close(); };
     document.addEventListener('keydown', onKey);
     root.querySelector('.dialog-backdrop').addEventListener('click', close);
@@ -455,7 +502,7 @@
     root.querySelector('[data-img="download"]').addEventListener('click', () => {
       const a = document.createElement('a');
       a.href = url;
-      a.download = imageFileName();
+      a.download = opts.fileName();
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -471,7 +518,7 @@
     });
     const shareBtn = root.querySelector('[data-img="share"]');
     if (shareBtn) shareBtn.addEventListener('click', () => {
-      navigator.share({ files: [file], title: 'Red Falcons balances' }).catch(() => { /* user cancelled */ });
+      navigator.share({ files: [file], title: opts.shareTitle }).catch(() => { /* user cancelled */ });
     });
   }
 
@@ -906,6 +953,9 @@
         <div><strong>${s.n > 0 && s.amount > 0 ? fmt(s.share) : '—'}</strong><span>each</span></div>
       </div>
       <div class="sheet-body">
+        ${isMatch && isAdmin() ? (s.n > 0
+          ? `<button class="btn btn-gold btn-block xi-btn" data-action="share-xi" data-id="${esc(d.id)}">${IMAGE_ICON} Share Playing XI (${s.n})</button>`
+          : '<p class="muted xi-hint">Mark who’s playing below to share the Playing XI picture.</p>') : ''}
         <h3 class="sub first">Expenses <span class="muted">${fmt(s.amount)}</span></h3>
         ${expenseRows(d)}
         <h3 class="sub">Attendance <span class="muted">${s.n}${isMatch ? ` / ${max}` : ''}</span></h3>
@@ -1243,6 +1293,25 @@
       }
     },
     'copy-team'() { copyText(teamMessage()); },
+    async 'share-xi'(el) {
+      const day = C.days(state).find(d => d.id === el.dataset.id);
+      if (!day) return;
+      const label = el.innerHTML;
+      el.disabled = true;
+      el.textContent = 'Creating…';
+      try {
+        showImageDialog(await xiImage(day, {}), {
+          title: `${day.label} · Playing XI`, alt: `${day.label} Playing XI`, shareTitle: `Red Falcons · ${day.label} Playing XI`,
+          fileName: () => `red-falcons-${day.short.toLowerCase()}-playing-xi.png`,
+          fields: XI_FIELDS, redraw: values => xiImage(day, values)
+        });
+      } catch (e) {
+        toast('Could not create the picture.');
+      } finally {
+        el.disabled = false;
+        el.innerHTML = label;
+      }
+    },
     'not-me'() { writeStore(ME_KEY, NOT_ME); render(); },
     'add-expense'(el) {
       if (!isAdmin()) return;

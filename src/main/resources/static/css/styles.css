@@ -721,3 +721,14 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
 .pref > input.field { max-width: 230px; }
 .field.invalid { border-color: rgba(255, 107, 107, .6); }
 .field-hint { margin: -4px 0 0; color: var(--neg); font-size: 13px; }
+
+/* Playing XI picture */
+.xi-btn { margin-bottom: 18px; }
+.xi-hint { margin: 0 0 18px; font-size: 14px; }
+.image-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.image-fields label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.image-fields span { color: var(--muted); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.image-fields .field { min-height: 40px; padding: 0 12px; font-size: 14px; }
+@media (max-width: 520px) {
+  .image-fields { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+}
