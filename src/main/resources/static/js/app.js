@@ -22,7 +22,7 @@
   const TABS = [
     { id: 'summary', label: 'Summary', icon: '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>' },
     { id: 'days', label: 'Days', icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' },
-    { id: 'stats', label: 'Stats', adminOnly: true, icon: '<path d="M18 20V10M12 20V4M6 20v-6"/>' },
+    { id: 'stats', label: 'Stats', statsTab: true, icon: '<path d="M18 20V10M12 20V4M6 20v-6"/>' },
     { id: 'players', label: 'Players', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>' },
     { id: 'settings', label: 'Settings', icon: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>' }
   ];
@@ -107,6 +107,7 @@
   const isAdmin = () => !!(session && session.admin && session.token);
   // Viewer access "own": viewers see only their own balance and payments.
   const ownOnly = () => !isAdmin() && state && state.settings.viewerAccess === 'own';
+  const statsVisible = () => isAdmin() || (!!state && state.settings.statsVisibility === 'all');
   const seesMoneyOf = p => !ownOnly() || (myPlayer() || {}).id === p.id;
   const cur = () => state.settings.currency;
   const fmt = n => C.money(n, cur());
@@ -229,7 +230,8 @@
         payBank: s.payBank != null ? s.payBank : DEFAULT_PAY_TO.payBank,
         payTitle: s.payTitle != null ? s.payTitle : DEFAULT_PAY_TO.payTitle,
         payAccount: s.payAccount != null ? s.payAccount : DEFAULT_PAY_TO.payAccount,
-        viewerAccess: s.viewerAccess === 'own' ? 'own' : 'all'
+        viewerAccess: s.viewerAccess === 'own' ? 'own' : 'all',
+        statsVisibility: s.statsVisibility === 'all' ? 'all' : 'admin'
       }
     };
   }
@@ -400,8 +402,9 @@
     if (focusKey && typeof active.selectionStart === 'number') sel = [active.selectionStart, active.selectionEnd];
 
     document.body.classList.toggle('is-admin', isAdmin());
-    if (!isAdmin() && TABS.some(t => t.id === tab && t.adminOnly)) tab = 'summary';
-    $('#tabs').innerHTML = TABS.filter(t => !t.adminOnly || isAdmin()).map(t =>
+    const shown = t => !t.statsTab || statsVisible();
+    if (TABS.some(t => t.id === tab && !shown(t))) tab = 'summary';
+    $('#tabs').innerHTML = TABS.filter(shown).map(t =>
       `<button class="tab ${t.id === tab ? 'active' : ''}" data-action="tab" data-tab="${t.id}" ${t.id === tab ? 'aria-current="page"' : ''}>
         ${icon(t.icon)}<span>${t.label}</span></button>`).join('');
     $('#who-badge').innerHTML = isAdmin()
@@ -1007,11 +1010,13 @@
       ${ms.map(m => `<button class="seg-btn ${statsSel === m.id ? 'on' : ''}" data-action="stats-sel" data-id="${esc(m.id)}">${m.label}${m.date ? `<small>${esc(formatDate(m.date).replace(/ \d{4}$/, ''))}</small>` : ''}</button>`).join('')}
     </div>`;
     const body = statsSel === 'league' ? leagueStatsView() : matchStatsView(ms.find(m => m.id === statsSel));
-    return `${pageHead('Stats', 'The Hundred: 5-ball overs, 20 overs an innings. Only you can see this for now.')}
+    const sub = 'The Hundred: 5-ball overs, 20 overs an innings.' + (isAdmin() ? (state.settings.statsVisibility === 'all' ? ' Players can see these too.' : ' Only you can see these — change it in Settings.') : '');
+    return `${pageHead('Stats', sub)}
       ${seg}${body}`;
   }
 
   function stepper(m, pid, key, label, value) {
+    if (!isAdmin()) return `<div class="step"><span class="step-label">${label}</span><span class="step-ro">${value}</span></div>`;
     const attrs = `data-m="${esc(m)}" data-p="${esc(pid)}" data-k="${key}"`;
     return `<div class="step">
       <span class="step-label">${label}</span>
@@ -1028,7 +1033,7 @@
     const runs = C.runsOf(e);
     const st = (key, label) => stepper(d.id, p.id, key, label, e[key]);
     const bat = C.batted(e) ? `${runs}${e.out ? '' : '*'} (${e.balls}) · SR ${SR(runs, e.balls)}` : 'Did not bat';
-    const bowl = e.bowlBalls > 0 ? `${e.wickets}/${e.bowlRuns} (${C.oversOf(e.bowlBalls)})` : '';
+    const bowl = C.bowled(e) ? `${e.wickets}/${C.concededOf(e)} (${C.oversOf(e.bowlBalls)})` : '';
     const field = [e.catches && `${e.catches} ct`, e.drops && `${e.drops} drop${e.drops > 1 ? 's' : ''}`].filter(Boolean).join(' · ');
     const tooFew = C.shotsOf(e) > e.balls;
     return `<article class="st-card ${twelfthMan ? 'twelfth' : ''}">
@@ -1038,13 +1043,14 @@
       </header>
       ${twelfthMan ? '' : `<div class="st-group bat">
         <div class="st-title"><span>Batting</span><strong>${runs} runs · SR ${SR(runs, e.balls)}</strong>
-          <button class="tog st-out ${e.out ? 'on' : ''}" data-action="stat-out" data-m="${esc(d.id)}" data-p="${esc(p.id)}" aria-pressed="${e.out}">${e.out ? 'Out' : 'Not out'}</button></div>
+          <button class="tog st-out ${e.out ? 'on' : ''} ${isAdmin() ? '' : 'ro'}" data-action="stat-out" data-m="${esc(d.id)}" data-p="${esc(p.id)}" aria-pressed="${e.out}" ${isAdmin() ? '' : 'disabled'}>${e.out ? 'Out' : 'Not out'}</button></div>
         <div class="st-steps">${st('balls', 'Balls')}${st('ones', '1s')}${st('twos', '2s')}${st('threes', '3s')}${st('fours', '4s')}${st('sixes', '6s')}</div>
         ${tooFew ? '<p class="st-warn">More scoring shots than balls faced.</p>' : ''}
       </div>
       <div class="st-group bowl">
-        <div class="st-title"><span>Bowling</span><strong>${C.oversOf(e.bowlBalls)} ov · ${e.wickets}/${e.bowlRuns} · Econ ${ECON(e.bowlRuns, e.bowlBalls)}</strong></div>
-        <div class="st-steps">${st('bowlBalls', 'Balls')}${st('bowlRuns', 'Runs')}${st('wickets', 'Wickets')}</div>
+        <div class="st-title"><span>Bowling</span><strong>${C.oversOf(e.bowlBalls)} ov · ${e.wickets}/${C.concededOf(e)} · Econ ${ECON(C.concededOf(e), e.bowlBalls)}</strong></div>
+        <div class="st-steps">${st('bowlBalls', 'Balls')}${st('bowlRuns', 'Runs off bat')}${st('wickets', 'Wickets')}${st('wides', 'Wides')}${st('noBalls', 'No-balls')}</div>
+        ${C.extrasOf(e) > 0 ? `<p class="st-extra">Extras ${C.extrasOf(e)} · conceded ${e.bowlRuns} + ${C.extrasOf(e)} = ${C.concededOf(e)}</p>` : ''}
       </div>`}
       <div class="st-group field">
         <div class="st-title"><span>Fielding</span></div>
@@ -1065,14 +1071,16 @@
     const sum = k => all.reduce((x, e) => x + e[k], 0);
     const runs = all.reduce((x, e) => x + C.runsOf(e), 0);
     const outs = all.filter(e => e.out).length;
+    const conceded = all.reduce((x, e) => x + C.concededOf(e), 0);
     return `<section class="st-match">
       <div class="st-summary">
         <div><span>${d.label}${info ? ` · ${esc(info)}` : ''}</span>
           <strong>${runs}/${outs}</strong><small>${sum('balls')} balls (${C.oversOf(sum('balls'))} ov) · SR ${SR(runs, sum('balls'))}</small></div>
-        <div><span>Bowling</span><strong>${sum('wickets')}/${sum('bowlRuns')}</strong><small>${C.oversOf(sum('bowlBalls'))} of 20 ov · Econ ${ECON(sum('bowlRuns'), sum('bowlBalls'))}</small></div>
+        <div><span>Bowling</span><strong>${sum('wickets')}/${conceded}</strong><small>${C.oversOf(sum('bowlBalls'))} of 20 ov · Econ ${ECON(conceded, sum('bowlBalls'))} · Extras ${sum('wides') + sum('noBalls')} (${sum('wides')} wd, ${sum('noBalls')} nb)</small></div>
         <div><span>Fielding</span><strong>${sum('catches')} ct</strong><small>${sum('drops')} dropped · ${sum('misfields')} misfields · ${sum('goodFielding')} good</small></div>
       </div>
-      <p class="muted st-hint">Tapping + on a 1, 2, 3, 4 or 6 also adds a ball faced. Runs are the sum of the shots (extras aren’t tracked).</p>
+      ${isAdmin() ? `<div class="st-tools"><p class="muted st-hint">Tapping + on a 1, 2, 3, 4 or 6 also adds a ball faced. A bowler’s balls are legal balls; wides and no-balls count as extras in runs conceded.</p>
+        <button class="btn btn-ghost" data-action="random-stats" data-id="${esc(d.id)}">${DICE_ICON} Random stats</button></div>` : ''}
       <div class="st-list">
         ${xi.map((p, i) => statCard(d, p, i + 1, false)).join('')}
         ${twelfth ? statCard(d, twelfth, 12, true) : ''}
@@ -1095,7 +1103,7 @@
     ];
     const name = t => `<td class="st-name">${esc(t.player.name)}</td>`;
     const batting = all.filter(t => t.innings > 0).sort((a, b) => b.runs - a.runs || (b.strikeRate || 0) - (a.strikeRate || 0));
-    const bowling = all.filter(t => t.bowlBalls > 0).sort((a, b) => b.wickets - a.wickets || (a.economy || 99) - (b.economy || 99));
+    const bowling = all.filter(t => t.bowlBalls > 0 || t.conceded > 0).sort((a, b) => b.wickets - a.wickets || (a.economy || 99) - (b.economy || 99));
     const fielding = all.filter(t => t.catches + t.drops + t.misfields + t.goodFielding > 0).sort((a, b) => b.catches - a.catches || a.drops - b.drops);
     const table = (title, head, rows) => `<section class="panel st-table">
       <div class="panel-head"><h3>${title}</h3></div>
@@ -1108,8 +1116,9 @@
         <td>${t.matches}</td><td>${t.innings}</td><td class="strong">${t.runs}</td><td>${t.balls}</td><td>${SR(t.runs, t.balls)}</td>
         <td>${t.high ? t.high.runs + (t.high.out ? '' : '*') : '—'}</td><td>${t.average == null ? '—' : t.average.toFixed(2)}</td>
         <td>${t.fours}</td><td>${t.sixes}</td><td>${t.ones}</td><td>${t.twos}</td><td>${t.threes}</td></tr>`))}
-      ${table('Bowling', ['Player', 'Overs', 'Runs', 'Wkts', 'Econ', 'Best'], bowling.map(t => `<tr>${name(t)}
-        <td>${C.oversOf(t.bowlBalls)}</td><td>${t.bowlRuns}</td><td class="strong">${t.wickets}</td><td>${ECON(t.bowlRuns, t.bowlBalls)}</td>
+      ${table('Bowling', ['Player', 'Overs', 'Runs', 'Wkts', 'Econ', 'Wd', 'NB', 'Best'], bowling.map(t => `<tr>${name(t)}
+        <td>${C.oversOf(t.bowlBalls)}</td><td>${t.conceded}</td><td class="strong">${t.wickets}</td><td>${ECON(t.conceded, t.bowlBalls)}</td>
+        <td>${t.wides}</td><td>${t.noBalls}</td>
         <td>${t.best ? `${t.best.wickets}/${t.best.runs}` : '—'}</td></tr>`))}
       ${table('Fielding', ['Player', 'Catches', 'Drops', 'Misfields', 'Good fielding'], fielding.map(t => `<tr>${name(t)}
         <td class="strong">${t.catches}</td><td>${t.drops}</td><td>${t.misfields}</td><td>${t.goodFielding}</td></tr>`))}`;
@@ -1224,9 +1233,25 @@
         <p class="muted access-hint">Players pick their name to sign in, so this keeps balances out of casual view — it isn’t a password lock.</p>
       </section>` : '';
 
+    const statsOpts = [
+      { id: 'admin', name: 'Admin only', note: 'Only you see the Stats tab' },
+      { id: 'all', name: 'Everyone', note: 'Players see Stats too (read-only)' }
+    ];
+    const statsPanel = admin ? `
+      <section class="panel">
+        <div class="panel-head"><h3>Stats visibility</h3><p class="muted">Who can open the Stats tab.</p></div>
+        <div class="theme-list" role="radiogroup" aria-label="Stats visibility">
+          ${statsOpts.map(o => `<button class="theme-opt access-opt ${s.statsVisibility === o.id ? 'on' : ''}" role="radio" aria-checked="${s.statsVisibility === o.id}" data-action="set-stats-visibility" data-value="${o.id}">
+            <span class="access-icon">${icon(o.id === 'admin' ? '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>' : '<path d="M18 20V10M12 20V4M6 20v-6"/>', 20)}</span>
+            <span class="theme-text"><strong>${o.name}</strong><small>${o.note}</small></span>
+            <span class="theme-check">${icon('<path d="M20 6 9 17l-5-5"/>', 16)}</span>
+          </button>`).join('')}
+        </div>
+      </section>` : '';
+
     return `
       ${pageHead('Settings', '')}
-      <div class="settings-grid">${themePanel}${installPanel()}${dataPanel}${payPanel}${accessPanel}${prefs}
+      <div class="settings-grid">${themePanel}${installPanel()}${dataPanel}${payPanel}${accessPanel}${statsPanel}${prefs}
         <section class="panel">
           <div class="panel-head"><h3>Signed in as ${isAdmin() ? 'Admin' : esc(session.name)}</h3></div>
           <button class="btn btn-ghost" data-action="logout">Switch user</button>
@@ -1577,6 +1602,82 @@
 
   // ---------- events ----------
   function findPlayer(id) { return state.players.find(p => p.id === id); }
+  // Believable Hundred stats for a match's XI: 100 balls batted and bowled (5-ball sets, at most 20 balls
+  // a bowler), wickets matched by outs and catches, a few extras and fielding moments. For trying things out.
+  function randomStats(dayId) {
+    const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+    const pick = list => list[Math.floor(Math.random() * list.length)];
+    const xi = battingOrderOf(dayId);
+    const twelfth = findPlayer(state.twelfth[dayId]);
+    const out = {};
+    const entry = p => (out[p.id] = out[p.id] || C.statOf({}, '', ''));
+    xi.forEach(entry);
+    if (twelfth) entry(twelfth);
+
+    // Batting: wickets lost decide how many batted; the top order faces more of the 100 balls.
+    const lost = rnd(3, Math.min(9, xi.length - 2));
+    const batters = xi.slice(0, Math.min(xi.length, lost + 2));
+    const weights = batters.map((_, i) => (i < 2 ? 1.6 : i < 5 ? 1.25 : 0.6) * (0.5 + Math.random()));
+    const total = weights.reduce((x, w) => x + w, 0);
+    let left = 100;
+    const ballsFaced = weights.map((w, i) => {
+      const b = i === weights.length - 1 ? left : Math.max(1, Math.min(left - (weights.length - 1 - i), Math.round(100 * w / total)));
+      left -= b;
+      return b;
+    });
+    // The last batter in is always not out, plus one other; everyone else was dismissed.
+    const notOut = new Set([batters.length - 1, rnd(0, batters.length - 2)]);
+    batters.forEach((p, i) => {
+      const e = entry(p);
+      e.balls = ballsFaced[i];
+      for (let b = 0; b < e.balls; b++) {
+        const r = Math.random();
+        if (r < 0.36) continue;                 // dot
+        else if (r < 0.70) e.ones++;
+        else if (r < 0.80) e.twos++;
+        else if (r < 0.82) e.threes++;
+        else if (r < 0.94) e.fours++;
+        else e.sixes++;
+      }
+      e.out = !notOut.has(i);
+    });
+
+    // Bowling: 20 sets of 5 balls over 5–6 bowlers (bowlers and all-rounders first), max 4 sets each.
+    const keen = xi.filter(p => /bowler|all-rounder/i.test(p.role));
+    const others = xi.filter(p => !keen.includes(p));
+    const bowlers = keen.concat(others).slice(0, Math.min(xi.length, rnd(5, 6)));
+    const sets = bowlers.map(() => 1);
+    for (let n = bowlers.length; n < 20; n++) {
+      const open = sets.map((c, i) => c < 4 ? i : -1).filter(i => i >= 0);
+      if (!open.length) break;
+      sets[pick(open)]++;
+    }
+    const taken = rnd(3, 9);
+    const credited = Math.max(0, taken - rnd(0, 1));   // the odd run-out isn't the bowler's
+    bowlers.forEach((p, i) => {
+      const e = entry(p);
+      e.bowlBalls = sets[i] * 5;
+      e.bowlRuns = Math.round(e.bowlBalls * (0.95 + Math.random() * 0.6));
+      e.wides = Math.random() < 0.6 ? rnd(0, 3) : 0;
+      e.noBalls = Math.random() < 0.25 ? 1 : 0;
+    });
+    for (let w = 0; w < credited; w++) {
+      const byBalls = bowlers.flatMap((p, i) => Array(sets[i]).fill(p));
+      entry(pick(byBalls)).wickets++;
+    }
+
+    // Fielding: about half the wickets are catches (keepers a little more often), plus drops and misfields.
+    const keeper = xi.find(p => /keeper/i.test(p.role));
+    const fielders = xi.concat(twelfth ? [twelfth] : []);
+    for (let c = 0; c < Math.round(taken * (0.4 + Math.random() * 0.3)); c++) {
+      entry(keeper && Math.random() < 0.3 ? keeper : pick(fielders)).catches++;
+    }
+    for (let i = rnd(0, 2); i > 0; i--) entry(pick(fielders)).drops++;
+    for (let i = rnd(0, 3); i > 0; i--) entry(pick(fielders)).misfields++;
+    for (let i = rnd(1, 4); i > 0; i--) entry(pick(fielders)).goodFielding++;
+    return out;
+  }
+
   function statEntry(m, pid) {
     state.stats[m] = state.stats[m] || {};
     if (!state.stats[m][pid]) state.stats[m][pid] = C.statOf(state, m, pid);
@@ -1684,6 +1785,24 @@
       if (shuffled[xi.length]) state.twelfth[day.id] = shuffled[xi.length].id; else delete state.twelfth[day.id];
       commit();
       toast(`Picked ${xi.length} players${shuffled[xi.length] ? ` and ${shuffled[xi.length].name} as 12th man` : ''}.`);
+    },
+    'set-stats-visibility'(el) {
+      if (!isAdmin()) return;
+      state.settings.statsVisibility = el.dataset.value === 'all' ? 'all' : 'admin';
+      commit();
+      toast(state.settings.statsVisibility === 'all' ? 'Players can now see the Stats tab.' : 'Stats are now admin only.');
+    },
+    async 'random-stats'(el) {
+      const d = findMatch(el.dataset.id);
+      if (!d || !isAdmin()) return;
+      const has = Object.keys(state.stats[d.id] || {}).length > 0;
+      if (has) {
+        const ok = await confirmDialog(`Random stats for ${d.label}?`, 'This replaces every stat already entered for this match.', 'Replace with random', true);
+        if (!ok) return;
+      }
+      state.stats[d.id] = randomStats(d.id);
+      commit();
+      toast(`${d.label}: random stats added.`);
     },
     'set-access'(el) {
       if (!isAdmin()) return;

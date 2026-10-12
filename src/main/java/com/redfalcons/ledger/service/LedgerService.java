@@ -42,6 +42,8 @@ public class LedgerService {
     private static final String MATCH_COUNT = "tournamentMatches";
     private static final String VIEWER_ACCESS = "viewerAccess";
     private static final Set<String> VIEWER_ACCESS_VALUES = Set.of("all", "own");
+    private static final String STATS_VISIBILITY = "statsVisibility";
+    private static final Set<String> STATS_VISIBILITY_VALUES = Set.of("admin", "all");
     private static final int DEFAULT_MATCH_COUNT = 5;
     private static final Set<String> CURRENCIES = Set.of("Rs ", "PKR ", "₹", "$", "£");
     private static final Sort BY_POSITION = Sort.by("position");
@@ -143,7 +145,8 @@ public class LedgerService {
                 s.getOrDefault("currency", "Rs "),
                 parseIntOr(s.get("maxPerMatch"), 11),
                 Boolean.parseBoolean(s.getOrDefault("roundUp", "false")),
-                s.get("payBank"), s.get("payTitle"), s.get("payAccount"), s.getOrDefault(VIEWER_ACCESS, "all"));
+                s.get("payBank"), s.get("payTitle"), s.get("payAccount"), s.getOrDefault(VIEWER_ACCESS, "all"),
+                s.getOrDefault(STATS_VISIBILITY, "admin"));
 
         return new LedgerDto("cricket-ledger", 3, Instant.now().toString(), playerDtos,
                 dayTotals(expenseMap), trainingDtos, expenseMap,
@@ -153,7 +156,7 @@ public class LedgerService {
                                 .map(x -> new PaymentDto(x.getId(), x.getDate(), x.getAmount(), x.getMethod(), x.getNote()))
                                 .toList(), parseIntOr(s.get(MATCH_COUNT), DEFAULT_MATCH_COUNT)),
                 settingsDto, parseTwelfth(s.get(TWELFTH)), parseBatting(s), storedMatches(),
-                admin ? storedStats() : Map.of());
+                admin || "all".equals(settingsDto.statsVisibility()) ? storedStats() : Map.of());
     }
 
     /** Replaces the whole ledger with the given state (admin only). */
@@ -291,7 +294,8 @@ public class LedgerService {
                 int[] n = {
                         count(st.balls()), count(st.ones()), count(st.twos()), count(st.threes()), count(st.fours()), count(st.sixes()),
                         count(st.bowlBalls()), count(st.bowlRuns()), count(st.wickets()),
-                        count(st.catches()), count(st.drops()), count(st.misfields()), count(st.goodFielding())};
+                        count(st.catches()), count(st.drops()), count(st.misfields()), count(st.goodFielding()),
+                        count(st.wides()), count(st.noBalls())};
                 boolean out = Boolean.TRUE.equals(st.out());
                 if (out || Arrays.stream(n).anyMatch(v -> v > 0)) {
                     MatchStat row = new MatchStat(match, playerId, n, out);
@@ -328,6 +332,9 @@ public class LedgerService {
             if (s.roundUp() != null) {
                 settings.save(new Setting("roundUp", s.roundUp().toString()));
             }
+            if (s.statsVisibility() != null && STATS_VISIBILITY_VALUES.contains(s.statsVisibility())) {
+                settings.save(new Setting(STATS_VISIBILITY, s.statsVisibility()));
+            }
             if (s.viewerAccess() != null && VIEWER_ACCESS_VALUES.contains(s.viewerAccess())) {
                 settings.save(new Setting(VIEWER_ACCESS, s.viewerAccess()));
             }
@@ -352,7 +359,7 @@ public class LedgerService {
         stats.findAll().forEach(x -> {
             int[] n = x.numbers();
             out.computeIfAbsent(x.getMatchId(), k -> new LinkedHashMap<>()).put(x.getPlayerId(),
-                    new StatDto(n[0], n[1], n[2], n[3], n[4], n[5], x.isOut(), n[6], n[7], n[8], n[9], n[10], n[11], n[12]));
+                    new StatDto(n[0], n[1], n[2], n[3], n[4], n[5], x.isOut(), n[6], n[7], n[8], n[9], n[10], n[11], n[12], n[13], n[14]));
         });
         return out;
     }

@@ -53,10 +53,14 @@ public record LedgerDto(
     public record MatchDto(String id, String date, String opponent, String venue) {
     }
 
-    /** Batting (balls faced and scoring shots), bowling (balls, runs conceded, wickets) and fielding counts. */
+    /**
+     * Batting (balls faced and scoring shots), bowling (legal balls, runs off the bat, wickets, and the wides and
+     * no-balls given away) and fielding counts.
+     */
     public record StatDto(Integer balls, Integer ones, Integer twos, Integer threes, Integer fours, Integer sixes, Boolean out,
                           Integer bowlBalls, Integer bowlRuns, Integer wickets,
-                          Integer catches, Integer drops, Integer misfields, Integer goodFielding) {
+                          Integer catches, Integer drops, Integer misfields, Integer goodFielding,
+                          Integer wides, Integer noBalls) {
     }
 
     public record TrainingDto(String id, String desc) {
@@ -65,8 +69,10 @@ public record LedgerDto(
     /**
      * The pay* fields are the account players send money to; null means never set. {@code viewerAccess}
      * is "all" (viewers see everyone's balances) or "own" (only their own; others' payments aren't sent).
+     * {@code statsVisibility} is "admin" (stats are sent to the admin only) or "all".
      */
     public record SettingsDto(String currency, Integer maxPerMatch, Boolean roundUp,
-                              String payBank, String payTitle, String payAccount, String viewerAccess) {
+                              String payBank, String payTitle, String payAccount, String viewerAccess,
+                              String statsVisibility) {
     }
 }

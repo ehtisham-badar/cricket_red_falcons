@@ -32,6 +32,10 @@ public class MatchStat {
     @Column(name = "bowl_runs")
     private int bowlRuns;
     private int wickets;
+    /** Extras the player gave away as a bowler; nullable so the columns could be added to existing rows. */
+    private Integer wides;
+    @Column(name = "no_balls")
+    private Integer noBalls;
 
     private int catches;
     private int drops;
@@ -49,6 +53,7 @@ public class MatchStat {
         this.balls = n[0]; this.ones = n[1]; this.twos = n[2]; this.threes = n[3]; this.fours = n[4]; this.sixes = n[5];
         this.bowlBalls = n[6]; this.bowlRuns = n[7]; this.wickets = n[8];
         this.catches = n[9]; this.drops = n[10]; this.misfields = n[11]; this.goodFielding = n[12];
+        this.wides = n[13]; this.noBalls = n[14];
         this.out = out;
     }
 
@@ -56,7 +61,8 @@ public class MatchStat {
     public String getMatchId() { return matchId; }
     public String getPlayerId() { return playerId; }
     public int[] numbers() {
-        return new int[] { balls, ones, twos, threes, fours, sixes, bowlBalls, bowlRuns, wickets, catches, drops, misfields, goodFielding };
+        return new int[] { balls, ones, twos, threes, fours, sixes, bowlBalls, bowlRuns, wickets, catches, drops, misfields, goodFielding,
+                wides == null ? 0 : wides, noBalls == null ? 0 : noBalls };
     }
     public boolean isOut() { return out; }
 }
