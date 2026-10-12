@@ -406,12 +406,6 @@ h1, h2, h3 { margin: 0; font-weight: 400; }
     linear-gradient(160deg, #24242a, var(--card));
   box-shadow: var(--shadow);
 }
-.tour-panel::after {
-  content: ''; position: absolute; right: -40px; top: -50px; width: 220px; height: 220px; pointer-events: none;
-  background: url("../img/logo.jpeg") center / cover; opacity: .06; transform: rotate(-10deg);
-  -webkit-mask-image: radial-gradient(circle, #000 40%, transparent 68%); mask-image: radial-gradient(circle, #000 40%, transparent 68%);
-}
-.tour-panel > * { position: relative; z-index: 1; }
 
 .lg-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; flex-wrap: wrap; margin-bottom: 18px; }
 .lg-title { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 320px; }
