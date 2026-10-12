@@ -1016,3 +1016,9 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
 .theme-text small { color: var(--muted); font-size: 13px; }
 .theme-check { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line-2); color: transparent; }
 .theme-opt.on .theme-check { background: var(--gold); border-color: var(--gold); color: var(--on-gold); }
+
+/* Viewer access */
+.access-opt { grid-template-columns: 44px minmax(0, 1fr) 28px; }
+.access-icon { display: inline-grid; place-items: center; width: 44px; height: 38px; border-radius: 10px; background: rgba(var(--hi-rgb), .05); color: var(--gold); }
+.access-hint { margin: 12px 0 0; font-size: 13px; }
+.private-note { margin: 0 0 18px; padding: 14px; border-radius: var(--radius); border: 1px dashed var(--line-2); color: var(--muted); text-align: center; font-size: 14px; }

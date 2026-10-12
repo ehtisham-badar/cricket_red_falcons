@@ -54,8 +54,11 @@ public record LedgerDto(
     public record TrainingDto(String id, String desc) {
     }
 
-    /** The pay* fields are the account players send money to; null means never set. */
+    /**
+     * The pay* fields are the account players send money to; null means never set. {@code viewerAccess}
+     * is "all" (viewers see everyone's balances) or "own" (only their own; others' payments aren't sent).
+     */
     public record SettingsDto(String currency, Integer maxPerMatch, Boolean roundUp,
-                              String payBank, String payTitle, String payAccount) {
+                              String payBank, String payTitle, String payAccount, String viewerAccess) {
     }
 }

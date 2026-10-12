@@ -21,6 +21,6 @@ public class CorsConfig implements WebMvcConfigurer {
         registry.addMapping("/api/**")
                 .allowedOrigins(origins)
                 .allowedMethods("GET", "POST", "PUT")
-                .allowedHeaders("Content-Type", LedgerController.TOKEN_HEADER);
+                .allowedHeaders("Content-Type", LedgerController.TOKEN_HEADER, LedgerController.VIEWER_HEADER);
     }
 }

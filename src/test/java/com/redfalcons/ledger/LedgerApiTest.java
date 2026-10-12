@@ -31,6 +31,11 @@ class LedgerApiTest {
 
     private final HttpClient http = HttpClient.newHttpClient();
 
+    private HttpResponse<String> viewerGet(String viewer) throws Exception {
+        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/ledger"))
+                .header("X-Viewer", viewer).GET().build(), HttpResponse.BodyHandlers.ofString());
+    }
+
     private HttpResponse<String> send(String method, String path, String body, String token) throws Exception {
         HttpRequest.Builder b = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
                 .header("Content-Type", "application/json")
@@ -109,6 +114,18 @@ class LedgerApiTest {
                 .contains("{\"id\":\"x1\",\"date\":\"2026-10-12\",\"amount\":\"1500\",\"method\":\"Cash\",\"note\":\"first\"}")
                 .contains("{\"id\":\"x2\",\"date\":\"\",\"amount\":\"500.5\"")
                 .contains("\"payments\":[{\"id\":\"legacy-pay-p2\",\"date\":\"\",\"amount\":\"2000\",\"method\":\"\",\"note\":\"Paid before payment history\"}]");
+
+        // With viewer access "own", a viewer only gets their own payments; the admin still gets all.
+        String privateLedger = """
+                {"players":[{"id":"p1","name":"Babar","att":{},"payments":[{"id":"x1","date":"","amount":"700","method":"","note":""}]},
+                            {"id":"p2","name":"Rizwan","att":{},"payments":[{"id":"x2","date":"","amount":"900","method":"","note":""}]}],
+                 "settings":{"viewerAccess":"own"}}
+                """;
+        assertThat(send("PUT", "/api/ledger", privateLedger, token).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"viewerAccess\":\"own\"").doesNotContain("\"700\"").doesNotContain("\"900\"");
+        assertThat(viewerGet("p1").body()).contains("\"amount\":\"700\"").doesNotContain("\"900\"");
+        assertThat(send("GET", "/api/ledger", null, token).body()).contains("\"700\"").contains("\"900\"");
+        assertThat(send("PUT", "/api/ledger", "{\"players\":[],\"settings\":{\"viewerAccess\":\"all\"}}", token).statusCode()).isEqualTo(200);
 
         // Phone numbers reach only the admin, and a save without them keeps the stored ones.
         String withPhone = """

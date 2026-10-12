@@ -37,6 +37,8 @@ import java.util.regex.Pattern;
 public class LedgerService {
 
     private static final String MATCH_COUNT = "tournamentMatches";
+    private static final String VIEWER_ACCESS = "viewerAccess";
+    private static final Set<String> VIEWER_ACCESS_VALUES = Set.of("all", "own");
     private static final int DEFAULT_MATCH_COUNT = 5;
     private static final Set<String> CURRENCIES = Set.of("Rs ", "PKR ", "₹", "$", "£");
     private static final Sort BY_POSITION = Sort.by("position");
@@ -82,12 +84,17 @@ public class LedgerService {
     /** The full ledger for the admin. */
     @Transactional(readOnly = true)
     public LedgerDto load() {
-        return load(true);
+        return load(true, null);
     }
 
-    /** The ledger; players' phone numbers are left out unless {@code admin}. */
+    /**
+     * The ledger; players' phone numbers are left out unless {@code admin}. With viewer access "own", a
+     * viewer only gets the payments of the player they say they are ({@code viewerId}); attendance stays,
+     * since everyone's shares depend on it.
+     */
     @Transactional(readOnly = true)
-    public LedgerDto load(boolean admin) {
+    public LedgerDto load(boolean admin, String viewerId) {
+        boolean ownOnly = !admin && "own".equals(settings.findById(VIEWER_ACCESS).map(Setting::getValue).orElse("all"));
         Map<String, List<PaymentDto>> paymentsByPlayer = new HashMap<>();
         payments.findAll(BY_POSITION).forEach(x -> paymentsByPlayer
                 .computeIfAbsent(x.getPlayerId(), k -> new ArrayList<>())
@@ -98,6 +105,7 @@ public class LedgerService {
                     Map<String, Boolean> att = new LinkedHashMap<>();
                     p.getAttended().forEach(d -> att.put(d, true));
                     List<PaymentDto> paid = paymentsByPlayer.getOrDefault(p.getId(), legacyPayments(p.getId(), p.getPaid()));
+                    if (ownOnly && !p.getId().equals(viewerId)) paid = List.of();
                     return new PlayerDto(p.getId(), p.getName(), p.getRole(), sum(paid.stream().map(PaymentDto::amount)),
                             p.isInTournament(), att, paid, admin ? p.getPhone() : null);
                 })
@@ -128,7 +136,7 @@ public class LedgerService {
                 s.getOrDefault("currency", "Rs "),
                 parseIntOr(s.get("maxPerMatch"), 11),
                 Boolean.parseBoolean(s.getOrDefault("roundUp", "false")),
-                s.get("payBank"), s.get("payTitle"), s.get("payAccount"));
+                s.get("payBank"), s.get("payTitle"), s.get("payAccount"), s.getOrDefault(VIEWER_ACCESS, "all"));
 
         return new LedgerDto("cricket-ledger", 3, Instant.now().toString(), playerDtos,
                 dayTotals(expenseMap), trainingDtos, expenseMap,
@@ -289,6 +297,9 @@ public class LedgerService {
             }
             if (s.roundUp() != null) {
                 settings.save(new Setting("roundUp", s.roundUp().toString()));
+            }
+            if (s.viewerAccess() != null && VIEWER_ACCESS_VALUES.contains(s.viewerAccess())) {
+                settings.save(new Setting(VIEWER_ACCESS, s.viewerAccess()));
             }
             List<String> pay = Arrays.asList(s.payBank(), s.payTitle(), s.payAccount());
             for (int i = 0; i < PAY_KEYS.size(); i++) {

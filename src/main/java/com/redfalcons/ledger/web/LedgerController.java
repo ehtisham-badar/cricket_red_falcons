@@ -12,6 +12,8 @@ import java.util.Map;
 public class LedgerController {
 
     static final String TOKEN_HEADER = "X-Admin-Token";
+    /** The player id a viewer says they are; with viewer access "own", only their payments are sent. */
+    static final String VIEWER_HEADER = "X-Viewer";
 
     private final LedgerService service;
     private final AdminAuth auth;
@@ -42,8 +44,9 @@ public class LedgerController {
     }
 
     @GetMapping("/ledger")
-    public LedgerDto get(@RequestHeader(value = TOKEN_HEADER, required = false) String token) {
-        return service.load(auth.isValidToken(token));
+    public LedgerDto get(@RequestHeader(value = TOKEN_HEADER, required = false) String token,
+                         @RequestHeader(value = VIEWER_HEADER, required = false) String viewer) {
+        return service.load(auth.isValidToken(token), viewer);
     }
 
     @PutMapping("/ledger")

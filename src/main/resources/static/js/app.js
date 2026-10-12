@@ -63,6 +63,9 @@
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
   const isAdmin = () => !!(session && session.admin && session.token);
+  // Viewer access "own": viewers see only their own balance and payments.
+  const ownOnly = () => !isAdmin() && state && state.settings.viewerAccess === 'own';
+  const seesMoneyOf = p => !ownOnly() || (myPlayer() || {}).id === p.id;
   const cur = () => state.settings.currency;
   const fmt = n => C.money(n, cur());
   const fmtNet = n => C.signedMoney(n, cur());
@@ -173,7 +176,8 @@
         roundUp: !!s.roundUp,
         payBank: s.payBank != null ? s.payBank : DEFAULT_PAY_TO.payBank,
         payTitle: s.payTitle != null ? s.payTitle : DEFAULT_PAY_TO.payTitle,
-        payAccount: s.payAccount != null ? s.payAccount : DEFAULT_PAY_TO.payAccount
+        payAccount: s.payAccount != null ? s.payAccount : DEFAULT_PAY_TO.payAccount,
+        viewerAccess: s.viewerAccess === 'own' ? 'own' : 'all'
       }
     };
   }
@@ -187,6 +191,11 @@
   async function api(method, path, body, opts = {}) {
     const headers = { 'Content-Type': 'application/json' };
     if (session && session.token) headers['X-Admin-Token'] = session.token;
+    else {
+      // Which player this viewer is, so private ledgers send them their own payments.
+      const me = readStore(ME_KEY);
+      if (me && me !== NOT_ME) headers['X-Viewer'] = me;
+    }
     const res = await fetch(API + path, { method, headers, body: body ? JSON.stringify(body) : undefined, ...opts });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -244,6 +253,13 @@
       api('PUT', '/api/ledger', state, { keepalive: true }).catch(() => {});
     }
   });
+
+  // After a viewer says who they are, a private ledger has to be fetched again with their id.
+  async function refetchForViewer() {
+    render();
+    if (!ownOnly()) return;
+    try { state = await fetchLedger(); render(); } catch { /* the next poll will catch up */ }
+  }
 
   // ---------- polling (viewers) ----------
   function startPolling() {
@@ -307,6 +323,9 @@
         if (!s.admin) { session = { ...session, admin: false, token: null }; writeStore(SESSION_KEY, session); }
       }
       state = await fetchLedger();
+      // A private ledger only sends a viewer their own payments: once we know who they are, ask again.
+      const me = ownOnly() && myPlayer();
+      if (me && readStore(ME_KEY) !== me.id) { writeStore(ME_KEY, me.id); state = await fetchLedger(); }
     } catch (e) {
       showSplash();
       $('#login-error').textContent = 'Could not load the ledger. Is the server running?';
@@ -691,7 +710,7 @@
           ${t.tournamentFee > 0 ? '' : `<small>${admin ? 'Set it on the Days tab' : 'Not set'}</small>`}</div>
         <div><span>${admin ? 'I have paid management' : 'Paid to management'}</span><strong class="pos">${fmt(t.sentToManagement)}</strong></div>
         <div><span>Still owed to management</span><strong class="${t.managementDue > 0 ? 'neg' : ''}">${fmt(t.managementDue)}</strong></div>
-        <div><span>${admin ? 'In my account' : 'With the manager'}</span><strong class="${t.cashInHand < 0 ? 'neg' : ''}">${fmtNet(t.cashInHand).replace(/^\+/, '')}</strong>
+        <div ${ownOnly() ? 'hidden' : ''}><span>${admin ? 'In my account' : 'With the manager'}</span><strong class="${t.cashInHand < 0 ? 'neg' : ''}">${fmtNet(t.cashInHand).replace(/^\+/, '')}</strong>
           <small>Collected ${fmt(t.collected)} − sent ${fmt(t.sentToManagement)}${t.daySpent - t.fronted > 0 ? ` − expenses ${fmt(t.daySpent - t.fronted)}` : ''}</small></div>
       </div>
       <h4 class="league-sub">Payments to management</h4>
@@ -716,11 +735,12 @@
 
     const rows = state.players.map((p, i) => {
       const c = C.playerCalc(state, p, stats, fmt, tour);
-      const adv = advanceNow(p, c.net);
-      const row = `<button class="prow" data-net="${netClass(c.net)}" data-action="open-player" data-id="${esc(p.id)}">
+      const shown = seesMoneyOf(p);
+      const adv = shown ? advanceNow(p, c.net) : 0;
+      const row = `<button class="prow" data-net="${shown ? netClass(c.net) : 'zero'}" data-action="open-player" data-id="${esc(p.id)}">
         <span class="sr">${i + 1}</span>
         <span class="pname"><strong>${esc(p.name) || '<em>Unnamed</em>'}</strong><small>${esc(p.role) || '—'}${C.inTournament(p) ? '' : ' · not in tournament'}${adv > 0 ? ` · <span class="adv-due">advance ${fmt(adv)}</span>` : ''}</small></span>
-        <span class="pnet ${netClass(c.net)}"><strong>${fmtNet(c.net)}</strong><small>${netText(c.net)}</small></span>
+        ${shown ? `<span class="pnet ${netClass(c.net)}"><strong>${fmtNet(c.net)}</strong><small>${netText(c.net)}</small></span>` : '<span class="pnet zero"><small>Private</small></span>'}
       </button>`;
       return admin && c.net < 0
         ? `<div class="prow-wrap">${row}<button class="icon-btn wa" data-action="share-player" data-id="${esc(p.id)}" aria-label="Send ${esc(p.name)} a reminder on WhatsApp" title="${waNumber(p.phone) ? `Send reminder to ${esc(p.phone)}` : 'Send reminder (no number saved — pick the chat)'}">${WA_ICON}</button></div>`
@@ -745,26 +765,26 @@
                   <td class="sticky">${i + 1}</td><td class="sticky sticky-2 name-cell">${esc(p.name)}</td>
                   ${days.map(d => `<td class="dot-cell">${p.att[d.id] ? `<span class="dot ${d.type}" title="${d.type === 'match' ? 'Played' : 'Arrived'}"></span>` : isTwelfth(p, d) ? '<span class="dot twelfth" title="12th man"></span>' : '<span class="dot-empty"></span>'}</td>`).join('')}
                   <td class="league-cell">${tour.charges[p.id].amount > 0 ? fmt(tour.charges[p.id].amount) : '—'}</td>
-                  <td>${fmt(c.cost)}</td><td>${fmt(c.paid)}</td><td>${c.credit > 0 ? fmt(c.credit) : '—'}</td>
-                  <td class="${netClass(c.net)} strong">${fmtNet(c.net)}</td></tr>`;
+                  ${seesMoneyOf(p) ? `<td>${fmt(c.cost)}</td><td>${fmt(c.paid)}</td><td>${c.credit > 0 ? fmt(c.credit) : '—'}</td>
+                  <td class="${netClass(c.net)} strong">${fmtNet(c.net)}</td>` : '<td>—</td><td>—</td><td>—</td><td class="zero">Private</td>'}</tr>`;
               }).join('')}
             </tbody>
             <tfoot><tr><td class="sticky"></td><td class="sticky sticky-2">Attended</td>
               ${days.map(d => `<td>${stats[d.id].n}</td>`).join('')}<td>${fmt(Object.values(tour.charges).reduce((x, c) => x + c.amount, 0))}</td>
-              <td>${fmt(t.spent)}</td><td>${fmt(t.collected)}</td><td>${t.fronted > 0 ? fmt(t.fronted) : '—'}</td><td></td></tr></tfoot>
+              <td>${fmt(t.spent)}</td><td>${ownOnly() ? '—' : fmt(t.collected)}</td><td>${t.fronted > 0 ? fmt(t.fronted) : '—'}</td><td></td></tr></tfoot>
           </table>
         </div>
       </section>` : '';
 
     return `
-      ${pageHead('Summary', `${state.players.length} player${state.players.length === 1 ? '' : 's'} · ${state.trainings.length} training${state.trainings.length === 1 ? '' : 's'} · 5 matches`,
+      ${pageHead('Summary', `${state.players.length} player${state.players.length === 1 ? '' : 's'} · ${state.trainings.length} training${state.trainings.length === 1 ? '' : 's'} · ${state.matches.length} match${state.matches.length === 1 ? '' : 'es'}`,
         admin && state.players.length ? `<div class="share-row">
           <button class="btn btn-gold" data-action="share-image">${IMAGE_ICON} Share as image</button>
           <button class="btn btn-whatsapp" data-action="share-team">${WA_ICON} Send as text</button>
           <button class="btn btn-ghost" data-action="copy-team">${COPY_ICON} Copy</button></div>` : '')}
       ${myBalance()}
       ${leagueBlock()}
-      <div class="stats">${cards.map(c => `<div class="stat ${c.cls}"><span>${c.label}</span><strong>${c.value}</strong><small>${esc(c.note)}</small></div>`).join('')}</div>
+      <div class="stats" ${ownOnly() ? 'hidden' : ''}>${cards.map(c => `<div class="stat ${c.cls}"><span>${c.label}</span><strong>${c.value}</strong><small>${esc(c.note)}</small></div>`).join('')}</div>
       ${warningBanner()}
       <div class="summary-grid">
         <section class="panel">
@@ -1014,9 +1034,26 @@
         </div>
       </section>`;
 
+    const access = [
+      { id: 'all', name: 'Everyone’s balances', note: 'Viewers see the whole team’s money' },
+      { id: 'own', name: 'Only their own', note: 'Viewers see just their balance and payments' }
+    ];
+    const accessPanel = admin ? `
+      <section class="panel">
+        <div class="panel-head"><h3>Viewer access</h3><p class="muted">What players see when they sign in with their name. Attendance and expenses stay visible to all.</p></div>
+        <div class="theme-list" role="radiogroup" aria-label="Viewer access">
+          ${access.map(a => `<button class="theme-opt access-opt ${s.viewerAccess === a.id ? 'on' : ''}" role="radio" aria-checked="${s.viewerAccess === a.id}" data-action="set-access" data-access="${a.id}">
+            <span class="access-icon">${icon(a.id === 'all' ? '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>' : '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>', 20)}</span>
+            <span class="theme-text"><strong>${a.name}</strong><small>${a.note}</small></span>
+            <span class="theme-check">${icon('<path d="M20 6 9 17l-5-5"/>', 16)}</span>
+          </button>`).join('')}
+        </div>
+        <p class="muted access-hint">Players pick their name to sign in, so this keeps balances out of casual view — it isn’t a password lock.</p>
+      </section>` : '';
+
     return `
       ${pageHead('Settings', '')}
-      <div class="settings-grid">${themePanel}${dataPanel}${payPanel}${prefs}
+      <div class="settings-grid">${themePanel}${dataPanel}${payPanel}${accessPanel}${prefs}
         <section class="panel">
           <div class="panel-head"><h3>Signed in as ${isAdmin() ? 'Admin' : esc(session.name)}</h3></div>
           <button class="btn btn-ghost" data-action="logout">Switch user</button>
@@ -1244,19 +1281,19 @@
         <button class="icon-btn" data-action="close-sheet" aria-label="Close">${X_ICON}</button>
       </header>
       <div class="sheet-body">
-        <div class="net-hero ${netClass(c.net)}">
+        ${seesMoneyOf(p) ? `<div class="net-hero ${netClass(c.net)}">
           <span>${netText(c.net)}</span>
           <strong>${fmtNet(c.net)}</strong>
           <small>${sumLine}</small>
         </div>
-        ${advanceStatus(p, c.net)}
+        ${advanceStatus(p, c.net)}` : '<p class="private-note">Balances are private — you can only see your own.</p>'}
         ${admin ? `<div class="share-row">
           <button class="btn btn-whatsapp" data-action="share-player" data-id="${esc(p.id)}">${WA_ICON} ${c.net < 0 ? 'Send reminder' : 'Send on WhatsApp'}</button>
           <button class="btn btn-ghost" data-action="copy-player" data-id="${esc(p.id)}">${COPY_ICON} Copy</button>
         </div>` : ''}
         ${fields}
-        <h3 class="sub">Payments <span class="muted">${fmt(c.paid)}</span></h3>
-        ${paymentRows(p)}
+        ${seesMoneyOf(p) ? `<h3 class="sub">Payments <span class="muted">${fmt(c.paid)}</span></h3>
+        ${paymentRows(p)}` : ''}
         <h3 class="sub">Attendance</h3>
         <div class="att-grid">
           ${days.map(d => `<div class="att-cell ${d.type}"><span>${d.label}</span>${toggleButton(p, d, stats)}</div>`).join('')}
@@ -1469,6 +1506,11 @@
       commit();
       toast(`Picked ${xi.length} players${shuffled[xi.length] ? ` and ${shuffled[xi.length].name} as 12th man` : ''}.`);
     },
+    'set-access'(el) {
+      if (!isAdmin()) return;
+      state.settings.viewerAccess = el.dataset.access === 'own' ? 'own' : 'all';
+      commit();
+    },
     'set-theme'(el) {
       writeStore(THEME_KEY, el.dataset.theme);
       applyTheme(el.dataset.theme);
@@ -1631,7 +1673,7 @@
         el.innerHTML = label;
       }
     },
-    'not-me'() { writeStore(ME_KEY, NOT_ME); render(); },
+    'not-me'() { writeStore(ME_KEY, NOT_ME); refetchForViewer(); },
     'add-expense'(el) {
       if (!isAdmin()) return;
       const day = el.dataset.day;
@@ -1697,7 +1739,7 @@
       const el = e.target;
       const fn = el.dataset && inputs[el.dataset.input];
       if (el.id === 'add-names') { draftNames = el.value; return; }
-      if (el.dataset && el.dataset.input === 'pick-me') { writeStore(ME_KEY, el.value || NOT_ME); render(); return; }
+      if (el.dataset && el.dataset.input === 'pick-me') { writeStore(ME_KEY, el.value || NOT_ME); refetchForViewer(); return; }
       if (!fn || !isAdmin()) return;
       fn(el);
       commit();
