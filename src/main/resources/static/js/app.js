@@ -52,6 +52,7 @@
     `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
   const X_ICON = icon('<path d="M18 6 6 18M6 6l12 12"/>', 18);
   const IMAGE_ICON = icon('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>', 18);
+  const DICE_ICON = icon('<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="16" cy="16" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="16" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="16" r="1.2" fill="currentColor"/>', 18);
   const COPY_ICON = icon('<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>', 18);
   const WA_ICON = icon('<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>', 18);
 
@@ -60,7 +61,7 @@
 
   function emptyState() {
     return {
-      players: [], trainings: [{ id: 't1', desc: '' }], expenses: {}, tournament: { name: '', fee: '', advance: '', payments: [] },
+      players: [], trainings: [{ id: 't1', desc: '' }], expenses: {}, tournament: { name: '', fee: '', advance: '', payments: [] }, twelfth: {},
       settings: { currency: 'Rs ', maxPerMatch: 11, roundUp: false, ...DEFAULT_PAY_TO }
     };
   }
@@ -108,8 +109,15 @@
     const ids = new Set(players.map(p => p.id));
     const expenses = expensesFrom(d);
     Object.values(expenses).forEach(list => list.forEach(e => { if (!ids.has(e.paidBy)) e.paidBy = ''; }));
+    // match id -> the 12th man's player id; never someone also playing that match
+    const twelfth = {};
+    Object.entries(d.twelfth || {}).forEach(([match, id]) => {
+      const p = players.find(x => x.id === id);
+      if (C.MATCHES.some(m => m.id === match) && p && !p.att[match]) twelfth[match] = id;
+    });
     return {
       players,
+      twelfth,
       trainings: d.trainings && d.trainings.length ? d.trainings.map(t => ({ id: t.id, desc: t.desc || '' })) : [{ id: 't1', desc: '' }],
       expenses,
       tournament: {
@@ -130,8 +138,8 @@
   }
 
   function comparable(d) {
-    const { players, trainings, expenses, tournament, settings } = d;
-    return JSON.stringify({ players, trainings, expenses, tournament, settings });
+    const { players, trainings, expenses, tournament, settings, twelfth } = d;
+    return JSON.stringify({ players, trainings, expenses, tournament, settings, twelfth });
   }
 
   // ---------- API ----------
@@ -457,12 +465,18 @@
     });
   }
 
+  function twelfthMan(dayId) {
+    const p = findPlayer(state.twelfth[dayId]);
+    return p ? { name: p.name, role: /keeper/i.test(p.role) ? 'Wicket-keeper' : p.role.replace(/\s*\+?\s*captain\s*/i, '').trim() } : null;
+  }
+
   function xiImage(day, details) {
     return window.RFBalanceImage.renderXI({
       matchLabel: day.label,
       leagueName: leagueName(),
       ...details,
       players: playingXI(day.id),
+      twelfth: twelfthMan(day.id),
       link: location.host,
       logoSrc: 'img/logo.jpeg'
     });
@@ -676,7 +690,7 @@
                 const c = C.playerCalc(state, p, stats, fmt, tour);
                 return `<tr data-action="open-player" data-id="${esc(p.id)}">
                   <td class="sticky">${i + 1}</td><td class="sticky sticky-2 name-cell">${esc(p.name)}</td>
-                  ${days.map(d => `<td class="dot-cell">${p.att[d.id] ? `<span class="dot ${d.type}" title="${d.type === 'match' ? 'Played' : 'Arrived'}"></span>` : '<span class="dot-empty"></span>'}</td>`).join('')}
+                  ${days.map(d => `<td class="dot-cell">${p.att[d.id] ? `<span class="dot ${d.type}" title="${d.type === 'match' ? 'Played' : 'Arrived'}"></span>` : isTwelfth(p, d) ? '<span class="dot twelfth" title="12th man"></span>' : '<span class="dot-empty"></span>'}</td>`).join('')}
                   <td class="dot-cell">${C.inTournament(p) ? '<span class="dot tour" title="In tournament"></span>' : '<span class="dot-empty"></span>'}</td>
                   <td>${fmt(c.cost)}</td><td>${fmt(c.paid)}</td><td>${c.credit > 0 ? fmt(c.credit) : '—'}</td>
                   <td class="${netClass(c.net)} strong">${fmtNet(c.net)}</td></tr>`;
@@ -761,7 +775,7 @@
     const cards = C.days(state).map(d => {
       const s = stats[d.id];
       const items = C.dayExpenses(state, d.id).filter(e => e.item || C.num(e.amount) > 0);
-      const count = d.type === 'match' ? `${s.n} / ${max} played` : `${s.n} arrived`;
+      const count = d.type === 'match' ? `${s.n} / ${max} played${state.twelfth[d.id] ? ' + 12th' : ''}` : `${s.n} arrived`;
       const share = s.n > 0 && s.amount > 0 ? `${fmt(s.share)} each` : '—';
       const removable = admin && d.type === 'training' && state.trainings.length > 1;
       return `<article class="day-card ${d.type}">
@@ -895,9 +909,16 @@
       <div class="sheet" role="dialog" aria-modal="true">${body}</div>`;
   }
 
-  function toggleButton(p, d, stats) {
+  const isTwelfth = (p, d) => d.type === 'match' && state.twelfth[d.id] === p.id;
+
+  // plain: always Played / Not played (the match sheet shows the 12th man with its own button).
+  function toggleButton(p, d, stats, plain = false) {
     const on = !!p.att[d.id];
     const isMatch = d.type === 'match';
+    if (!on && !plain && isTwelfth(p, d)) {
+      return `<button class="tog match twelfth ${!isAdmin() ? 'ro' : ''}" data-action="toggle-att" data-player="${esc(p.id)}" data-day="${esc(d.id)}"
+        ${!isAdmin() ? 'disabled' : ''} title="12th man — not charged for ${d.label}">12th man</button>`;
+    }
     const max = state.settings.maxPerMatch;
     const full = isMatch && !on && stats[d.id].n >= max;
     const disabled = !isAdmin() || full;
@@ -942,11 +963,16 @@
     const isMatch = d.type === 'match';
     const max = state.settings.maxPerMatch;
     const full = isMatch && s.n >= max;
+    const twelfthId = isMatch ? state.twelfth[d.id] : null;
     const rows = state.players.map((p, i) => `
-      <div class="att-row ${p.att[d.id] ? 'is-on' : ''}">
+      <div class="att-row ${p.att[d.id] ? 'is-on' : ''} ${twelfthId === p.id ? 'is-twelfth' : ''}">
         <span class="sr">${i + 1}</span>
         <span class="pname"><strong>${esc(p.name)}</strong><small>${esc(p.role) || '—'}</small></span>
-        ${toggleButton(p, d, stats)}
+        <span class="att-btns">
+          ${isMatch && isAdmin() ? `<button class="tog twelfth-tog ${twelfthId === p.id ? 'on' : ''}" data-action="toggle-twelfth" data-player="${esc(p.id)}" data-day="${esc(d.id)}"
+            aria-pressed="${twelfthId === p.id}" title="${twelfthId === p.id ? 'Remove as 12th man' : 'Make 12th man (not charged)'}">12th</button>` : ''}
+          ${toggleButton(p, d, stats, isAdmin())}
+        </span>
       </div>`).join('');
     return `
       <header class="sheet-head ${d.type}">
@@ -963,9 +989,12 @@
         <div><strong>${s.n > 0 && s.amount > 0 ? fmt(s.share) : '—'}</strong><span>each</span></div>
       </div>
       <div class="sheet-body">
-        ${isMatch && isAdmin() ? (s.n > 0
-          ? `<button class="btn btn-gold btn-block xi-btn" data-action="share-xi" data-id="${esc(d.id)}">${IMAGE_ICON} Share Playing XI (${s.n})</button>`
-          : '<p class="muted xi-hint">Mark who’s playing below to share the Playing XI picture.</p>') : ''}
+        ${isMatch && isAdmin() ? `<div class="xi-actions">
+          <button class="btn btn-ghost" data-action="random-xi" data-id="${esc(d.id)}">${DICE_ICON} Random XI + 12th</button>
+          ${s.n > 0 ? `<button class="btn btn-gold" data-action="share-xi" data-id="${esc(d.id)}">${IMAGE_ICON} Share Playing XI</button>` : ''}
+        </div>
+        ${s.n > 0 ? '' : '<p class="muted xi-hint">Mark who’s playing below, or pick at random, to share the Playing XI picture.</p>'}` : ''}
+        ${twelfthId ? `<p class="twelfth-line">12th man: <strong>${esc(playerName(twelfthId))}</strong> · not charged for this match</p>` : ''}
         <h3 class="sub first">Expenses <span class="muted">${fmt(s.amount)}</span></h3>
         ${expenseRows(d)}
         <h3 class="sub">Attendance <span class="muted">${s.n}${isMatch ? ` / ${max}` : ''}</span></h3>
@@ -1128,7 +1157,8 @@
       amounts,
       trainings: state.trainings,
       expenses: state.expenses,
-      tournament: state.tournament
+      tournament: state.tournament,
+      twelfth: state.twelfth
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
@@ -1155,6 +1185,18 @@
     sheet = null;
     commit();
     toast('Backup restored.');
+  }
+
+  // Fisher–Yates with crypto randomness, so every player has the same chance.
+  function shuffle(list) {
+    const a = list.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const r = new Uint32Array(1);
+      crypto.getRandomValues(r);
+      const j = r[0] % (i + 1);
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
   }
 
   // ---------- events ----------
@@ -1194,8 +1236,41 @@
           return;
         }
         p.att[day.id] = true;
+        if (state.twelfth[day.id] === p.id) delete state.twelfth[day.id];
       }
       commit();
+    },
+    'toggle-twelfth'(el) {
+      if (!isAdmin()) return;
+      const p = findPlayer(el.dataset.player);
+      const day = el.dataset.day;
+      if (!p || !C.MATCHES.some(m => m.id === day)) return;
+      if (state.twelfth[day] === p.id) {
+        delete state.twelfth[day];
+      } else {
+        delete p.att[day];
+        state.twelfth[day] = p.id;
+      }
+      commit();
+    },
+    async 'random-xi'(el) {
+      const day = C.MATCHES.find(m => m.id === el.dataset.id);
+      if (!day) return;
+      const pool = state.players.filter(C.inTournament);
+      if (!pool.length) { toast('No players in the tournament to pick from.'); return; }
+      const picked = state.players.some(p => p.att[day.id]) || state.twelfth[day.id];
+      if (picked) {
+        const ok = await confirmDialog(`Pick a random XI for ${day.label}?`,
+          'This replaces who is playing and the 12th man. Any expenses for this match are split among the new XI.', 'Pick at random');
+        if (!ok) return;
+      }
+      const shuffled = shuffle(pool);
+      const xi = shuffled.slice(0, state.settings.maxPerMatch);
+      state.players.forEach(p => { delete p.att[day.id]; });
+      xi.forEach(p => { p.att[day.id] = true; });
+      if (shuffled[xi.length]) state.twelfth[day.id] = shuffled[xi.length].id; else delete state.twelfth[day.id];
+      commit();
+      toast(`Picked ${xi.length} players${shuffled[xi.length] ? ` and ${shuffled[xi.length].name} as 12th man` : ''}.`);
     },
     'add-training'() {
       if (!isAdmin()) return;
@@ -1233,6 +1308,7 @@
         'Remove', true);
       if (!ok) return;
       state.players = state.players.filter(x => x.id !== p.id);
+      Object.keys(state.twelfth).forEach(m => { if (state.twelfth[m] === p.id) delete state.twelfth[m]; });
       Object.values(state.expenses).forEach(list => list.forEach(e => { if (e.paidBy === p.id) e.paidBy = ''; }));
       commit();
     },
@@ -1244,6 +1320,7 @@
       state.players.forEach(p => { p.att = {}; p.payments = []; });
       state.expenses = {};
       state.tournament = { name: '', fee: '', advance: '', payments: [] };
+      state.twelfth = {};
       state.trainings = [{ id: 't1', desc: '' }];
       commit();
       toast('New series started.');

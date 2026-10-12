@@ -5,7 +5,8 @@ import java.util.Map;
 
 /**
  * Wire format, also used as the backup file. Version 3 adds {@code expenses}, {@code tournament} and
- * per-player {@code payments};
+ * per-player {@code payments}; {@code twelfth} maps a match id to its 12th man's player id (not charged
+ * for the match, and null on save keeps the stored ones);
  * {@code amounts} (per-day totals) is still written so older readers keep working, and is read
  * as a single expense per day when a file has no {@code expenses}.
  */
@@ -18,7 +19,8 @@ public record LedgerDto(
         List<TrainingDto> trainings,
         Map<String, List<ExpenseDto>> expenses,
         TournamentDto tournament,
-        SettingsDto settings) {
+        SettingsDto settings,
+        Map<String, String> twelfth) {
 
     /**
      * {@code paid} is the total of {@code payments}; files without payments are read from {@code paid}.

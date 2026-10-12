@@ -40,6 +40,8 @@ public class LedgerService {
     private static final String TOURNAMENT_NAME = "tournamentName";
     private static final String TOURNAMENT_ADVANCE = "tournamentAdvance";
     private static final List<String> PAY_KEYS = List.of("payBank", "payTitle", "payAccount");
+    /** 12th men, stored as "m1=playerId;m2=playerId". */
+    private static final String TWELFTH = "twelfthMen";
     /** Item name used when a legacy per-day amount is turned into an expense. */
     private static final String LEGACY_ITEM = "Amount spent";
     /** Note on the payment created from a "paid" total recorded before payments were itemised. */
@@ -124,7 +126,7 @@ public class LedgerService {
                         tournamentPayments.findAll(BY_POSITION).stream()
                                 .map(x -> new PaymentDto(x.getId(), x.getDate(), x.getAmount(), x.getMethod(), x.getNote()))
                                 .toList()),
-                settingsDto);
+                settingsDto, parseTwelfth(s.get(TWELFTH)));
     }
 
     /** Replaces the whole ledger with the given state (admin only). */
@@ -148,6 +150,10 @@ public class LedgerService {
 
         Set<String> validDays = new HashSet<>(trainingIds);
         validDays.addAll(MATCH_IDS);
+
+        // Without twelfth (an older app or backup file), keep the stored 12th men.
+        Map<String, String> twelfthIn = in.twelfth() != null ? in.twelfth()
+                : parseTwelfth(settings.findById(TWELFTH).map(Setting::getValue).orElse(null));
 
         // A save without phone numbers (an older app, or a backup file) keeps the stored ones.
         Map<String, String> storedPhones = new HashMap<>();
@@ -219,6 +225,16 @@ public class LedgerService {
         }
         tournamentPayments.saveAll(sent);
 
+        // A 12th man must be a known player who isn't also playing that match.
+        Map<String, Set<String>> attendedBy = new HashMap<>();
+        newPlayers.forEach(p -> attendedBy.put(p.getId(), p.getAttended()));
+        StringJoiner twelfth = new StringJoiner(";");
+        twelfthIn.forEach((match, playerId) -> {
+            Set<String> att = attendedBy.get(playerId);
+            if (MATCH_IDS.contains(match) && att != null && !att.contains(match)) twelfth.add(match + "=" + playerId);
+        });
+        settings.save(new Setting(TWELFTH, twelfth.toString()));
+
         SettingsDto s = in.settings();
         if (s != null) {
             if (s.currency() != null && CURRENCIES.contains(s.currency())) {
@@ -236,6 +252,16 @@ public class LedgerService {
             }
         }
         return load();
+    }
+
+    private static Map<String, String> parseTwelfth(String stored) {
+        Map<String, String> out = new LinkedHashMap<>();
+        if (stored == null || stored.isEmpty()) return out;
+        for (String pair : stored.split(";")) {
+            String[] kv = pair.split("=", 2);
+            if (kv.length == 2 && !kv[0].isEmpty() && !kv[1].isEmpty()) out.put(kv[0], kv[1]);
+        }
+        return out;
     }
 
     /** A "paid" total from before payments were itemised becomes one undated payment. */

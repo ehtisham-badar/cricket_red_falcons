@@ -120,6 +120,17 @@ class LedgerApiTest {
         assertThat(send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{},\"phone\":\"\"}]}", token).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/ledger", null, token).body()).contains("\"phone\":\"\"");
 
+        // A 12th man is kept per match; one who is also playing that match, or unknown, is dropped.
+        String withTwelfth = """
+                {"players":[{"id":"p1","name":"Babar","att":{"m1":true}},{"id":"p2","name":"Rizwan","att":{}}],
+                 "twelfth":{"m1":"p2","m2":"p1","m3":"ghost","t1":"p2"}}
+                """;
+        assertThat(send("PUT", "/api/ledger", withTwelfth, token).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"twelfth\":{\"m1\":\"p2\",\"m2\":\"p1\"}");
+        // A save without twelfth keeps them; one where the 12th man now plays drops that match.
+        assertThat(send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{\"m1\":true,\"m2\":true}},{\"id\":\"p2\",\"name\":\"Rizwan\",\"att\":{}}]}", token).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"twelfth\":{\"m1\":\"p2\"}");
+
         // Replacing again with fewer players removes the old ones and their attendance.
         assertThat(send("PUT", "/api/ledger", "{\"players\":[]}", token).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/ledger", null, null).body())

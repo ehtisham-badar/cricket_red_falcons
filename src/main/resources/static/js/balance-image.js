@@ -319,6 +319,7 @@
    * @param {string} o.leagueName                     shown under the club name
    * @param {string} [o.opponent], [o.when], [o.venue] optional details typed in before sharing
    * @param {{name: string, role: string, captain: boolean, keeper: boolean}[]} o.players
+   * @param {{name: string, role: string}} [o.twelfth]  the 12th man, drawn below the XI
    * @param {string} o.link, o.logoSrc
    * @returns {Promise<Blob>}
    */
@@ -335,7 +336,8 @@
     const ROW_H = 84;
     const GAP = 10;
     const listH = Math.max(o.players.length, 1) * (ROW_H + GAP);
-    const H = listTop + listH + 150;
+    const TWELFTH_H = o.twelfth ? 56 + ROW_H + GAP : 0;
+    const H = listTop + listH + TWELFTH_H + 150;
 
     const canvas = document.createElement('canvas');
     canvas.width = W;
@@ -427,7 +429,38 @@
       });
     });
 
-    drawFooter(ctx, listTop + listH + 30, 'Follow the team', o.link);
+    if (o.twelfth) {
+      const ly = listTop + listH + 22;
+      ctx.fillStyle = C.gold;
+      ctx.font = `800 18px ${BODY}`;
+      spaced(ctx, '12TH MAN', PAD + 4, ly, 3);
+      const y = ly + 34;
+      const cy = y + ROW_H / 2;
+      roundRect(ctx, PAD, y, colW, ROW_H, 18);
+      ctx.fillStyle = 'rgba(226,182,92,0.06)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(226,182,92,0.35)';
+      ctx.setLineDash([8, 6]);
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = C.gold;
+      ctx.font = `800 18px ${BODY}`;
+      ctx.textAlign = 'center';
+      ctx.fillText('12', PAD + 46, cy + 1);
+      const right = PAD + colW - 24;
+      ctx.textAlign = 'right';
+      ctx.fillStyle = C.muted;
+      ctx.font = `600 22px ${BODY}`;
+      ctx.fillText(o.twelfth.role || '', right, cy + 1);
+      const roleW = o.twelfth.role ? ctx.measureText(o.twelfth.role).width + 24 : 0;
+      ctx.textAlign = 'left';
+      ctx.fillStyle = C.text;
+      ctx.font = `700 30px ${BODY}`;
+      ctx.fillText(fit(ctx, o.twelfth.name || 'Unnamed', right - roleW - PAD - 86), PAD + 86, cy + 1);
+    }
+
+    drawFooter(ctx, listTop + listH + TWELFTH_H + 30, 'Follow the team', o.link);
     return new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
   }
 
