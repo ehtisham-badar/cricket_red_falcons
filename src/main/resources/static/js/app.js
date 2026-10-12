@@ -8,6 +8,12 @@
   const PAYMENT_METHODS = ['Cash', 'JazzCash', 'Easypaisa', 'Bank transfer', 'Other'];
   const SESSION_KEY = 'rf.session';
   const TAB_KEY = 'rf.tab';
+  const THEME_KEY = 'rf.theme';               // this device's theme id
+  const THEMES = [
+    { id: 'night', name: 'Falcon Night', note: 'Charcoal, falcon red and gold', bar: '#121215', colors: ['#111114', '#d0222c', '#e2b65c'] },
+    { id: 'pitch', name: 'Pitch Green', note: 'Cricket-field green and gold', bar: '#0c1511', colors: ['#0c1511', '#2f9e5e', '#e2b65c'] },
+    { id: 'day', name: 'Daylight', note: 'Light, for reading outdoors', bar: '#f5efe4', colors: ['#f5efe4', '#c81e28', '#b07f22'] }
+  ];
   const COLLAPSED_KEY = 'rf.collapsed';      // Days sections this viewer has folded: { training, match }
   const ME_KEY = 'rf.me';                     // viewer's chosen player id, or NOT_ME to show the picker
   const NOT_ME = '__none';
@@ -36,6 +42,20 @@
   }
   function writeStore(k, v) {
     try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, JSON.stringify(v)); } catch { /* ignore */ }
+  }
+
+  // ---------- theme ----------
+  function currentTheme() {
+    const id = readStore(THEME_KEY);
+    return THEMES.some(t => t.id === id) ? id : 'night';
+  }
+
+  function applyTheme(id) {
+    const theme = THEMES.find(t => t.id === id) || THEMES[0];
+    if (theme.id === 'night') delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = theme.id;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', theme.bar);
   }
 
   // ---------- helpers ----------
@@ -981,9 +1001,22 @@
         ${admin ? fields : `<dl class="kv">${fields}</dl>`}
       </section>`;
 
+    const current = currentTheme();
+    const themePanel = `
+      <section class="panel">
+        <div class="panel-head"><h3>Theme</h3><p class="muted">Changes the look on this device only.</p></div>
+        <div class="theme-list" role="radiogroup" aria-label="Theme">
+          ${THEMES.map(t => `<button class="theme-opt ${t.id === current ? 'on' : ''}" role="radio" aria-checked="${t.id === current}" data-action="set-theme" data-theme="${t.id}">
+            <span class="theme-swatch" style="background:${t.colors[0]}"><i style="background:${t.colors[1]}"></i><i style="background:${t.colors[2]}"></i></span>
+            <span class="theme-text"><strong>${t.name}</strong><small>${t.note}</small></span>
+            <span class="theme-check">${icon('<path d="M20 6 9 17l-5-5"/>', 16)}</span>
+          </button>`).join('')}
+        </div>
+      </section>`;
+
     return `
       ${pageHead('Settings', '')}
-      <div class="settings-grid">${dataPanel}${payPanel}${prefs}
+      <div class="settings-grid">${themePanel}${dataPanel}${payPanel}${prefs}
         <section class="panel">
           <div class="panel-head"><h3>Signed in as ${isAdmin() ? 'Admin' : esc(session.name)}</h3></div>
           <button class="btn btn-ghost" data-action="logout">Switch user</button>
@@ -1436,6 +1469,11 @@
       commit();
       toast(`Picked ${xi.length} players${shuffled[xi.length] ? ` and ${shuffled[xi.length].name} as 12th man` : ''}.`);
     },
+    'set-theme'(el) {
+      writeStore(THEME_KEY, el.dataset.theme);
+      applyTheme(el.dataset.theme);
+      render();
+    },
     'fold-group'(el) {
       const folded = readStore(COLLAPSED_KEY) || {};
       folded[el.dataset.type] = !folded[el.dataset.type];
@@ -1685,6 +1723,7 @@
     $('#continue-btn').addEventListener('click', () => enterApp());
   }
 
+  applyTheme(currentTheme());
   wireEvents();
   // Returning visitors go straight back in; the name screen is only for first visits and "Switch user".
   if (session) enterApp(); else showSplash();
