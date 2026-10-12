@@ -1155,19 +1155,38 @@
   function viewSettings() {
     const admin = isAdmin();
     const s = state.settings;
-    const dataPanel = `
+    const I = {
+      save: icon('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>', 18),
+      open: icon('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>', 18),
+      xis: icon('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m17 8 5 5M22 8l-5 5"/>', 18),
+      stats: icon('<path d="M18 20V10M12 20V4M6 20v-6"/><path d="m3 3 18 18"/>', 18),
+      series: icon('<path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>', 18),
+      trash: icon('<path d="M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>', 18)
+    };
+    const backupPanel = `
       <section class="panel">
-        <div class="panel-head"><h3>Data</h3><p class="muted">${admin ? 'Backups use the same file format as the original HTML ledger.' : 'Download a copy of the current ledger.'}</p></div>
+        <div class="panel-head"><h3>Backups</h3><p class="muted">${admin ? 'Save a copy of everything, or restore one. Same file format as the original HTML ledger.' : 'Download a copy of the current ledger.'}</p></div>
         <div class="settings-actions">
-          <button class="btn btn-ghost" data-action="export">${icon('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>', 18)} Save backup</button>
-          ${admin ? `
-          <button class="btn btn-ghost" data-action="import">${icon('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>', 18)} Open backup</button>
-          <button class="btn btn-ghost" data-action="clear-all-xis" ${xiCount() ? '' : 'disabled'}>${icon('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m17 8 5 5M22 8l-5 5"/>', 18)} Clear all playing XIs</button>
-          <button class="btn btn-ghost" data-action="clear-all-stats" ${statCount() ? '' : 'disabled'}>${icon('<path d="M18 20V10M12 20V4M6 20v-6"/><path d="m3 3 18 18"/>', 18)} Clear all stats</button>
-          <button class="btn btn-ghost" data-action="new-series">${icon('<path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>', 18)} New series</button>
-          <button class="btn btn-danger" data-action="clear-all">${icon('<path d="M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>', 18)} Clear all</button>` : ''}
+          <button class="btn btn-ghost" data-action="export">${I.save} Save backup</button>
+          ${admin ? `<button class="btn btn-ghost" data-action="import">${I.open} Open backup</button>` : ''}
         </div>
       </section>`;
+    const cleanupPanel = admin ? `
+      <section class="panel">
+        <div class="panel-head"><h3>Clean up</h3><p class="muted">Start match selections or stats again. Players and money stay as they are.</p></div>
+        <div class="settings-actions">
+          <button class="btn btn-ghost" data-action="clear-all-xis" ${xiCount() ? '' : 'disabled'}>${I.xis} Clear all playing XIs</button>
+          <button class="btn btn-ghost" data-action="clear-all-stats" ${statCount() ? '' : 'disabled'}>${I.stats} Clear all stats</button>
+        </div>
+      </section>` : '';
+    const dangerPanel = admin ? `
+      <section class="panel danger-zone">
+        <div class="panel-head"><h3>Danger zone</h3><p class="muted">These can’t be undone — save a backup first.</p></div>
+        <div class="danger-row"><span><strong>New series</strong><small>Keeps players; clears attendance, payments, expenses, matches, stats and the league.</small></span>
+          <button class="btn btn-ghost" data-action="new-series">${I.series} New series</button></div>
+        <div class="danger-row"><span><strong>Clear everything</strong><small>Removes all players and data.</small></span>
+          <button class="btn btn-danger" data-action="clear-all">${I.trash} Clear all</button></div>
+      </section>` : '';
 
     const prefs = admin ? `
       <section class="panel">
@@ -1251,13 +1270,33 @@
         </div>
       </section>` : '';
 
+    const accountPanel = `
+      <section class="panel account-card">
+        <span class="account-avatar">${admin ? icon('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>', 22) : esc((session.name || '?').trim().charAt(0).toUpperCase())}</span>
+        <span class="account-text"><strong>${admin ? 'Admin' : esc(session.name)}</strong><small>${admin ? 'Can change everything' : 'View only · this page refreshes by itself'}</small></span>
+        <button class="btn btn-ghost" data-action="logout">Switch user</button>
+      </section>`;
+
+    const sections = [
+      { id: 'look', title: 'Appearance', note: 'How the app looks on this device.', cards: themePanel + installPanel() },
+      { id: 'team', title: 'Team & payments', note: admin ? 'Where players pay and how shares are worked out.' : 'Where to send your payments.', cards: payPanel + prefs },
+      admin && { id: 'access', title: 'Who can see what', note: 'What players see when they sign in with their name.', cards: accessPanel + statsPanel },
+      { id: 'data', title: 'Data', note: admin ? 'Backups, clean-up and resets.' : 'Keep a copy of the ledger.', cards: backupPanel + cleanupPanel + dangerPanel },
+      { id: 'account', title: 'Account', note: 'Who is signed in on this device.', cards: accountPanel }
+    ].filter(Boolean);
+
     return `
-      ${pageHead('Settings', '')}
-      <div class="settings-grid">${themePanel}${installPanel()}${dataPanel}${payPanel}${accessPanel}${statsPanel}${prefs}
-        <section class="panel">
-          <div class="panel-head"><h3>Signed in as ${isAdmin() ? 'Admin' : esc(session.name)}</h3></div>
-          <button class="btn btn-ghost" data-action="logout">Switch user</button>
-        </section>
+      ${pageHead('Settings', admin ? 'Team, money, access and data — grouped by what they change.' : 'Your view of the Red Falcons ledger.')}
+      <div class="set-layout">
+        <nav class="set-nav" aria-label="Settings sections">
+          ${sections.map(x => `<button class="set-nav-btn" data-action="set-jump" data-id="${x.id}">${x.title}</button>`).join('')}
+        </nav>
+        <div class="set-sections">
+          ${sections.map(x => `<section class="set-section" id="set-${x.id}">
+            <header class="set-head"><h3>${x.title}</h3><p class="muted">${x.note}</p></header>
+            <div class="set-cards">${x.cards}</div>
+          </section>`).join('')}
+        </div>
       </div>`;
   }
 
@@ -1818,6 +1857,10 @@
       state.stats = {};
       commit();
       toast('All stats cleared.');
+    },
+    'set-jump'(el) {
+      const target = document.getElementById('set-' + el.dataset.id);
+      if (target) window.scrollTo({ top: target.getBoundingClientRect().top + window.scrollY - 90, behavior: 'smooth' });
     },
     'set-stats-visibility'(el) {
       if (!isAdmin()) return;
