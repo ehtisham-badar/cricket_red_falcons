@@ -1783,7 +1783,7 @@
     const admin = isAdmin();
     if (d.finished) {
       return `<div class="finish-box done">
-        <span>${icon('<path d="M20 6 9 17l-5-5"/>', 18)}<span><strong>Finished · charged</strong><small>The XI’s league share${s.amount > 0 ? ' and the expenses' : ''} are in everyone’s balances.</small></span></span>
+        <span>${icon('<path d="M20 6 9 17l-5-5"/>', 18)}<span><strong>Finished · charged</strong><small>${s.amount > 0 ? 'The XI’s league share and the expenses are' : 'The XI’s league share is'} in everyone’s balances.</small></span></span>
         ${admin ? `<button class="btn btn-ghost small" data-action="reopen-match" data-id="${esc(d.id)}">Reopen</button>` : ''}
       </div>`;
     }
