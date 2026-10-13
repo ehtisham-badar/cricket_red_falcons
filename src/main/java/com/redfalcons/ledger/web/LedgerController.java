@@ -62,26 +62,6 @@ public class LedgerController {
                 : ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "No such season."));
     }
 
-    public record LoginRequest(String name) {
-    }
-
-    public record LoginResponse(String name, boolean admin, String token) {
-    }
-
-    @PostMapping("/login")
-    public LoginResponse login(@RequestBody LoginRequest req) {
-        String name = req == null || req.name() == null ? "" : req.name().trim();
-        if (auth.isAdminKey(name)) {
-            return new LoginResponse("Admin", true, auth.token());
-        }
-        return new LoginResponse(name.isEmpty() ? "Guest" : name, false, null);
-    }
-
-    @GetMapping("/session")
-    public Map<String, Boolean> session(@RequestHeader(value = TOKEN_HEADER, required = false) String token) {
-        return Map.of("admin", auth.isValidToken(token));
-    }
-
     @GetMapping("/ledger")
     public LedgerDto get(@RequestHeader(value = TOKEN_HEADER, required = false) String token,
                          @RequestHeader(value = VIEWER_HEADER, required = false) String viewer) {

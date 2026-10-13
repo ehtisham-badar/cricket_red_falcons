@@ -15,6 +15,7 @@
     { id: 'day', name: 'Daylight', note: 'Light, for reading outdoors', bar: '#f5efe4', colors: ['#f5efe4', '#c81e28', '#b07f22'] }
   ];
   const COLLAPSED_KEY = 'rf.collapsed';      // Days sections this viewer has folded: { training, match }
+  const DEVICE_KEY = 'rf.device';            // this browser's trusted-device token (skips the two-factor code)
   const ME_KEY = 'rf.me';                     // viewer's chosen player id, or NOT_ME to show the picker
   const NOT_ME = '__none';
   const POLL_MS = 15000;
@@ -81,6 +82,85 @@
   if ('serviceWorker' in navigator) {
     // The worker is told where the API lives so it can fetch notifications for this device.
     window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?api=' + encodeURIComponent(API)).catch(() => {}));
+  }
+
+  // ---------- two-factor sign-in (admin) ----------
+  let tfa = null;                             // { enabled, recoveryLeft, devices } from the server
+  let tfaSetup = null;                        // { secret, uri, qr } while setting up
+  let tfaCodes = null;                        // recovery codes to show once after turning it on
+  const tfaDraft = { code: '', off: '' };
+  let qrLib = null;
+
+  function loadQrLib() {
+    if (window.qrcode) return Promise.resolve();
+    if (!qrLib) {
+      qrLib = new Promise((resolve, reject) => {
+        const el = document.createElement('script');
+        el.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';
+        el.onload = resolve;
+        el.onerror = () => { qrLib = null; reject(new Error('QR unavailable')); };
+        document.head.appendChild(el);
+      });
+    }
+    return qrLib;
+  }
+
+  async function loadTfa() {
+    if (!realAdmin()) return;
+    try { tfa = await api('GET', '/api/2fa'); } catch { tfa = tfa || { enabled: false, devices: [], recoveryLeft: 0, error: true }; }
+    renderIfSettings();
+  }
+
+  function tfaPanel() {
+    if (!isAdmin()) return '';
+    const head = note => `<div class="panel-head"><h3>Two-factor sign-in</h3><p class="muted">${note}</p></div>`;
+    if (tfaCodes) {
+      return `<section class="panel tfa-panel">${head('Two-factor is on. Save these recovery codes somewhere safe — each one signs you in once if you lose your phone. They won’t be shown again.')}
+        <ol class="tfa-codes">${tfaCodes.map(c => `<li><code>${esc(c)}</code></li>`).join('')}</ol>
+        <div class="settings-actions">
+          <button class="btn btn-ghost" data-action="tfa-copy">${COPY_ICON} Copy codes</button>
+          <button class="btn btn-gold" data-action="tfa-done">I’ve saved them</button>
+        </div>
+      </section>`;
+    }
+    if (tfaSetup) {
+      const grouped = tfaSetup.secret.replace(/(.{4})/g, '$1 ').trim();
+      return `<section class="panel tfa-panel">${head('Scan the code with an authenticator app (Google Authenticator, Microsoft Authenticator, Authy…), then type the 6 digits it shows.')}
+        <div class="tfa-setup">
+          <div class="tfa-qr">${tfaSetup.qr || `<a class="btn btn-ghost small" href="${esc(tfaSetup.uri)}">Open in authenticator app</a>`}</div>
+          <div class="tfa-steps">
+            <p class="muted">Can’t scan? Add it by hand with this key:</p>
+            <code class="tfa-secret">${esc(grouped)}</code>
+            <input class="field" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="6-digit code" value="${esc(tfaDraft.code)}" data-input="tfa-code" data-focus="tfa-code" aria-label="Code from the app">
+            <div class="settings-actions">
+              <button class="btn btn-primary" data-action="tfa-confirm">Turn on</button>
+              <button class="btn btn-ghost" data-action="tfa-cancel">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </section>`;
+    }
+    if (!tfa) return `<section class="panel tfa-panel">${head('Loading…')}</section>`;
+    if (!tfa.enabled) {
+      return `<section class="panel tfa-panel">${head('Off. Anyone who knows the admin key can sign in as admin. Turn it on so signing in also needs a code from your phone.')}
+        <button class="btn btn-gold" data-action="tfa-start">${icon('<rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/>', 18)} Set up two-factor</button>
+      </section>`;
+    }
+    const devices = tfa.devices || [];
+    return `<section class="panel tfa-panel">${head(`On. Signing in as admin needs a code from your phone, except on trusted browsers. ${tfa.recoveryLeft} recovery code${tfa.recoveryLeft === 1 ? '' : 's'} left.`)}
+      <p class="install-done">${icon('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>', 18)} Two-factor is on</p>
+      <h4 class="league-sub">Trusted browsers</h4>
+      ${devices.length ? `<ul class="season-list">${devices.map(d => `<li>
+          <span class="season-icon">${icon('<rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8M12 18v3"/>', 18)}</span>
+          <span class="season-text"><strong>${esc(d.label)}${d.current ? ' <em class="tfa-this">This browser</em>' : ''}</strong><small>Last used ${esc(formatDate(localDay(d.lastUsed)))}</small></span>
+          <span></span>
+          <button class="icon-btn danger" data-action="tfa-revoke" data-id="${esc(d.id)}" data-current="${d.current}" aria-label="Stop trusting ${esc(d.label)}">${X_ICON}</button>
+        </li>`).join('')}</ul>` : '<p class="muted">None. Tick “Trust this browser” when you sign in to skip the code there.</p>'}
+      <div class="tfa-off">
+        <input class="field" type="text" maxlength="9" placeholder="Code or recovery code" value="${esc(tfaDraft.off)}" data-input="tfa-off" data-focus="tfa-off" aria-label="Code to turn two-factor off">
+        <button class="btn btn-danger" data-action="tfa-disable">Turn off</button>
+      </div>
+    </section>`;
   }
 
   // ---------- notifications ----------
@@ -380,6 +460,8 @@
   async function api(method, path, body, opts = {}) {
     const headers = { 'Content-Type': 'application/json' };
     if (session && session.token) headers['X-Admin-Token'] = session.token;
+    const device = readStore(DEVICE_KEY);
+    if (device) headers['X-Device'] = device;
     else {
       // Which player this viewer is, so private ledgers send them their own payments.
       const me = readStore(ME_KEY);
@@ -562,6 +644,7 @@
   // ---------- splash / login ----------
   function showSplash() {
     hideLoader();
+    hideCodeStep();
     clearInterval(pollTimer);
     $('#app').hidden = true;
     $('#splash').hidden = false;
@@ -588,11 +671,56 @@
     window.scrollTo({ top: 0 });
   }
 
+  // A short label for this browser in the admin's list of signed-in / trusted browsers.
+  function deviceLabel() {
+    const ua = navigator.userAgent;
+    const browser = /Edg\//.test(ua) ? 'Edge' : /CriOS|Chrome\//.test(ua) ? 'Chrome' : /FxiOS|Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : 'Browser';
+    const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Mac OS X/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : '';
+    return os ? `${browser} on ${os}` : browser;
+  }
+
+  let codeChallenge = null;
+
+  function showCodeStep(challenge) {
+    codeChallenge = challenge;
+    $('#login-form').hidden = true;
+    $('#code-form').hidden = false;
+    $('#code-error').textContent = '';
+    $('#login-code').value = '';
+    setTimeout(() => $('#login-code').focus(), 50);
+  }
+
+  function hideCodeStep() {
+    codeChallenge = null;
+    $('#code-form').hidden = true;
+    $('#login-form').hidden = false;
+  }
+
+  async function verifyCode(code) {
+    const err = $('#code-error');
+    err.textContent = '';
+    try {
+      const r = await api('POST', '/api/login/verify', { challenge: codeChallenge, code, trust: $('#login-trust').checked, label: deviceLabel() });
+      if (r.device) writeStore(DEVICE_KEY, r.device);
+      session = { name: r.name, admin: r.admin, token: r.token };
+      writeStore(SESSION_KEY, session);
+      writeStore(ME_KEY, null);
+      resetView();
+      hideCodeStep();
+      if (r.recoveryLeft != null && r.recoveryLeft <= 2) setTimeout(() => toast(`Only ${r.recoveryLeft} recovery code${r.recoveryLeft === 1 ? '' : 's'} left — make new ones in Settings.`), 1500);
+      await enterApp();
+    } catch (e) {
+      err.textContent = e.message || 'That code didn’t work.';
+      if (/Too many|expired/i.test(err.textContent)) setTimeout(() => { hideCodeStep(); $('#login-error').textContent = err.textContent; }, 1600);
+    }
+  }
+
   async function login(name) {
     const err = $('#login-error');
     err.textContent = '';
     try {
-      const r = await api('POST', '/api/login', { name });
+      const r = await api('POST', '/api/login', { name, device: readStore(DEVICE_KEY), label: deviceLabel() });
+      if (r.needCode) { showCodeStep(r.challenge); return; }
       session = { name: r.name, admin: r.admin, token: r.token };
       writeStore(SESSION_KEY, session);
       writeStore(ME_KEY, null); // a new name may be a different person on this device
@@ -608,7 +736,14 @@
     try {
       if (session.token) {
         const s = await api('GET', '/api/session');
-        if (!s.admin) { session = { ...session, admin: false, token: null }; writeStore(SESSION_KEY, session); }
+        if (!s.admin) {
+          // The admin session ended (signed out elsewhere, or two-factor was turned on): sign in again.
+          session = null;
+          writeStore(SESSION_KEY, null);
+          showSplash();
+          $('#login-error').textContent = 'Your admin sign-in has ended. Enter the admin key again.';
+          return;
+        }
       }
       state = await fetchLedger();
       // A private ledger only sends a viewer their own payments: once we know who they are, ask again.
@@ -627,6 +762,7 @@
     animateView();
     loadSeasons();
     refreshPush();
+    loadTfa();
     startPolling();
   }
 
@@ -1520,7 +1656,7 @@
       admin && { id: 'access', title: 'Who can see what', note: 'What players see when they sign in with their name.', cards: accessPanel + statsPanel },
       { id: 'notify', title: 'Notifications', note: realAdmin() ? 'Turn them on for this device, and message the team.' : 'Turn them on for this device.', cards: notifyPanels() },
       { id: 'data', title: 'Data', note: admin ? 'Backups, clean-up and resets.' : 'Keep a copy of the ledger.', cards: backupPanel + seasonPanel() + cleanupPanel + dangerPanel },
-      { id: 'account', title: 'Account', note: 'Who is signed in on this device.', cards: accountPanel }
+      { id: 'account', title: 'Account', note: 'Who is signed in on this device.', cards: accountPanel + tfaPanel() }
     ].filter(Boolean);
 
     return `
@@ -1982,6 +2118,7 @@
       const ok = await confirmDialog('Switch user?', 'You will go back to the start screen.', 'Switch user');
       if (!ok) return;
       if (saveTimer) { clearTimeout(saveTimer); await flushSave(); }
+      if (session && session.token) await api('POST', '/api/logout').catch(() => {});
       session = null;
       writeStore(SESSION_KEY, null);
       writeStore(ME_KEY, null);
@@ -2095,6 +2232,59 @@
       state.stats = {};
       commit();
       toast('All stats cleared.');
+    },
+    async 'tfa-start'() {
+      try {
+        const r = await api('POST', '/api/2fa/setup');
+        let qr = '';
+        try {
+          await loadQrLib();
+          const q = window.qrcode(0, 'M');
+          q.addData(r.uri);
+          q.make();
+          qr = q.createSvgTag({ cellSize: 5, margin: 2, scalable: true });
+        } catch { /* the manual key and link still work */ }
+        tfaSetup = { ...r, qr };
+        tfaDraft.code = '';
+        render();
+      } catch { toast('Could not start setup. Try again.'); }
+    },
+    'tfa-cancel'() { tfaSetup = null; render(); },
+    async 'tfa-confirm'() {
+      try {
+        const r = await api('POST', '/api/2fa/confirm', { code: tfaDraft.code.replace(/\s/g, ''), label: deviceLabel() });
+        writeStore(DEVICE_KEY, r.device);
+        tfaCodes = r.recoveryCodes;
+        tfaSetup = null;
+        tfaDraft.code = '';
+        render();
+        loadTfa();
+      } catch (e) { toast(e.message || 'That code didn’t match.'); }
+    },
+    'tfa-copy'() { copyText('Red Falcons admin recovery codes\n' + tfaCodes.join('\n')); },
+    'tfa-done'() { tfaCodes = null; render(); },
+    async 'tfa-revoke'(el) {
+      const current = el.dataset.current === 'true';
+      const ok = await confirmDialog('Stop trusting this browser?', current
+        ? 'This browser will ask for a code next time you sign in as admin.'
+        : 'That browser will need a code next time it signs in as admin.', 'Stop trusting', true);
+      if (!ok) return;
+      try {
+        await api('DELETE', '/api/2fa/devices/' + encodeURIComponent(el.dataset.id));
+        if (current) writeStore(DEVICE_KEY, null);
+      } catch { toast('Could not do that.'); }
+      loadTfa();
+    },
+    async 'tfa-disable'() {
+      const ok = await confirmDialog('Turn two-factor off?', 'Signing in as admin will only need the admin key again. Trusted browsers and recovery codes are removed.', 'Turn off', true);
+      if (!ok) return;
+      try {
+        await api('POST', '/api/2fa/disable', { code: tfaDraft.off.replace(/\s/g, '') });
+        tfaDraft.off = '';
+        writeStore(DEVICE_KEY, null);
+        toast('Two-factor is off.');
+      } catch (e) { toast(e.message || 'That code didn’t work.'); }
+      loadTfa();
     },
     'push-on'() { enablePush(); },
     'push-off'() { disablePush(); },
@@ -2434,6 +2624,7 @@
       const fn = el.dataset && inputs[el.dataset.input];
       if (el.id === 'add-names') { draftNames = el.value; return; }
       if (el.dataset && el.dataset.input === 'season-name') { seasonDraft = el.value; return; }
+      if (el.dataset && /^tfa-/.test(el.dataset.input || '')) { tfaDraft[el.dataset.input.slice(4)] = el.value; return; }
       if (el.dataset && /^push-/.test(el.dataset.input || '')) {
         const key = el.dataset.input.slice(5);
         pushDraft[key] = el.value;
@@ -2464,6 +2655,13 @@
       login(name);
     });
     $('#continue-btn').addEventListener('click', () => enterApp());
+    $('#code-form').addEventListener('submit', e => {
+      e.preventDefault();
+      const code = $('#login-code').value.trim();
+      if (!code) { $('#code-error').textContent = 'Enter the 6-digit code.'; return; }
+      verifyCode(code);
+    });
+    $('#code-back').addEventListener('click', () => { hideCodeStep(); $('#login-name').focus(); });
   }
 
   applyTheme(currentTheme());

@@ -51,6 +51,19 @@
       </div>
       <p id="login-error" class="login-error" role="alert"></p>
     </form>
+
+    <!-- Second step for the admin when two-factor is on -->
+    <form id="code-form" class="login code-step" autocomplete="off" hidden>
+      <label for="login-code" class="login-label">Code from your authenticator app</label>
+      <div class="login-row">
+        <input id="login-code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="9" placeholder="123 456" spellcheck="false" required>
+        <button type="submit" class="btn btn-primary">Verify</button>
+      </div>
+      <label class="trust-row"><input id="login-trust" type="checkbox" checked> Trust this browser — don’t ask again here</label>
+      <p class="code-hint">Lost your phone? Type one of your recovery codes instead.</p>
+      <p id="code-error" class="login-error" role="alert"></p>
+      <button type="button" id="code-back" class="btn btn-ghost small">Back</button>
+    </form>
   </div>
 </section>
 

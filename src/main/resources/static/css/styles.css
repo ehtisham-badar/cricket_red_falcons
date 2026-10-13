@@ -1214,3 +1214,22 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
 @media (prefers-reduced-motion: reduce) {
   .loader-ring { animation: none; }
 }
+
+/* Two-factor */
+.code-step .trust-row { display: flex; align-items: center; gap: 10px; justify-content: center; font-size: 14px; color: #f5eee2; opacity: .85; }
+.code-step .trust-row input { width: 18px; height: 18px; accent-color: #e2b65c; }
+.code-hint { margin: 0; font-size: 13px; color: #a49d92; }
+#code-back { align-self: center; }
+.tfa-setup { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 18px; align-items: start; }
+.tfa-qr { padding: 10px; border-radius: 14px; background: #fff; line-height: 0; }
+.tfa-qr svg { width: 100%; height: auto; }
+.tfa-qr .btn { line-height: normal; }
+.tfa-steps { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.tfa-steps p { margin: 0; font-size: 13px; }
+.tfa-secret { padding: 10px 12px; border-radius: 10px; background: var(--field-bg); border: 1px solid var(--line-2); font-size: 15px; letter-spacing: .08em; word-break: break-all; color: var(--gold-light); }
+.tfa-codes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0 0 16px; padding-left: 22px; }
+.tfa-codes code { font-size: 16px; letter-spacing: .06em; color: var(--gold-light); }
+.tfa-this { margin-left: 6px; padding: 1px 8px; border-radius: var(--pill); background: rgba(var(--gold-rgb), .16); color: var(--gold-light); font-size: 11px; font-style: normal; font-weight: 800; }
+.tfa-off { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+.tfa-off .field { flex: 1 1 160px; }
+@media (max-width: 520px) { .tfa-setup { grid-template-columns: minmax(0, 1fr); } .tfa-qr { max-width: 220px; } }
