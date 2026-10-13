@@ -264,7 +264,7 @@
       <div class="panel-head"><h3>This device</h3><p class="muted">Get match updates and payment reminders as notifications.</p></div>
       ${status}
     </section>`;
-    if (!isAdmin()) return device;
+    if (!isAdmin()) return { device, compose: '' };
 
     const aud = pushAudience();
     const options = [['all', 'Everyone'], ['owe', 'Players who owe money']]
@@ -287,7 +287,7 @@
         <button class="btn btn-primary" data-action="push-send" ${push.enabled && pushDraft.body.trim() ? '' : 'disabled'}>${BELL_ICON} Send</button>
       </div>
     </section>`;
-    return device + compose;
+    return { device, compose };
   }
 
   function installPanel() {
@@ -1555,10 +1555,12 @@
     const dangerPanel = admin ? `
       <section class="panel danger-zone">
         <div class="panel-head"><h3>Danger zone</h3><p class="muted">These can’t be undone — save a backup first.</p></div>
-        <div class="danger-row"><span><strong>New series</strong><small>Keeps players; clears attendance, payments, expenses, matches, stats and the league.</small></span>
-          <button class="btn btn-ghost" data-action="new-series">${I.series} New series</button></div>
-        <div class="danger-row"><span><strong>Clear everything</strong><small>Removes all players and data.</small></span>
-          <button class="btn btn-danger" data-action="clear-all">${I.trash} Clear all</button></div>
+        <div class="danger-grid">
+          <div class="danger-row"><span><strong>New series</strong><small>Archives this season, keeps players, then clears attendance, payments, expenses, matches, stats and the league.</small></span>
+            <button class="btn btn-ghost" data-action="new-series">${I.series} New series</button></div>
+          <div class="danger-row"><span><strong>Clear everything</strong><small>Removes all players and data. No archive is made.</small></span>
+            <button class="btn btn-danger" data-action="clear-all">${I.trash} Clear all</button></div>
+        </div>
       </section>` : '';
 
     const prefs = admin ? `
@@ -1650,13 +1652,25 @@
         <button class="btn btn-ghost" data-action="logout">Switch user</button>
       </section>`;
 
+    // Each section lays its cards out on a 12-column grid: [html, span]. A cell can hold a stack of cards.
+    const cell = (html, span) => html ? `<div class="set-cell span-${span}">${html}</div>` : '';
+    const stack = (...cards) => cards.filter(Boolean).join('');
+    const notify = notifyPanels();
     const sections = [
-      { id: 'look', title: 'Appearance', note: 'How the app looks on this device.', cards: themePanel + installPanel() },
-      { id: 'team', title: 'Team & payments', note: admin ? 'Where players pay and how shares are worked out.' : 'Where to send your payments.', cards: payPanel + prefs },
-      admin && { id: 'access', title: 'Who can see what', note: 'What players see when they sign in with their name.', cards: accessPanel + statsPanel },
-      { id: 'notify', title: 'Notifications', note: realAdmin() ? 'Turn them on for this device, and message the team.' : 'Turn them on for this device.', cards: notifyPanels() },
-      { id: 'data', title: 'Data', note: admin ? 'Backups, clean-up and resets.' : 'Keep a copy of the ledger.', cards: backupPanel + seasonPanel() + cleanupPanel + dangerPanel },
-      { id: 'account', title: 'Account', note: 'Who is signed in on this device.', cards: accountPanel + tfaPanel() }
+      { id: 'look', title: 'Appearance', note: 'How the app looks on this device.', top: true,
+        cells: cell(themePanel, 7) + cell(installPanel(), 5) },
+      { id: 'team', title: 'Team & payments', note: admin ? 'Where players pay and how shares are worked out.' : 'Where to send your payments.',
+        cells: cell(payPanel, 6) + cell(prefs, 6) },
+      admin && { id: 'access', title: 'Who can see what', note: 'What players see when they sign in with their name.',
+        cells: cell(accessPanel, 6) + cell(statsPanel, 6) },
+      { id: 'notify', title: 'Notifications', note: realAdmin() ? 'Turn them on for this device, and message the team.' : 'Turn them on for this device.', top: true,
+        cells: isAdmin() ? cell(notify.device, 5) + cell(notify.compose, 7) : cell(notify.device, 12) },
+      { id: 'data', title: 'Data', note: admin ? 'Backups, the season archive and resets.' : 'Keep a copy of the ledger.', top: true,
+        cells: admin
+          ? cell(seasonPanel(), 7) + cell(`<div class="set-stack">${stack(backupPanel, cleanupPanel)}</div>`, 5) + cell(dangerPanel, 12)
+          : cell(backupPanel, 5) + cell(seasonPanel(), 7) },
+      { id: 'account', title: 'Account', note: 'Who is signed in on this device.', top: true,
+        cells: admin ? cell(accountPanel, 5) + cell(tfaPanel(), 7) : cell(accountPanel, 12) }
     ].filter(Boolean);
 
     return `
@@ -1668,7 +1682,7 @@
         <div class="set-sections">
           ${sections.map(x => `<section class="set-section" id="set-${x.id}">
             <header class="set-head"><h3>${x.title}</h3><p class="muted">${x.note}</p></header>
-            <div class="set-cards">${x.cards}</div>
+            <div class="set-cards ${x.top ? 'top' : ''}">${x.cells}</div>
           </section>`).join('')}
         </div>
       </div>`;
