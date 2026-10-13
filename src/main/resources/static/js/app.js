@@ -152,7 +152,7 @@
       <h4 class="league-sub">Trusted browsers</h4>
       ${devices.length ? `<ul class="season-list">${devices.map(d => `<li>
           <span class="season-icon">${icon('<rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8M12 18v3"/>', 18)}</span>
-          <span class="season-text"><strong>${esc(d.label)}${d.current ? ' <em class="tfa-this">This browser</em>' : ''}</strong><small>Last used ${esc(formatDate(localDay(d.lastUsed)))}</small></span>
+          <span class="season-text"><strong>${esc(d.label)}</strong><small>${d.current ? '<em class="tfa-this">This browser</em> · ' : ''}Last used ${esc(formatDate(localDay(d.lastUsed)))}</small></span>
           <span></span>
           <button class="icon-btn danger" data-action="tfa-revoke" data-id="${esc(d.id)}" data-current="${d.current}" aria-label="Stop trusting ${esc(d.label)}">${X_ICON}</button>
         </li>`).join('')}</ul>` : '<p class="muted">None. Tick “Trust this browser” when you sign in to skip the code there.</p>'}
@@ -2343,7 +2343,9 @@
     },
     'set-jump'(el) {
       const target = document.getElementById('set-' + el.dataset.id);
-      if (target) window.scrollTo({ top: target.getBoundingClientRect().top + window.scrollY - 90, behavior: 'smooth' });
+      // On phones the section menu sticks under the header, so leave room for both.
+      const offset = window.innerWidth <= 960 ? 140 : 90;
+      if (target) window.scrollTo({ top: target.getBoundingClientRect().top + window.scrollY - offset, behavior: 'smooth' });
     },
     'set-stats-visibility'(el) {
       if (!isAdmin()) return;

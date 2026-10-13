@@ -1267,3 +1267,5 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
 .tfa-off { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 .tfa-off .field { flex: 1 1 160px; }
 @media (max-width: 520px) { .tfa-setup { grid-template-columns: minmax(0, 1fr); } .tfa-qr { max-width: 220px; } }
+.set-sections .season-text strong { white-space: normal; overflow-wrap: anywhere; }
+.tfa-this { margin-left: 0; }
