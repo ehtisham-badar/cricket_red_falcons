@@ -22,7 +22,7 @@ class LedgerApiTest {
             {"players":[{"id":"p1","name":"Babar","role":"Batsman + Captain","paid":"500","att":{"t1":true,"m1":true,"zz":true}}],
              "amounts":{"t1":"1500","m1":"3900"},
              "trainings":[{"id":"t1","desc":"Nets"}],
-             "matches":[{"id":"m1","date":"2026-10-24","opponent":"Lahore Lions","venue":""},{"id":"m2","date":"not-a-date"}],
+             "matches":[{"id":"m1","date":"2026-10-24","opponent":"Lahore Lions","venue":"","finished":true},{"id":"m2","date":"not-a-date"}],
              "settings":{"currency":"PKR ","maxPerMatch":11,"roundUp":false}}
             """;
 
@@ -67,7 +67,7 @@ class LedgerApiTest {
                 // Payment account details stay null until the admin sets them.
                 .contains("\"payBank\":null,\"payTitle\":null,\"payAccount\":null")
                 .contains("\"desc\":\"Nets\"")
-                .contains("\"matches\":[{\"id\":\"m1\",\"date\":\"2026-10-24\",\"opponent\":\"Lahore Lions\",\"venue\":\"\"},{\"id\":\"m2\",\"date\":\"\",\"opponent\":\"\",\"venue\":\"\"}]");
+                .contains("\"matches\":[{\"id\":\"m1\",\"date\":\"2026-10-24\",\"opponent\":\"Lahore Lions\",\"venue\":\"\",\"finished\":true},{\"id\":\"m2\",\"date\":\"\",\"opponent\":\"\",\"venue\":\"\",\"finished\":false}]");
 
         // A version 2 file (amounts only) is read as one fund-paid expense per day.
         assertThat(loaded).contains("\"t1\":[{\"id\":\"legacy-t1\",\"item\":\"Amount spent\",\"amount\":\"1500\",\"paidBy\":\"\"}]");

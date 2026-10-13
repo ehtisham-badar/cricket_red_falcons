@@ -395,10 +395,11 @@
     // (m1–m5); keep those that hold any attendance, expenses or 12th man.
     let matches;
     if (Array.isArray(d.matches)) {
-      matches = d.matches.filter(m => m && m.id).map(m => ({ id: m.id, date: m.date || '', opponent: m.opponent || '', venue: m.venue || '' }));
+      matches = d.matches.filter(m => m && m.id).map(m => ({ id: m.id, date: m.date || '', opponent: m.opponent || '', venue: m.venue || '', finished: m.finished === true }));
     } else {
       const used = id => players.some(p => p.att[id]) || (expenses[id] || []).length || (d.twelfth || {})[id];
-      matches = ['m1', 'm2', 'm3', 'm4', 'm5'].filter(used).map(id => ({ id, date: '', opponent: '', venue: '' }));
+      // These were charged as soon as they were marked, so they count as finished.
+      matches = ['m1', 'm2', 'm3', 'm4', 'm5'].filter(used).map(id => ({ id, date: '', opponent: '', venue: '', finished: true }));
     }
     const isMatch = id => matches.some(m => m.id === id);
     // match id -> the 12th man's player id; never someone also playing that match
@@ -1183,7 +1184,7 @@
           <table class="sheet-table">
             <thead>
               <tr><th class="sticky">#</th><th class="sticky sticky-2">Player</th>
-                ${days.map(d => `<th class="day-col ${d.type}" title="${esc(d.label)}${d.desc ? ' — ' + esc(d.desc) : ''}">${d.short}<small>${stats[d.id].n > 0 && stats[d.id].amount > 0 ? fmt(stats[d.id].share) : '—'}</small></th>`).join('')}
+                ${days.map(d => `<th class="day-col ${d.type}" title="${esc(d.label)}${d.desc ? ' — ' + esc(d.desc) : ''}">${d.short}<small>${!C.isCharged(d) ? 'pending' : stats[d.id].n > 0 && stats[d.id].amount > 0 ? fmt(stats[d.id].share) : '—'}</small></th>`).join('')}
                 <th class="day-col tour" title="League fee for the matches each player played">League<small>${tour.fee > 0 ? fmt(tour.perMatch) + '/match' : '—'}</small></th>
                 <th>Cost</th><th>Paid</th><th title="Items bought for the team">Bought</th><th>Balance</th></tr>
             </thead>
@@ -1297,6 +1298,9 @@
       const share = s.n > 0 && s.amount > 0 ? `${fmt(s.share)} each` : '—';
       const tour = d.type === 'match' ? C.tournamentStats(state, stats) : null;
       const leagueEach = tour && tour.fee > 0 && s.n > 0 ? `<div class="amount league-each"><span>League share</span><strong>${fmt(C.round2(tour.perMatch / s.n))} each</strong></div>` : '';
+      const status = d.type === 'match' ? (d.finished
+        ? `<span class="match-status done">${icon('<path d="M20 6 9 17l-5-5"/>', 14)} Finished · charged</span>`
+        : `<span class="match-status open">${icon('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', 14)} Not charged yet</span>`) : '';
       const removable = admin && (d.type === 'match' || state.trainings.length > 1);
       return `<article class="day-card ${d.type}">
         <header>
@@ -1304,6 +1308,7 @@
           <h3>${d.label}</h3>
           ${removable ? `<button class="icon-btn danger" data-action="remove-${d.type}" data-id="${esc(d.id)}" aria-label="Remove ${d.label}">${X_ICON}</button>` : ''}
           ${d.type === 'match' && !admin && matchInfo(d) ? `<p class="match-info">${esc(matchInfo(d))}</p>` : ''}
+          ${status}
         </header>
         ${d.type === 'match' && admin ? `<div class="match-fields">
           <input class="field" type="date" value="${esc(d.date)}" data-input="match-date" data-id="${esc(d.id)}" aria-label="Match date">
@@ -1768,7 +1773,26 @@
   function leagueLine(d, s) {
     const tour = C.tournamentStats(state);
     if (!(tour.fee > 0)) return '';
-    return `<p class="league-line">League fee for ${d.label}: <strong>${s.n ? `${fmt(tour.perMatch)} ÷ ${s.n} = ${fmt(C.round2(tour.perMatch / s.n))} each` : fmt(tour.perMatch)}</strong>${s.n ? '' : ' · split across everyone until the XI is picked'}</p>`;
+    const split = s.n ? `${fmt(tour.perMatch)} ÷ ${s.n} = ${fmt(C.round2(tour.perMatch / s.n))} each` : fmt(tour.perMatch);
+    const when = d.finished ? '' : s.n ? ' · charged to the XI when you finish the match' : ' · split across everyone until the match is finished';
+    return `<p class="league-line">League fee for ${d.label}: <strong>${split}</strong>${when}</p>`;
+  }
+
+  // Finish a match to charge its XI (league share and expenses); until then nothing in it touches balances.
+  function finishBox(d, s) {
+    const admin = isAdmin();
+    if (d.finished) {
+      return `<div class="finish-box done">
+        <span>${icon('<path d="M20 6 9 17l-5-5"/>', 18)}<span><strong>Finished · charged</strong><small>The XI’s league share${s.amount > 0 ? ' and the expenses' : ''} are in everyone’s balances.</small></span></span>
+        ${admin ? `<button class="btn btn-ghost small" data-action="reopen-match" data-id="${esc(d.id)}">Reopen</button>` : ''}
+      </div>`;
+    }
+    return `<div class="finish-box">
+      <span>${icon('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', 18)}<span><strong>Not charged yet</strong><small>${admin
+        ? 'Pick the XI, add stats and expenses freely — balances only change when you finish the match.'
+        : 'Balances update once the admin finishes this match.'}</small></span></span>
+      ${admin ? `<button class="btn btn-gold" data-action="finish-match" data-id="${esc(d.id)}" ${s.n ? '' : 'disabled title="Pick the XI first"'}>${icon('<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/>', 18)} Finish match</button>` : ''}
+    </div>`;
   }
 
   function sheetDay() {
@@ -1812,6 +1836,7 @@
           ${s.n > 0 ? `<button class="btn btn-gold" data-action="share-xi" data-id="${esc(d.id)}">${IMAGE_ICON} Share Playing XI</button>` : ''}
         </div>
         ${s.n > 0 ? '' : '<p class="muted xi-hint">Mark who’s playing below, or pick at random, to share the Playing XI picture.</p>'}` : ''}
+        ${isMatch ? finishBox(d, s) : ''}
         ${isMatch ? leagueLine(d, s) : ''}
         ${twelfthId ? `<p class="twelfth-line">12th man: <strong>${esc(playerName(twelfthId))}</strong> · not charged for this match</p>` : ''}
         ${isMatch && s.n > 0 ? battingSection(d) : ''}
@@ -2186,6 +2211,37 @@
       delete state.battingOrder[el.dataset.day];
       commit();
     },
+    async 'finish-match'(el) {
+      if (!isAdmin()) return;
+      const d = findMatch(el.dataset.id);
+      const m = d && state.matches.find(x => x.id === d.id);
+      if (!m) return;
+      const stats = C.allStats(state);
+      const s = stats[d.id];
+      if (!s.n) { toast('Pick the XI first.'); return; }
+      const tour = C.tournamentStats(state, stats);
+      const parts = [];
+      if (tour.fee > 0) parts.push(`League ${fmt(tour.perMatch)} ÷ ${s.n} = ${fmt(C.round2(tour.perMatch / s.n))} each`);
+      if (s.amount > 0) parts.push(`expenses ${fmt(s.amount)} ÷ ${s.n} = ${fmt(s.share)} each`);
+      const ok = await confirmDialog(`Finish ${d.label}?`,
+        `${parts.length ? parts.join(', and ') + ' — charged' : 'Charged'} to the ${s.n} who played${state.twelfth[d.id] ? ' (not the 12th man)' : ''}. Balances update straight away; you can reopen it if needed.`,
+        'Finish & charge');
+      if (!ok) return;
+      m.finished = true;
+      commit();
+      toast(`${d.label} finished — balances updated.`);
+    },
+    async 'reopen-match'(el) {
+      if (!isAdmin()) return;
+      const d = findMatch(el.dataset.id);
+      const m = d && state.matches.find(x => x.id === d.id);
+      if (!m) return;
+      const ok = await confirmDialog(`Reopen ${d.label}?`, 'Its league share and expenses come off the XI’s balances until you finish it again.', 'Reopen');
+      if (!ok) return;
+      m.finished = false;
+      commit();
+      toast(`${d.label} reopened — not charged until you finish it.`);
+    },
     async 'clear-xi'(el) {
       const day = findMatch(el.dataset.id);
       if (!day || !isAdmin()) return;
@@ -2412,7 +2468,7 @@
       if (!isAdmin()) return;
       const folded = readStore(COLLAPSED_KEY) || {};
       if (folded.match) { folded.match = false; writeStore(COLLAPSED_KEY, folded); }
-      state.matches.push({ id: 'm' + rid(), date: today(), opponent: '', venue: '' });
+      state.matches.push({ id: 'm' + rid(), date: today(), opponent: '', venue: '', finished: false });
       commit();
       toast(`Match ${state.matches.length} added — set its date and opponent.`);
     },

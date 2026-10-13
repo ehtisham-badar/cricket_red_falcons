@@ -19,7 +19,7 @@
   function matches(state) {
     return (state.matches || []).map((m, i) => ({
       id: m.id, label: 'Match ' + (i + 1), short: 'M' + (i + 1), type: 'match',
-      date: m.date || '', opponent: m.opponent || '', venue: m.venue || ''
+      date: m.date || '', opponent: m.opponent || '', venue: m.venue || '', finished: m.finished === true
     }));
   }
 
@@ -35,6 +35,9 @@
     }));
     return trainings.concat(matches(state));
   }
+
+  // A match only charges its XI (league share and expenses) once the admin has finished it.
+  const isCharged = d => d.type !== 'match' || d.finished === true;
 
   function num(v) {
     const n = parseFloat(v);
@@ -84,7 +87,7 @@
     const squad = state.players.filter(inTournament);
     const charges = {};
     state.players.forEach(p => { charges[p.id] = { amount: 0, exact: 0, parts: [] }; });
-    const played = all.filter(m => stats[m.id] && stats[m.id].n > 0);
+    const played = all.filter(m => m.finished && stats[m.id] && stats[m.id].n > 0);
     const unplayed = leagueMatchCount(state) - played.length;
     if (!(fee > 0)) return { perMatch, unplayed, charges };
 
@@ -163,6 +166,7 @@
       }
     }
     days(state).forEach(d => {
+      if (!isCharged(d)) return;
       const s = stats[d.id];
       if (player.att && player.att[d.id] && s.amount > 0) {
         cost += s.share;
@@ -276,7 +280,7 @@
 
   function warnings(state) {
     const stats = allStats(state);
-    const out = days(state).filter(d => stats[d.id].amount > 0 && stats[d.id].n === 0).map(d => d.label);
+    const out = days(state).filter(d => isCharged(d) && stats[d.id].amount > 0 && stats[d.id].n === 0).map(d => d.label);
     const tour = tournamentStats(state, stats);
     if (tour.fee > 0 && tour.n === 0 && tour.unplayed > 0) out.push('Tournament fee');
     return out;
@@ -302,7 +306,7 @@
   }
 
   const api = {
-    matches, leagueMatchCount, days, num,
+    matches, leagueMatchCount, days, num, isCharged,
     BALLS_PER_OVER, STAT_KEYS, statOf, runsOf, shotsOf, strikeRate, oversOf, economy, batted, extrasOf, concededOf, bowled, leagueStats, round2, inTournament, paidTotal, dayExpenses, dayAmount, dayStats, allStats,
     tournamentStats, advanceShare, advancePerPlayer, advanceDue, playerCalc, totals, warnings, money, signedMoney, netLabel
   };

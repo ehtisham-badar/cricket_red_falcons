@@ -50,7 +50,8 @@ public record LedgerDto(
     public record TournamentDto(String name, String fee, String advance, List<PaymentDto> payments, Integer matchCount) {
     }
 
-    public record MatchDto(String id, String date, String opponent, String venue) {
+    /** {@code finished}: the admin has finished the match, so it charges its XI. */
+    public record MatchDto(String id, String date, String opponent, String venue, Boolean finished) {
     }
 
     /**

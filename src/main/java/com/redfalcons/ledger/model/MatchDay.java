@@ -23,15 +23,19 @@ public class MatchDay {
     @Column(nullable = false, length = 80)
     private String venue = "";
 
+    /** Only finished matches charge their XI (league share and expenses). Null on older rows means no. */
+    private Boolean finished;
+
     protected MatchDay() {
     }
 
-    public MatchDay(String id, int position, String date, String opponent, String venue) {
+    public MatchDay(String id, int position, String date, String opponent, String venue, boolean finished) {
         this.id = id;
         this.position = position;
         this.date = date;
         this.opponent = opponent;
         this.venue = venue;
+        this.finished = finished;
     }
 
     public String getId() { return id; }
@@ -39,4 +43,5 @@ public class MatchDay {
     public String getDate() { return date; }
     public String getOpponent() { return opponent; }
     public String getVenue() { return venue; }
+    public boolean isFinished() { return Boolean.TRUE.equals(finished); }
 }

@@ -197,7 +197,8 @@ public class LedgerService {
         Set<String> matchIds = new LinkedHashSet<>();
         for (MatchDto m : matchIn) {
             if (m == null || blank(m.id()) || trainingIds.contains(m.id()) || !matchIds.add(m.id())) continue;
-            newMatches.add(new MatchDay(m.id(), newMatches.size(), isoDate(m.date()), clip(m.opponent(), 80), clip(m.venue(), 80)));
+            newMatches.add(new MatchDay(m.id(), newMatches.size(), isoDate(m.date()), clip(m.opponent(), 80), clip(m.venue(), 80),
+                    Boolean.TRUE.equals(m.finished())));
         }
 
         Set<String> validDays = new HashSet<>(trainingIds);
@@ -383,7 +384,7 @@ public class LedgerService {
 
     private List<MatchDto> storedMatches() {
         return matches.findAll(BY_POSITION).stream()
-                .map(m -> new MatchDto(m.getId(), m.getDate(), m.getOpponent(), m.getVenue())).toList();
+                .map(m -> new MatchDto(m.getId(), m.getDate(), m.getOpponent(), m.getVenue(), m.isFinished())).toList();
     }
 
     private static Map<String, String> parseTwelfth(String stored) {
