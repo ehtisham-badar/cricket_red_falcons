@@ -21,6 +21,19 @@
 </head>
 <body>
 
+<!-- Loading screen: shown until the ledger has loaded (or the start screen is needed) -->
+<div id="loader" class="loader" role="status" aria-live="polite">
+  <div class="loader-glow" aria-hidden="true"></div>
+  <div class="loader-crest">
+    <span class="loader-ring" aria-hidden="true"></span>
+    <img class="loader-logo" src="img/logo.jpeg" alt="Red Falcons Cricket Club crest">
+  </div>
+  <div class="loader-name">Red Falcons</div>
+  <div class="loader-sub">Cricket Club</div>
+  <div class="loader-bar" aria-hidden="true"><span></span></div>
+  <p id="loader-text" class="loader-text">Loading the ledger…</p>
+</div>
+
 <!-- Start screen -->
 <section id="splash" class="splash" hidden>
   <div class="splash-glow" aria-hidden="true"></div>

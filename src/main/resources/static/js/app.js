@@ -540,8 +540,28 @@
     }, POLL_MS);
   }
 
+  // ---------- loading screen ----------
+  let loaderSlow = null;
+  function showLoader() {
+    const el = $('#loader');
+    el.hidden = false;
+    el.classList.remove('done');
+    $('#loader-text').textContent = 'Loading the ledger…';
+    clearTimeout(loaderSlow);
+    // Railway can take a few seconds to wake after a quiet spell.
+    loaderSlow = setTimeout(() => { $('#loader-text').textContent = 'Waking up the server…'; }, 4000);
+  }
+  function hideLoader() {
+    clearTimeout(loaderSlow);
+    const el = $('#loader');
+    if (el.hidden) return;
+    el.classList.add('done');
+    setTimeout(() => { el.hidden = true; }, 450);
+  }
+
   // ---------- splash / login ----------
   function showSplash() {
+    hideLoader();
     clearInterval(pollTimer);
     $('#app').hidden = true;
     $('#splash').hidden = false;
@@ -584,6 +604,7 @@
   }
 
   async function enterApp() {
+    showLoader();
     try {
       if (session.token) {
         const s = await api('GET', '/api/session');
@@ -602,6 +623,7 @@
     $('#app').hidden = false;
     setSaveStatus('');
     render();
+    hideLoader();
     animateView();
     loadSeasons();
     refreshPush();
