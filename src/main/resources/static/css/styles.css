@@ -1629,3 +1629,4 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
   .nm-actions > * { flex: 1; }
 }
 @media (prefers-reduced-motion: reduce) { .nm-sweep, .nm-block.secs strong, .nm-card.today .nm-status { animation: none; } }
+a.btn { text-decoration: none; }
