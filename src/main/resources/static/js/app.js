@@ -1620,6 +1620,22 @@
     return test ? { id: test.id, sample: test } : null;
   }
 
+  // ---------- other league teams ----------
+  // Their logos, matched on the opponent's name ignoring case, spaces and punctuation.
+  const TEAMS = [
+    { name: 'Pak 11', keys: ['pak11', 'pakistan11'], logo: 'img/teams/pak11.png' },
+    { name: 'Anggler', keys: ['anggler', 'angler'], logo: 'img/teams/anggler.png' },
+    { name: 'Rage Rovers', keys: ['ragerovers', 'rage'], logo: 'img/teams/rage-rovers.png' },
+    { name: 'Raptors', keys: ['raptors', 'raptor'], logo: 'img/teams/raptors.png' },
+    { name: 'Galacticos', keys: ['galacticos', 'galactico'], logo: 'img/teams/galacticos.png' }
+  ];
+  function teamLogo(name) {
+    const n = String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (!n) return '';
+    const t = TEAMS.find(x => x.keys.some(k => n === k || n.includes(k)));
+    return t ? t.logo : '';
+  }
+
   // ---------- Playing XI announcement ----------
   function setAnnounced(matchId, on) {
     const m = state.matches.find(x => x.id === matchId);
@@ -1637,6 +1653,8 @@
   }
 
   // "See details" for a match: the scorecard once finished, else the announced XI, else the full squad.
+  const opponentLogo = m => teamLogo(m.opponent) ? `<img class="sheet-opp-logo" src="${teamLogo(m.opponent)}" alt="${esc(m.opponent)} logo">` : '';
+
   function sheetMatchInfo() {
     const m = C.matches(state).find(x => x.id === sheet.id);
     if (!m) return '';
@@ -1647,7 +1665,7 @@
 
   function lineupHead(m, kind) {
     return `<header class="sheet-head">
-        <div><span class="day-kind">${kind}</span><h2>Red Falcons v ${m.opponent ? esc(m.opponent) : 'TBC'}</h2>
+        <div>${opponentLogo(m)}<span class="day-kind">${kind}</span><h2>Red Falcons v ${m.opponent ? esc(m.opponent) : 'TBC'}</h2>
           <p class="muted">${esc(matchInfo(m)) || m.label}</p></div>
         <button class="icon-btn" data-action="close-sheet" aria-label="Close">${X_ICON}</button>
       </header>`;
@@ -1693,7 +1711,7 @@
     const src = scorecardSource(m);
     const name = p => `${esc(p.name)}${isCaptain(p) ? ' (c)' : ''}${isKeeper(p) ? ' †' : ''}`;
     const head = `<header class="sheet-head">
-        <div><span class="day-kind">Scorecard</span><h2>Red Falcons v ${m.opponent ? esc(m.opponent) : 'TBC'}</h2>
+        <div>${opponentLogo(m)}<span class="day-kind">Scorecard</span><h2>Red Falcons v ${m.opponent ? esc(m.opponent) : 'TBC'}</h2>
           <p class="muted">${esc(matchInfo(m)) || m.label}</p></div>
         <button class="icon-btn" data-action="close-sheet" aria-label="Close">${X_ICON}</button>
       </header>`;
@@ -1767,7 +1785,9 @@
       <div class="nm-face">
         <div class="nm-team us"><span class="nm-badge crest"><img src="img/logo.jpeg" alt=""></span><strong>Red Falcons</strong></div>
         <div class="nm-vs"><span>VS</span></div>
-        <div class="nm-team them"><span class="nm-badge opp">${esc(initials)}</span><strong>${opp ? esc(opp) : 'Opponent TBC'}</strong></div>
+        <div class="nm-team them">${teamLogo(opp)
+          ? `<span class="nm-badge logo"><img src="${teamLogo(opp)}" alt="${esc(opp)} logo"></span>`
+          : `<span class="nm-badge opp">${esc(initials)}</span>`}<strong>${opp ? esc(opp) : 'Opponent TBC'}</strong></div>
       </div>
       <div class="nm-count" data-id="${esc(m.id)}">${countdownHtml(m)}</div>
       <div class="nm-chips">${chips}</div>
@@ -1996,7 +2016,7 @@
         ${d.type === 'match' && admin && !d.test ? `<div class="match-fields">
           <input class="field" type="date" value="${esc(d.date)}" data-input="match-date" data-id="${esc(d.id)}" aria-label="Match date">
           <input class="field" type="time" value="${esc(d.time)}" data-input="match-time" data-id="${esc(d.id)}" aria-label="Kick-off time (leave empty until confirmed)" title="Kick-off time — leave empty until it is confirmed">
-          <input class="field" type="text" placeholder="Opponent" value="${esc(d.opponent)}" maxlength="80" data-input="match-opponent" data-id="${esc(d.id)}" data-focus="mopp-${esc(d.id)}" aria-label="Opponent">
+          <input class="field" type="text" placeholder="Opponent" value="${esc(d.opponent)}" maxlength="80" list="hpl-teams" data-input="match-opponent" data-id="${esc(d.id)}" data-focus="mopp-${esc(d.id)}" aria-label="Opponent">
           <input class="field" type="text" placeholder="Venue" value="${esc(d.venue)}" maxlength="80" data-input="match-venue" data-id="${esc(d.id)}" data-focus="mven-${esc(d.id)}" aria-label="Venue">
         </div>` : ''}
         ${d.type === 'training' ? (admin
