@@ -1,5 +1,6 @@
 package com.redfalcons.ledger.web;
 
+import com.redfalcons.ledger.service.ManagerAccessService;
 import com.redfalcons.ledger.service.TwoFactorService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,10 +22,12 @@ public class AuthController {
 
     private final AdminAuth auth;
     private final TwoFactorService twoFactor;
+    private final ManagerAccessService managers;
 
-    public AuthController(AdminAuth auth, TwoFactorService twoFactor) {
+    public AuthController(AdminAuth auth, TwoFactorService twoFactor, ManagerAccessService managers) {
         this.auth = auth;
         this.twoFactor = twoFactor;
+        this.managers = managers;
     }
 
     public record LoginRequest(String name, String device, String label) {
@@ -41,6 +44,16 @@ public class AuthController {
         String name = req == null || req.name() == null ? "" : req.name().trim();
         Map<String, Object> out = new HashMap<>();
         if (!auth.isAdminKey(name)) {
+            // An approved manager's phrase signs them in as that manager: no two-factor, and only the XI is theirs.
+            var manager = managers.login(name);
+            if (manager.isPresent()) {
+                out.put("name", manager.get().name());
+                out.put("admin", false);
+                out.put("token", null);
+                out.put("manager", true);
+                out.put("managerToken", manager.get().token());
+                return out;
+            }
             out.put("name", name.isEmpty() ? "Guest" : name);
             out.put("admin", false);
             out.put("token", null);

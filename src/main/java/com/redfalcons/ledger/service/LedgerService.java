@@ -174,6 +174,42 @@ public class LedgerService {
     }
 
     /** Replaces the whole ledger with the given state (admin only). */
+    /**
+     * Sets who plays (and the 12th man) for the matches named in {@code playing}; nothing else changes.
+     * A match missing from {@code twelfth} has its 12th man cleared. Finished matches already charged their
+     * XI, so only the admin may change those.
+     */
+    @Transactional
+    public void saveXi(Map<String, List<String>> playing, Map<String, String> twelfth, boolean admin) {
+        if (playing == null || playing.isEmpty()) return;
+        Map<String, MatchDay> known = new HashMap<>();
+        matches.findAll().forEach(m -> known.put(m.getId(), m));
+        int max = parseIntOr(settings.findById("maxPerMatch").map(Setting::getValue).orElse(null), 11);
+        List<Player> all = players.findAll();
+        Set<String> playerIds = new HashSet<>();
+        all.forEach(p -> playerIds.add(p.getId()));
+
+        Map<String, String> twelfthNow = parseTwelfth(settings.findById(TWELFTH).map(Setting::getValue).orElse(null));
+        Map<String, String> sent = twelfth == null ? Map.of() : twelfth;
+        for (Map.Entry<String, List<String>> e : playing.entrySet()) {
+            MatchDay m = known.get(e.getKey());
+            if (m == null || (m.isFinished() && !admin)) continue;
+            Set<String> xi = new LinkedHashSet<>();
+            if (e.getValue() != null) e.getValue().stream().filter(playerIds::contains).forEach(xi::add);
+            if (xi.size() > max) throw new IllegalArgumentException("A match can have at most " + max + " players.");
+            all.forEach(p -> {
+                if (xi.contains(p.getId())) p.getAttended().add(m.getId());
+                else p.getAttended().remove(m.getId());
+            });
+            String t = sent.get(m.getId());
+            if (t != null && playerIds.contains(t) && !xi.contains(t)) twelfthNow.put(m.getId(), t);
+            else twelfthNow.remove(m.getId());
+        }
+        StringJoiner out = new StringJoiner(";");
+        twelfthNow.forEach((match, id) -> out.add(match + "=" + id));
+        if (out.length() <= SETTING_MAX) settings.save(new Setting(TWELFTH, out.toString()));
+    }
+
     @Transactional
     public LedgerDto save(LedgerDto in) {
         if (in == null || in.players() == null) {

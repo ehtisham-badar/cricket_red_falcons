@@ -16,6 +16,7 @@
   ];
   const COLLAPSED_KEY = 'rf.collapsed';      // Days sections this viewer has folded: { training, match }
   const DEVICE_KEY = 'rf.device';            // this browser's trusted-device token (skips the two-factor code)
+  const MGR_KEY = 'rf.manager';              // this browser's pending manager request: { token, name, status }
   const ME_KEY = 'rf.me';                     // viewer's chosen player id, or NOT_ME to show the picker
   const NOT_ME = '__none';
   const POLL_MS = 15000;
@@ -85,6 +86,9 @@
   }
 
   // ---------- two-factor sign-in (admin) ----------
+  let mgr = readStore(MGR_KEY);               // { token, name, status } once this browser asked to be a manager
+  let mgrDraft = { phrase: '', edits: {} };   // the phrase being typed to ask, and phrases being edited by the admin
+  let mgrList = null;                         // admin: manager requests and approved managers
   let tfa = null;                             // { enabled, recoveryLeft, devices } from the server
   let tfaSetup = null;                        // { secret, uri, qr } while setting up
   let tfaCodes = null;                        // recovery codes to show once after turning it on
@@ -321,7 +325,10 @@
   const isAdmin = () => !archive && realAdmin();
   // Viewer access "own": viewers see only their own balance and payments.
   const ownOnly = () => !realAdmin() && state && state.settings.viewerAccess === 'own';
-  const daysVisible = () => realAdmin() || (!!state && state.settings.daysVisibility === 'all');
+  // An approved manager (a viewer the admin trusts) may set the playing XI of matches, and nothing else.
+  const isManager = () => !archive && !!(session && session.managerToken);
+  const canPickXi = d => !!d && d.type === 'match' && (isAdmin() || (isManager() && !d.finished));
+  const daysVisible = () => realAdmin() || !!(session && session.managerToken) || (!!state && state.settings.daysVisibility === 'all');
   const statsVisible = () => realAdmin() || (!!state && state.settings.statsVisibility === 'all');
   const seesMoneyOf = p => !ownOnly() || (myPlayer() || {}).id === p.id;
   const cur = () => state.settings.currency;
@@ -463,6 +470,8 @@
   async function api(method, path, body, opts = {}) {
     const headers = { 'Content-Type': 'application/json' };
     if (session && session.token) headers['X-Admin-Token'] = session.token;
+    if (session && session.managerToken) headers['X-Manager-Token'] = session.managerToken;
+    if (mgr && mgr.token) headers['X-Request-Token'] = mgr.token;
     const device = readStore(DEVICE_KEY);
     if (device) headers['X-Device'] = device;
     else {
@@ -487,6 +496,7 @@
   // ---------- saving (admin) ----------
   function commit() {
     render();
+    if (isManager()) { setSaveStatus('pending'); clearTimeout(saveTimer); saveTimer = setTimeout(flushXi, 450); return; }
     if (!isAdmin()) return;
     setSaveStatus('pending');
     clearTimeout(saveTimer);
@@ -510,6 +520,37 @@
       }
       setSaveStatus('error');
       saveTimer = setTimeout(flushSave, 4000);
+    }
+  }
+
+  // A manager sends only the playing XI and 12th man of the matches that aren't finished.
+  async function flushXi() {
+    saveTimer = null;
+    setSaveStatus('saving');
+    const playing = {}, twelfth = {};
+    state.matches.filter(m => !m.finished).forEach(m => {
+      playing[m.id] = state.players.filter(p => p.att[m.id]).map(p => p.id);
+      if (state.twelfth[m.id]) twelfth[m.id] = state.twelfth[m.id];
+    });
+    try {
+      await api('PUT', '/api/manager/xi', { playing, twelfth });
+      if (!saveTimer) setSaveStatus('saved');
+    } catch (e) {
+      if (e.status === 403) {
+        await refreshManager();
+        setSaveStatus('');
+        try { state = await fetchLedger(); } catch { /* the next poll will catch up */ }
+        render();
+        return;
+      }
+      if (e.status === 400) {
+        setSaveStatus('');
+        toast(e.message);
+        try { state = await fetchLedger(); render(); } catch { /* ignore */ }
+        return;
+      }
+      setSaveStatus('error');
+      saveTimer = setTimeout(flushXi, 4000);
     }
   }
 
@@ -613,11 +654,108 @@
     </section>`;
   }
 
+  // ---------- manager access ----------
+  function setMgr(next) {
+    mgr = next;
+    writeStore(MGR_KEY, next);
+  }
+
+  // A signed-in manager whose access the admin ended (or whose phrase was changed) goes back to view-only.
+  function dropManager() {
+    session = { name: session.name, admin: false, token: null };
+    writeStore(SESSION_KEY, session);
+    if (tab === 'days' && !daysVisible()) tab = 'summary';
+    toast('Your manager access was ended. You are now view-only.');
+    render();
+  }
+
+  // Manager: is the session still valid? Requester: was the request approved or declined?
+  async function refreshManager() {
+    if (session && session.managerToken) {
+      let ok = true;
+      try { ok = (await api('GET', '/api/manager/session')).manager; } catch { return; }
+      if (!ok) dropManager();
+      return;
+    }
+    if (!mgr || !mgr.token) return;
+    let status;
+    try { status = (await api('GET', '/api/manager/status')).status; } catch { return; }
+    if (status === mgr.status) return;
+    if (status === 'none') {
+      setMgr(null);
+      toast('Your manager request was declined.');
+    } else {
+      setMgr({ ...mgr, status });
+      toast('Approved! Switch user and enter your phrase on the start screen to sign in as manager.');
+    }
+    renderIfSettings();
+  }
+
+  async function loadManagers() {
+    if (!realAdmin()) return;
+    let next;
+    try { next = await api('GET', '/api/manager/requests'); } catch { return; }
+    if (JSON.stringify(next) === JSON.stringify(mgrList)) return;
+    mgrList = next;
+    render();
+  }
+
+  const pendingManagers = () => (mgrList || []).filter(m => m.status === 'pending');
+
+  function managerPanel() {
+    const list = mgrList || [];
+    const row = m => {
+      const pending = m.status === 'pending';
+      const draft = m.id in mgrDraft.edits ? mgrDraft.edits[m.id] : m.phrase;
+      return `<li class="mgr-row">
+        <span class="mgr-who"><strong>${esc(m.name)}</strong>
+          <small>${esc(m.label)} · ${pending ? 'asked' : 'approved'} ${esc(formatDate(localDay(m.decidedAt || m.createdAt)))}</small></span>
+        <span class="mgr-phrase">
+          <input class="field" type="text" maxlength="60" value="${esc(draft)}" data-input="mgr-edit" data-id="${esc(m.id)}" data-focus="mgrp-${esc(m.id)}" aria-label="Phrase for ${esc(m.name)}" spellcheck="false" autocomplete="off">
+          ${draft !== m.phrase ? `<button class="btn btn-gold small" data-action="mgr-save-phrase" data-id="${esc(m.id)}">Save phrase</button>` : ''}
+        </span>
+        <span class="mgr-btns">${pending
+          ? `<button class="btn btn-gold small" data-action="mgr-approve" data-id="${esc(m.id)}">Approve</button>
+             <button class="btn btn-ghost small" data-action="mgr-remove" data-id="${esc(m.id)}" data-kind="decline">Decline</button>`
+          : `<button class="btn btn-ghost small" data-action="mgr-remove" data-id="${esc(m.id)}" data-kind="revoke">Revoke</button>`}</span>
+      </li>`;
+    };
+    const pending = list.filter(m => m.status === 'pending'), active = list.filter(m => m.status === 'approved');
+    return `<section class="panel">
+      <div class="panel-head"><h3>App managers</h3><p class="muted">A viewer asks for manager access with a phrase of their own. Once you approve, typing that phrase on the start screen signs them in (no two-factor). Managers can set the playing XI and 12th man of matches that aren’t finished, and nothing else. Change a phrase to sign that manager out, or revoke them, whenever you like.</p></div>
+      ${mgrList === null ? '<p class="muted">Loading…</p>' : !list.length ? '<p class="muted season-empty">No requests yet.</p>' : `
+        ${pending.length ? `<h3 class="sub first">Waiting for you</h3><ul class="mgr-list">${pending.map(row).join('')}</ul>` : ''}
+        ${active.length ? `<h3 class="sub ${pending.length ? '' : 'first'}">Managers</h3><ul class="mgr-list">${active.map(row).join('')}</ul>` : ''}`}
+    </section>`;
+  }
+
+  function managerRequestPanel() {
+    let body;
+    if (isManager()) {
+      body = `<p class="muted">You’re signed in as an app manager. Open a match on the Days tab to set the playing XI and 12th man. Everything else stays view-only.</p>`;
+    } else if (mgr && mgr.status === 'approved') {
+      body = `<p class="muted">Approved! Switch user, then type your phrase on the start screen to sign in as manager.</p>`;
+    } else if (mgr && mgr.status === 'pending') {
+      body = `<p class="muted">Request sent. The admin has to approve it — this page updates by itself. Your phrase is the one you chose.</p>
+        <button class="btn btn-ghost" data-action="mgr-cancel">Cancel request</button>`;
+    } else {
+      body = `<p class="muted">Pick a phrase only you know (at least 8 characters). If the admin approves, typing it on the start screen signs you in as an app manager, who can set the playing XI. The admin can see it, change it, or end your access at any time.</p>
+        <div class="mgr-ask">
+          <input class="field" type="text" maxlength="60" value="${esc(mgrDraft.phrase)}" placeholder="Your phrase" data-input="mgr-phrase" data-focus="mgr-phrase" aria-label="Your phrase" spellcheck="false" autocomplete="off">
+          <button class="btn btn-gold" data-action="mgr-request">Request manager access</button>
+        </div>`;
+    }
+    return `<section class="panel"><div class="panel-head"><h3>App manager</h3></div>${body}</section>`;
+  }
+
   // ---------- polling (viewers) ----------
   function startPolling() {
     clearInterval(pollTimer);
     pollTimer = setInterval(async () => {
-      if (archive || isAdmin() || document.visibilityState !== 'visible') return;
+      if (archive || document.visibilityState !== 'visible') return;
+      if (isAdmin()) { loadManagers(); return; }
+      await refreshManager();
+      if (saveTimer) return; // a manager's XI change is still on its way
       try {
         const d = await fetchLedger();
         if (comparable(d) !== comparable(state)) { state = d; render(); }
@@ -724,7 +862,9 @@
     try {
       const r = await api('POST', '/api/login', { name, device: readStore(DEVICE_KEY), label: deviceLabel() });
       if (r.needCode) { showCodeStep(r.challenge); return; }
+      if (mgr && mgr.name !== r.name) setMgr(null);
       session = { name: r.name, admin: r.admin, token: r.token };
+      if (r.manager && r.managerToken) session.managerToken = r.managerToken;
       writeStore(SESSION_KEY, session);
       writeStore(ME_KEY, null); // a new name may be a different person on this device
       resetView();
@@ -748,6 +888,16 @@
           return;
         }
       }
+      if (session.managerToken) {
+        const s = await api('GET', '/api/manager/session');
+        if (!s.manager) {
+          session = null;
+          writeStore(SESSION_KEY, null);
+          showSplash();
+          $('#login-error').textContent = 'Your manager access has ended. Ask the admin, or enter your name.';
+          return;
+        }
+      }
       state = await fetchLedger();
       // A private ledger only sends a viewer their own payments: once we know who they are, ask again.
       const me = ownOnly() && myPlayer();
@@ -766,6 +916,8 @@
     loadSeasons();
     refreshPush();
     loadTfa();
+    loadManagers();
+    refreshManager();
     startPolling();
   }
 
@@ -782,10 +934,10 @@
     if (TABS.some(t => t.id === tab && !shown(t))) tab = 'summary';
     $('#tabs').innerHTML = TABS.filter(shown).map(t =>
       `<button class="tab ${t.id === tab ? 'active' : ''}" data-action="tab" data-tab="${t.id}" ${t.id === tab ? 'aria-current="page"' : ''}>
-        ${icon(t.icon)}<span>${t.label}</span></button>`).join('');
+        ${icon(t.icon)}<span>${t.label}</span>${t.id === 'settings' && realAdmin() && pendingManagers().length ? '<i class="tab-dot" title="Manager requests waiting"></i>' : ''}</button>`).join('');
     $('#who-badge').innerHTML = isAdmin()
       ? `<span class="badge badge-admin">${icon('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>', 14)} Admin</span>`
-      : `<span class="badge badge-view">${icon('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>', 14)} ${esc(session.name)} · view only</span>`;
+      : `<span class="badge badge-view">${icon('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>', 14)} ${esc(session.name)} · ${isManager() ? 'manager' : 'view only'}</span>`;
 
     const views = { summary: viewSummary, days: viewDays, stats: viewStats, players: viewPlayers, settings: viewSettings };
     $('#view').innerHTML = archiveBar() + (views[tab] || viewSummary)();
@@ -1652,7 +1804,7 @@
     const accountPanel = `
       <section class="panel account-card">
         <span class="account-avatar">${admin ? icon('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>', 22) : esc((session.name || '?').trim().charAt(0).toUpperCase())}</span>
-        <span class="account-text"><strong>${admin ? 'Admin' : esc(session.name)}</strong><small>${admin ? 'Can change everything' : 'View only · this page refreshes by itself'}</small></span>
+        <span class="account-text"><strong>${admin ? 'Admin' : esc(session.name)}</strong><small>${admin ? 'Can change everything' : isManager() ? 'App manager · can set the playing XI' : 'View only · this page refreshes by itself'}</small></span>
         <button class="btn btn-ghost" data-action="logout">Switch user</button>
       </section>`;
 
@@ -1666,7 +1818,9 @@
       { id: 'team', title: 'Team & payments', note: admin ? 'Where players pay and how shares are worked out.' : 'Where to send your payments.',
         cells: cell(payPanel, 6) + cell(prefs, 6) },
       admin && { id: 'access', title: 'Who can see what', note: 'What players see when they sign in with their name.',
-        cells: cell(accessPanel, 6) + cell(statsPanel, 6) },
+        cells: cell(accessPanel, 6) + cell(statsPanel, 6) + cell(managerPanel(), 12) },
+      !realAdmin() && !archive && { id: 'manager', title: 'App manager', note: 'Help the admin pick the playing XI.', top: true,
+        cells: cell(managerRequestPanel(), 12) },
       { id: 'notify', title: 'Notifications', note: realAdmin() ? 'Turn them on for this device, and message the team.' : 'Turn them on for this device.', top: true,
         cells: isAdmin() ? cell(notify.device, 5) + cell(notify.compose, 7) : cell(notify.device, 12) },
       { id: 'data', title: 'Data', note: admin ? 'Backups, the season archive and resets.' : 'Keep a copy of the ledger.', top: true,
@@ -1709,14 +1863,15 @@
     const on = !!p.att[d.id];
     const isMatch = d.type === 'match';
     if (!on && !plain && isTwelfth(p, d)) {
-      return `<button class="tog match twelfth ${!isAdmin() ? 'ro' : ''}" data-action="toggle-att" data-player="${esc(p.id)}" data-day="${esc(d.id)}"
-        ${!isAdmin() ? 'disabled' : ''} title="12th man — not charged for ${d.label}">12th man</button>`;
+      return `<button class="tog match twelfth ${!canPickXi(d) ? 'ro' : ''}" data-action="toggle-att" data-player="${esc(p.id)}" data-day="${esc(d.id)}"
+        ${!canPickXi(d) && !isAdmin() ? 'disabled' : ''} title="12th man — not charged for ${d.label}">12th man</button>`;
     }
     const max = state.settings.maxPerMatch;
     const full = isMatch && !on && stats[d.id].n >= max;
-    const disabled = !isAdmin() || full;
+    const editable = isMatch ? canPickXi(d) : isAdmin();
+    const disabled = !editable || full;
     const label = isMatch ? (on ? 'Played' : 'Not played') : (on ? 'Arrived' : 'Not arrived');
-    return `<button class="tog ${d.type} ${on ? 'on' : ''} ${!isAdmin() ? 'ro' : ''}" data-action="toggle-att" data-player="${esc(p.id)}" data-day="${esc(d.id)}"
+    return `<button class="tog ${d.type} ${on ? 'on' : ''} ${!editable ? 'ro' : ''}" data-action="toggle-att" data-player="${esc(p.id)}" data-day="${esc(d.id)}"
       ${disabled ? 'disabled' : ''} ${full ? `title="${max} players already played ${d.label}"` : ''} aria-pressed="${on}">${label}</button>`;
   }
 
@@ -1808,9 +1963,9 @@
         <span class="sr">${i + 1}</span>
         <span class="pname"><strong>${esc(p.name)}</strong><small>${esc(p.role) || '—'}</small></span>
         <span class="att-btns">
-          ${isMatch && isAdmin() ? `<button class="tog twelfth-tog ${twelfthId === p.id ? 'on' : ''}" data-action="toggle-twelfth" data-player="${esc(p.id)}" data-day="${esc(d.id)}"
+          ${canPickXi(d) ? `<button class="tog twelfth-tog ${twelfthId === p.id ? 'on' : ''}" data-action="toggle-twelfth" data-player="${esc(p.id)}" data-day="${esc(d.id)}"
             aria-pressed="${twelfthId === p.id}" title="${twelfthId === p.id ? 'Remove as 12th man' : 'Make 12th man (not charged)'}">12th</button>` : ''}
-          ${toggleButton(p, d, stats, isAdmin())}
+          ${toggleButton(p, d, stats, isMatch ? canPickXi(d) : isAdmin())}
         </span>
       </div>`).join('');
     return `
@@ -1829,7 +1984,7 @@
         <div><strong>${s.n > 0 && s.amount > 0 ? fmt(s.share) : '—'}</strong><span>each</span></div>
       </div>
       <div class="sheet-body">
-        ${isMatch && isAdmin() ? `<div class="xi-actions">
+        ${canPickXi(d) ? `<div class="xi-actions">
           <button class="btn btn-ghost" data-action="random-xi" data-id="${esc(d.id)}">${DICE_ICON} Random XI + 12th</button>
           ${s.n > 0 || twelfthId ? `<button class="btn btn-danger" data-action="clear-xi" data-id="${esc(d.id)}">${X_ICON} Clear XI</button>` : ''}
           ${s.n > 0 ? `<button class="btn btn-gold" data-action="share-xi" data-id="${esc(d.id)}">${IMAGE_ICON} Share Playing XI</button>` : ''}
@@ -1842,7 +1997,7 @@
         <h3 class="sub first">Expenses <span class="muted">${fmt(s.amount)}</span></h3>
         ${expenseRows(d)}
         <h3 class="sub">Attendance <span class="muted">${s.n}${isMatch ? ` / ${max}` : ''}</span></h3>
-        ${full && isAdmin() ? `<p class="hint">${max} players already played ${d.label}</p>` : ''}
+        ${full && (isMatch ? canPickXi(d) : isAdmin()) ? `<p class="hint">${max} players already played ${d.label}</p>` : ''}
         ${rows || '<p class="muted center">No players yet.</p>'}
       </div>`;
   }
@@ -2157,6 +2312,7 @@
       if (!ok) return;
       if (saveTimer) { clearTimeout(saveTimer); await flushSave(); }
       if (session && session.token) await api('POST', '/api/logout').catch(() => {});
+      if (session && session.managerToken) await api('POST', '/api/manager/logout').catch(() => {});
       session = null;
       writeStore(SESSION_KEY, null);
       writeStore(ME_KEY, null);
@@ -2164,10 +2320,10 @@
       showSplash();
     },
     'toggle-att'(el) {
-      if (!isAdmin()) return;
       const p = findPlayer(el.dataset.player);
       const day = C.days(state).find(d => d.id === el.dataset.day);
       if (!p || !day) return;
+      if (day.type === 'match' ? !canPickXi(day) : !isAdmin()) return;
       if (p.att[day.id]) {
         delete p.att[day.id];
       } else {
@@ -2182,10 +2338,9 @@
       commit();
     },
     'toggle-twelfth'(el) {
-      if (!isAdmin()) return;
       const p = findPlayer(el.dataset.player);
       const day = el.dataset.day;
-      if (!p || !findMatch(day)) return;
+      if (!p || !canPickXi(findMatch(day))) return;
       if (state.twelfth[day] === p.id) {
         delete state.twelfth[day];
       } else {
@@ -2193,6 +2348,50 @@
         state.twelfth[day] = p.id;
       }
       commit();
+    },
+    async 'mgr-request'() {
+      const phrase = mgrDraft.phrase.trim();
+      if (phrase.length < 8) { toast('The phrase needs at least 8 characters.'); return; }
+      try {
+        const r = await api('POST', '/api/manager/request', { name: session.name, phrase, label: deviceLabel() });
+        setMgr({ token: r.token, name: session.name, status: 'pending' });
+        mgrDraft.phrase = '';
+        toast('Request sent to the admin.');
+        render();
+      } catch (e) { toast(e.message || 'Could not send the request.'); }
+    },
+    async 'mgr-cancel'() {
+      if (!mgr) return;
+      await api('DELETE', '/api/manager/request').catch(() => {});
+      setMgr(null);
+      render();
+    },
+    async 'mgr-save-phrase'(el) {
+      if (!realAdmin()) return;
+      const phrase = (mgrDraft.edits[el.dataset.id] || '').trim();
+      try {
+        await api('PUT', '/api/manager/requests/' + encodeURIComponent(el.dataset.id) + '/phrase', { phrase });
+        delete mgrDraft.edits[el.dataset.id];
+        mgrList = null; await loadManagers();
+        toast('Phrase changed. That manager is signed out.');
+      } catch (e) { toast(e.message || 'Could not change the phrase.'); }
+    },
+    async 'mgr-approve'(el) {
+      if (!realAdmin()) return;
+      try { await api('POST', '/api/manager/requests/' + encodeURIComponent(el.dataset.id) + '/approve'); } catch { toast('Could not approve it.'); }
+      mgrList = null; await loadManagers();
+      toast('Manager approved.');
+    },
+    async 'mgr-remove'(el) {
+      if (!realAdmin()) return;
+      const m = (mgrList || []).find(x => x.id === el.dataset.id);
+      if (el.dataset.kind === 'revoke') {
+        const ok = await confirmDialog(`Revoke ${m ? m.name : 'manager'}’s access?`, 'They go back to view-only straight away. They can ask again.', 'Revoke', true);
+        if (!ok) return;
+      }
+      try { await api('DELETE', '/api/manager/requests/' + encodeURIComponent(el.dataset.id)); } catch { toast('Could not do that.'); }
+      mgrList = null; await loadManagers();
+      toast(el.dataset.kind === 'revoke' ? 'Access revoked.' : 'Request declined.');
     },
     'bat-move'(el) {
       if (!isAdmin()) return;
@@ -2243,7 +2442,7 @@
     },
     async 'clear-xi'(el) {
       const day = findMatch(el.dataset.id);
-      if (!day || !isAdmin()) return;
+      if (!canPickXi(day)) return;
       const n = state.players.filter(p => p.att[day.id]).length;
       const ok = await confirmDialog(`Clear the XI for ${day.label}?`,
         `Removes the ${n} playing${state.twelfth[day.id] ? ' and the 12th man' : ''}. Until a new XI is picked, this match's league fee${C.dayAmount(state, day.id) > 0 ? ' is split across everyone taking part, and its expenses aren\'t assigned to anyone' : ' is split across everyone taking part'}.`,
@@ -2257,7 +2456,7 @@
     },
     async 'random-xi'(el) {
       const day = findMatch(el.dataset.id);
-      if (!day) return;
+      if (!canPickXi(day)) return;
       const pool = state.players.filter(C.inTournament);
       if (!pool.length) { toast('No players in the tournament to pick from.'); return; }
       const picked = state.players.some(p => p.att[day.id]) || state.twelfth[day.id];
@@ -2698,6 +2897,8 @@
       const fn = el.dataset && inputs[el.dataset.input];
       if (el.id === 'add-names') { draftNames = el.value; return; }
       if (el.dataset && el.dataset.input === 'season-name') { seasonDraft = el.value; return; }
+      if (el.dataset && el.dataset.input === 'mgr-phrase') { mgrDraft.phrase = el.value; return; }
+      if (el.dataset && el.dataset.input === 'mgr-edit') { mgrDraft.edits[el.dataset.id] = el.value; render(); return; }
       if (el.dataset && /^tfa-/.test(el.dataset.input || '')) { tfaDraft[el.dataset.input.slice(4)] = el.value; return; }
       if (el.dataset && /^push-/.test(el.dataset.input || '')) {
         const key = el.dataset.input.slice(5);
