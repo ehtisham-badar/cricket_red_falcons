@@ -249,8 +249,8 @@
   const bowled = e => e.bowlBalls > 0 || extrasOf(e) > 0;
 
   // Season totals per player, from every match that has stats.
-  function leagueStats(state) {
-    const ms = matches(state);
+  function leagueStats(state, visible) {
+    const ms = matches(state).filter(m => !visible || visible(m));
     return state.players.map(p => {
       const t = { player: p, matches: 0, innings: 0, outs: 0, runs: 0, balls: 0, ones: 0, twos: 0, threes: 0, fours: 0, sixes: 0,
         high: null, bowlBalls: 0, bowlRuns: 0, conceded: 0, wides: 0, noBalls: 0, wickets: 0, best: null,

@@ -335,6 +335,12 @@
   // An approved manager (a viewer the admin trusts) may set the playing XI of matches, and nothing else.
   const isManager = () => !archive && !!(session && session.managerToken);
   const canPickXi = d => !!d && d.type === 'match' && (isAdmin() || (isManager() && !d.finished));
+  // Plain viewers see a match only once the admin has finished it. A manager also sees open matches (they
+  // set the XI there); test matches are the admin's alone.
+  const seesOpenMatches = () => realAdmin() || !!(session && session.managerToken);
+  const matchVisible = m => m.test ? realAdmin() : (m.finished || seesOpenMatches());
+  // Stats and counts follow the stricter rule: only the admin sees anything from a match before it is finished.
+  const statsMatchVisible = m => realAdmin() || (!m.test && m.finished);
   const daysVisible = () => realAdmin() || !!(session && session.managerToken) || (!!state && state.settings.daysVisibility === 'all');
   const statsVisible = () => realAdmin() || (!!state && state.settings.statsVisibility === 'all');
   const seesMoneyOf = p => !ownOnly() || (myPlayer() || {}).id === p.id;
@@ -865,7 +871,7 @@
           <button class="btn btn-gold" data-action="mgr-request">Request manager access</button>
         </div>`;
     }
-    return `<section class="panel"><div class="panel-head"><h3>App manager</h3></div>${body}</section>`;
+    return `<section class="panel">${body}</section>`;
   }
 
   // ---------- polling (viewers) ----------
@@ -1045,6 +1051,23 @@
   }
 
   // ---------- rendering ----------
+  // Highlights the Settings section in view in the side menu.
+  function markSettingsNav() {
+    const btns = document.querySelectorAll('.set-nav-btn');
+    if (!btns.length) return;
+    const offset = window.innerWidth <= 960 ? 150 : 110;
+    let current = null;
+    document.querySelectorAll('.set-section').forEach(sec => { if (sec.getBoundingClientRect().top - offset <= 0) current = sec.id.replace(/^set-/, ''); });
+    if (!current) current = (btns[0].dataset.id);
+    btns.forEach(b => b.classList.toggle('on', b.dataset.id === current));
+  }
+  let navTick = false;
+  window.addEventListener('scroll', () => {
+    if (navTick) return;
+    navTick = true;
+    requestAnimationFrame(() => { navTick = false; markSettingsNav(); });
+  }, { passive: true });
+
   function render() {
     if (!state) return;
     const active = document.activeElement;
@@ -1071,6 +1094,7 @@
     $('#view').innerHTML = archiveBar() + (views[tab] || viewSummary)();
     $('#sheet-root').innerHTML = sheet ? renderSheet() : '';
     document.body.classList.toggle('sheet-open', !!sheet);
+    markSettingsNav();
 
     if (focusKey) {
       const el = document.querySelector(`[data-focus="${CSS.escape(focusKey)}"]`);
@@ -1430,7 +1454,7 @@
     </section>`;
   }
 
-  const realMatchCount = () => state.matches.filter(m => !m.test).length;
+  const realMatchCount = () => state.matches.filter(m => !m.test && matchVisible(m)).length;
 
   function viewSummary() {
     const t = C.totals(state, fmt);
@@ -1617,8 +1641,8 @@
     const all = C.days(state);
     const folded = readStore(COLLAPSED_KEY) || {};
     const trainings = all.filter(d => d.type === 'training');
-    const matches = all.filter(d => d.type === 'match' && !d.test);
-    const tests = all.filter(d => d.test);
+    const matches = all.filter(d => d.type === 'match' && !d.test && matchVisible(d));
+    const tests = all.filter(d => d.test && matchVisible(d));
 
     return `
       ${pageHead('Days', 'Each day’s expenses are split among the players who attended. Whoever paid for an item gets it credited.',
@@ -1677,7 +1701,7 @@
   const ECON = (runs, balls) => { const v = C.economy(runs, balls); return v == null ? '—' : v.toFixed(2); };
 
   function viewStats() {
-    const ms = C.matches(state);
+    const ms = C.matches(state).filter(statsMatchVisible);
     if (statsSel !== 'league' && !ms.some(m => m.id === statsSel)) statsSel = 'league';
     const seg = `<div class="seg" role="tablist" aria-label="Stats view">
       <button class="seg-btn ${statsSel === 'league' ? 'on' : ''}" data-action="stats-sel" data-id="league">League</button>
@@ -1763,7 +1787,7 @@
   }
 
   function leagueStatsView() {
-    const all = C.leagueStats(state).filter(t => t.matches > 0);
+    const all = C.leagueStats(state, statsMatchVisible).filter(t => t.matches > 0);
     if (!all.length) {
       return `<div class="empty st-empty"><p>No stats yet. Pick a match above and add them as you play — the season totals build up here.</p></div>`;
     }
@@ -1784,7 +1808,7 @@
       ${rows.length ? `<div class="table-wrap"><table class="sheet-table"><thead><tr>${head.map((h, i) => `<th ${i === 0 ? 'class="st-name"' : ''}>${h}</th>`).join('')}</tr></thead>
         <tbody>${rows.join('')}</tbody></table></div>` : '<p class="muted">Nothing yet.</p>'}
     </section>`;
-    const tests = state.matches.filter(m => m.test).length;
+    const tests = state.matches.filter(m => m.test && statsMatchVisible(m)).length;
     return `${tests ? `<p class="test-note">These totals include ${tests} generated test match${tests === 1 ? '' : 'es'}. Delete them from the Days tab when you are done trying things out.</p>` : ''}
       <div class="st-leaders">${leaders.map(l => `<div class="stat ${l.x ? 'pos' : ''}"><span>${l.label}</span>
         <strong>${l.x ? l.x.v : '—'}</strong><small>${l.x ? esc(l.x.t.player.name) : (l.note || 'No one yet')}</small></div>`).join('')}</div>
@@ -1890,7 +1914,7 @@
   const bowlingText = p => [p.bowlingArm ? `${p.bowlingArm === 'left' ? 'Left' : 'Right'}-arm` : '', p.bowlingStyle.toLowerCase()].filter(Boolean).join(' ') || '—';
 
   function profileStats(p, played) {
-    const t = C.leagueStats(state).find(x => x.player.id === p.id);
+    const t = C.leagueStats(state, statsMatchVisible).find(x => x.player.id === p.id);
     if (!t || !t.matches) return '';
     const tile = (label, value) => `<div class="stat"><span>${label}</span><strong>${value}</strong></div>`;
     const bat = t.innings > 0 ? `<h3 class="sub">Batting</h3><div class="prof-tiles">
@@ -2102,8 +2126,14 @@
     const statsPanel = admin ? `
       <section class="panel">
         <div class="panel-head"><h3>Tabs for players</h3><p class="muted">Choose which tabs view-only players can open. You always see all of them.</p></div>
-        ${tabRows.map(r => `<div class="step"><span class="step-label">${icon(r.path, 18)} ${r.label}</span>
-          <button class="tog ${s[r.key] === 'all' ? 'on' : ''}" data-action="set-tab-visibility" data-key="${r.key}" aria-pressed="${s[r.key] === 'all'}">${s[r.key] === 'all' ? 'Shown' : 'Admin only'}</button></div>`).join('')}
+${tabRows.map(r => {
+          const on = s[r.key] === 'all';
+          return `<div class="pref switch-row">
+            <span class="sw-ico">${icon(r.path, 18)}</span>
+            <span class="sw-text">${r.label}<small class="muted">${on ? 'Players can open it' : 'Only you can open it'}</small></span>
+            <button class="switch ${on ? 'on' : ''}" role="switch" aria-checked="${on}" data-action="set-tab-visibility" data-key="${r.key}" aria-label="Show ${r.label} to players"><span></span></button>
+          </div>`;
+        }).join('')}
       </section>` : '';
 
     const me = !realAdmin() ? myPlayer() : null;
@@ -2111,7 +2141,7 @@
       ${options.map(([v, l]) => `<option value="${esc(v)}" ${me[prop] === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`;
     const photoPanel = !realAdmin() ? `
       <section class="panel photo-panel">
-        <div class="panel-head"><h3>My profile</h3><p class="muted">Your photo and cricket details, shown on your player profile for everyone in the team.</p></div>
+        <div class="panel-head"><p class="muted">Shown on your player profile for everyone in the team. Changes save as soon as you pick them.</p></div>
         ${me ? `<div class="photo-row">${avatar(me, 84)}<div class="photo-actions">
             <button class="btn btn-gold" data-action="photo-pick" data-id="${esc(me.id)}">${me.photoAt ? 'Change photo' : 'Upload photo'}</button>
             ${me.photoAt ? `<button class="btn btn-ghost" data-action="photo-remove" data-id="${esc(me.id)}">Remove</button>` : ''}</div></div>
@@ -2131,37 +2161,63 @@
       </section>`;
 
     // Each section lays its cards out on a 12-column grid: [html, span]. A cell can hold a stack of cards.
+    const SI = {
+      look: icon('<circle cx="13.5" cy="6.5" r="1.5"/><circle cx="17.5" cy="10.5" r="1.5"/><circle cx="8.5" cy="7.5" r="1.5"/><circle cx="6.5" cy="12.5" r="1.5"/><path d="M12 2a10 10 0 0 0 0 20c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.3-.5-.8-.5-1.2 0-1.1.9-2 2-2h2.4c3 0 5.6-2.5 5.6-5.5C23 6 18 2 12 2z"/>', 18),
+      team: icon('<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>', 18),
+      access: icon('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>', 18),
+      manager: icon('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>', 18),
+      notify: icon('<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>', 18),
+      data: icon('<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>', 18),
+      account: icon('<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>', 18),
+      profile: icon(PERSON_PATH, 18)
+    };
+    const meP = !realAdmin() ? myPlayer() : null;
+    const heroName = realAdmin() ? 'Admin' : esc(session.name);
+    const heroSub = realAdmin() ? 'Can change everything' : isManager() ? 'App manager · can set the playing XI' : 'View only · this page refreshes by itself';
+    const hero = `<section class="set-hero">
+      <span class="set-hero-av">${realAdmin() ? icon('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>', 28)
+        : meP ? avatar(meP, 56) : esc((session.name || '?').trim().charAt(0).toUpperCase())}</span>
+      <span class="set-hero-text"><strong>${heroName}</strong><small>${heroSub}</small></span>
+      <span class="set-hero-chips">
+        <span class="hero-chip"><b>${state.players.length}</b> player${state.players.length === 1 ? '' : 's'}</span>
+        <span class="hero-chip"><b>${realMatchCount()}</b> match${realMatchCount() === 1 ? '' : 'es'}</span>
+        <span class="hero-chip">${icon('<circle cx="12" cy="12" r="9"/><path d="M12 3v18"/>', 14)} ${esc(THEMES.find(x => x.id === currentTheme()).name)}</span>
+      </span>
+      <button class="btn btn-ghost" data-action="logout">Switch user</button>
+    </section>`;
     const cell = (html, span) => html ? `<div class="set-cell span-${span}">${html}</div>` : '';
     const stack = (...cards) => cards.filter(Boolean).join('');
     const notify = notifyPanels();
     const sections = [
-      { id: 'look', title: 'Appearance', note: 'How the app looks on this device.', top: true,
+      { id: 'look', icon: SI.look, title: 'Appearance', note: 'How the app looks on this device.', top: true,
         cells: cell(themePanel, 7) + cell(installPanel(), 5) },
-      { id: 'team', title: 'Team & payments', note: admin ? 'Where players pay and how shares are worked out.' : 'Where to send your payments.',
+      { id: 'team', icon: SI.team, title: 'Team & payments', note: admin ? 'Where players pay and how shares are worked out.' : 'Where to send your payments.',
         cells: cell(payPanel, 6) + cell(prefs, 6) },
-      admin && { id: 'access', title: 'Who can see what', note: 'What players see when they sign in with their name.',
+      admin && { id: 'access', icon: SI.access, title: 'Who can see what', note: 'What players see when they sign in with their name.',
         cells: cell(accessPanel, 6) + cell(statsPanel, 6) + cell(managerPanel(), 12) },
-      !realAdmin() && !archive && { id: 'manager', title: 'App manager', note: 'Help the admin pick the playing XI.', top: true,
+      !realAdmin() && !archive && { id: 'manager', icon: SI.manager, title: 'App manager', note: 'Help the admin pick the playing XI.', top: true,
         cells: cell(managerRequestPanel(), 12) },
-      { id: 'notify', title: 'Notifications', note: realAdmin() ? 'Turn them on for this device, and message the team.' : 'Turn them on for this device.', top: true,
+      { id: 'notify', icon: SI.notify, title: 'Notifications', note: realAdmin() ? 'Turn them on for this device, and message the team.' : 'Turn them on for this device.', top: true,
         cells: isAdmin() ? cell(notify.device, 5) + cell(notify.compose, 7) : cell(notify.device, 12) },
-      { id: 'data', title: 'Data', note: admin ? 'Backups, the season archive and resets.' : 'Keep a copy of the ledger.', top: true,
+      { id: 'data', icon: SI.data, title: 'Data', note: admin ? 'Backups, the season archive and resets.' : 'Keep a copy of the ledger.', top: true,
         cells: admin
           ? cell(seasonPanel(), 7) + cell(`<div class="set-stack">${stack(backupPanel, cleanupPanel)}</div>`, 5) + cell(dangerPanel, 12)
           : cell(backupPanel, 5) + cell(seasonPanel(), 7) },
-      { id: 'account', title: 'Account', note: 'Who is signed in on this device.', top: true,
-        cells: admin ? cell(accountPanel, 5) + cell(tfaPanel(), 7) : cell(accountPanel, 5) + cell(photoPanel, 7) }
+      admin
+        ? { id: 'account', icon: SI.account, title: 'Security', note: 'Protect the admin sign-in.', top: true, cells: cell(tfaPanel(), 12) }
+        : { id: 'account', icon: SI.profile, title: 'My profile', note: 'Your photo and cricket details.', top: true, cells: cell(photoPanel, 12) }
     ].filter(Boolean);
 
     return `
       ${pageHead('Settings', admin ? 'Team, money, access and data — grouped by what they change.' : 'Your view of the Red Falcons ledger.')}
+      ${hero}
       <div class="set-layout">
         <nav class="set-nav" aria-label="Settings sections">
-          ${sections.map(x => `<button class="set-nav-btn" data-action="set-jump" data-id="${x.id}">${x.title}</button>`).join('')}
+          ${sections.map(x => `<button class="set-nav-btn" data-action="set-jump" data-id="${x.id}">${x.icon}<span>${x.title}</span></button>`).join('')}
         </nav>
         <div class="set-sections">
           ${sections.map(x => `<section class="set-section" id="set-${x.id}">
-            <header class="set-head"><h3>${x.title}</h3><p class="muted">${x.note}</p></header>
+            <header class="set-head"><span class="set-ico">${x.icon}</span><div><h3>${x.title}</h3><p class="muted">${x.note}</p></div></header>
             <div class="set-cards ${x.top ? 'top' : ''}">${x.cells}</div>
           </section>`).join('')}
         </div>
