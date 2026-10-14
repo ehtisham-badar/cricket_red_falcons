@@ -182,9 +182,12 @@ class LedgerApiTest {
         assertThat(send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{\"m1\":true}}],\"settings\":{\"statsVisibility\":\"admin\"}}", token).statusCode()).isEqualTo(200);
         // The Summary cards: Next match is on and the fixtures calendar is off until the admin says otherwise.
         String cards = send("GET", "/api/ledger", null, null).body();
-        assertThat(cards).contains("\"showNextMatch\":true").contains("\"showFixtures\":false");
+        assertThat(cards).contains("\"showNextMatch\":true").contains("\"showFixtures\":false").contains("\"adminShowFixtures\":true");
         assertThat(send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{}}],\"settings\":{\"showNextMatch\":false,\"showFixtures\":true}}", token).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"showNextMatch\":false").contains("\"showFixtures\":true");
+        // The admin can hide the fixtures calendar from themselves too; it doesn't change what players see.
+        assertThat(send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{}}],\"settings\":{\"adminShowFixtures\":false}}", token).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"adminShowFixtures\":false").contains("\"showFixtures\":true");
         send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{}}],\"settings\":{\"currency\":\"Rs \"}}", token);
         assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"showNextMatch\":false").contains("\"showFixtures\":true");
         assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"stats\":{}");

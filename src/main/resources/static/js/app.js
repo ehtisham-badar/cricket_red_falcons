@@ -484,7 +484,8 @@
         statsVisibility: s.statsVisibility === 'all' ? 'all' : 'admin',
         daysVisibility: s.daysVisibility === 'all' ? 'all' : 'admin',
         showNextMatch: s.showNextMatch !== false,
-        showFixtures: s.showFixtures === true
+        showFixtures: s.showFixtures === true,
+        adminShowFixtures: s.adminShowFixtures !== false
       }
     };
   }
@@ -1568,8 +1569,9 @@
       ${confirmed ? '' : '<p class="nm-sub">until match day · time to be confirmed</p>'}`;
   }
 
-  // The admin decides in Settings whether players see these two cards; the admin always sees them.
-  const cardShown = key => state.settings[key] || realAdmin();
+  // The admin decides in Settings whether players see these two cards. The admin sees them too, except
+  // the fixtures calendar, which they can also hide from themselves.
+  const cardShown = key => realAdmin() ? (key !== 'showFixtures' || state.settings.adminShowFixtures) : !!state.settings[key];
   const hiddenNote = key => !state.settings[key] ? '<span class="card-hidden">Hidden from players</span>' : '';
 
   // Which stats to show for a match: its own, or (until real ones are added) the first test match's, as a sample.
@@ -2391,7 +2393,7 @@
     ];
     const cardsPanel = admin ? `
       <section class="panel">
-        <div class="panel-head"><h3>Summary cards</h3><p class="muted">Show or hide these for all players. You always see them, marked “Hidden from players”.</p></div>
+        <div class="panel-head"><h3>Summary cards</h3><p class="muted">Show or hide these for all players. When they’re hidden from players you still see them, marked “Hidden from players”.</p></div>
         ${cardRows.map(r => {
           const on = !!s[r.key];
           return `<div class="pref switch-row">
@@ -2400,6 +2402,11 @@
             <button class="switch ${on ? 'on' : ''}" role="switch" aria-checked="${on}" data-action="set-summary-card" data-key="${r.key}" aria-label="Show ${r.label} to players"><span></span></button>
           </div>`;
         }).join('')}
+        <div class="pref switch-row">
+          <span class="sw-ico">${icon('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>', 18)}</span>
+          <span class="sw-text">Fixtures calendar for me<small class="muted">${s.adminShowFixtures ? 'You see it on Summary' : 'Hidden on your Summary too'}</small></span>
+          <button class="switch ${s.adminShowFixtures ? 'on' : ''}" role="switch" aria-checked="${s.adminShowFixtures}" data-action="set-admin-fixtures" aria-label="Show the fixtures calendar to me"><span></span></button>
+        </div>
       </section>` : '';
 
     const statsPanel = admin ? `
@@ -3468,6 +3475,12 @@ ${tabRows.map(r => {
       // On phones the section menu sticks under the header, so leave room for both.
       const offset = window.innerWidth <= 960 ? 140 : 90;
       if (target) window.scrollTo({ top: target.getBoundingClientRect().top + window.scrollY - offset, behavior: 'smooth' });
+    },
+    'set-admin-fixtures'() {
+      if (!isAdmin()) return;
+      state.settings.adminShowFixtures = !state.settings.adminShowFixtures;
+      commit();
+      toast(`Fixtures calendar is now ${state.settings.adminShowFixtures ? 'shown' : 'hidden'} on your Summary.`);
     },
     'set-summary-card'(el) {
       const key = el.dataset.key;

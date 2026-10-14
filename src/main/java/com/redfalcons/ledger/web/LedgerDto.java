@@ -81,11 +81,13 @@ public record LedgerDto(
      * is "all" (viewers see everyone's balances) or "own" (only their own; others' payments aren't sent).
      * {@code statsVisibility} is "admin" (stats are sent to the admin only) or "all".
      * {@code showNextMatch} and {@code showFixtures} say whether the Summary screen shows the Next match card
-     * and the fixtures calendar to players (null on save keeps the stored choice).
+     * and the fixtures calendar to players (null on save keeps the stored choice); {@code adminShowFixtures}
+     * whether the admin sees the fixtures calendar themselves (null means yes).
      * {@code daysVisibility} works the same way for the Days tab (hidden from viewers unless "all").
      */
     public record SettingsDto(String currency, Integer maxPerMatch, Boolean roundUp,
                               String payBank, String payTitle, String payAccount, String viewerAccess,
-                              String statsVisibility, String daysVisibility, Boolean showNextMatch, Boolean showFixtures) {
+                              String statsVisibility, String daysVisibility, Boolean showNextMatch, Boolean showFixtures,
+                              Boolean adminShowFixtures) {
     }
 }

@@ -48,6 +48,7 @@ public class LedgerService {
     private static final String DAYS_VISIBILITY = "daysVisibility";
     private static final String SHOW_NEXT_MATCH = "showNextMatch";
     private static final String SHOW_FIXTURES = "showFixtures";
+    private static final String ADMIN_SHOW_FIXTURES = "adminShowFixtures";
     private static final int DEFAULT_MATCH_COUNT = 5;
     private static final Set<String> CURRENCIES = Set.of("Rs ", "PKR ", "₹", "$", "£");
     private static final Sort BY_POSITION = Sort.by("position");
@@ -175,7 +176,7 @@ public class LedgerService {
                 Boolean.parseBoolean(s.getOrDefault("roundUp", "false")),
                 s.get("payBank"), s.get("payTitle"), s.get("payAccount"), s.getOrDefault(VIEWER_ACCESS, "all"),
                 s.getOrDefault(STATS_VISIBILITY, "admin"), s.getOrDefault(DAYS_VISIBILITY, "admin"),
-                !"false".equals(s.get(SHOW_NEXT_MATCH)), "true".equals(s.get(SHOW_FIXTURES)));
+                !"false".equals(s.get(SHOW_NEXT_MATCH)), "true".equals(s.get(SHOW_FIXTURES)), !"false".equals(s.get(ADMIN_SHOW_FIXTURES)));
 
         return new LedgerDto("cricket-ledger", 3, Instant.now().toString(), playerDtos,
                 dayTotals(expenseMap), trainingDtos, expenseMap,
@@ -456,6 +457,7 @@ public class LedgerService {
             }
             if (s.showNextMatch() != null) settings.save(new Setting(SHOW_NEXT_MATCH, s.showNextMatch().toString()));
             if (s.showFixtures() != null) settings.save(new Setting(SHOW_FIXTURES, s.showFixtures().toString()));
+            if (s.adminShowFixtures() != null) settings.save(new Setting(ADMIN_SHOW_FIXTURES, s.adminShowFixtures().toString()));
             if (s.daysVisibility() != null && STATS_VISIBILITY_VALUES.contains(s.daysVisibility())) {
                 settings.save(new Setting(DAYS_VISIBILITY, s.daysVisibility()));
             }
