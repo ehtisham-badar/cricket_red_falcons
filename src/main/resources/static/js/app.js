@@ -2515,17 +2515,19 @@ ${tabRows.map(r => {
       { id: 'look', icon: SI.look, title: 'Appearance', note: 'How the app looks on this device.', top: true,
         cells: cell(themePanel, 7) + cell(installPanel(), 5) },
       { id: 'team', icon: SI.team, title: 'Team & payments', note: admin ? 'Where players pay and how shares are worked out.' : 'Where to send your payments.',
-        cells: cell(payPanel, 6) + cell(prefs, 6) },
+        cells: admin ? cell(payPanel, 6) + cell(prefs, 6) : cell(payPanel, 12) },
       admin && { id: 'access', icon: SI.access, title: 'Who can see what', note: 'What players see when they sign in with their name.',
         cells: cell(accessPanel, 6) + cell(statsPanel, 6) + cell(cardsPanel, 12) + cell(managerPanel(), 12) },
       !realAdmin() && !archive && { id: 'manager', icon: SI.manager, title: 'App manager', note: 'Help the admin pick the playing XI.', top: true,
         cells: cell(managerRequestPanel(), 12) },
       { id: 'notify', icon: SI.notify, title: 'Notifications', note: realAdmin() ? 'Turn them on for this device, and message the team.' : 'Turn them on for this device.', top: true,
         cells: isAdmin() ? cell(notify.device, 5) + cell(notify.compose, 7) : cell(notify.device, 12) },
-      { id: 'data', icon: SI.data, title: 'Data', note: admin ? 'Backups, the season archive and resets.' : 'Keep a copy of the ledger.', top: true,
-        cells: admin
-          ? cell(seasonPanel(), 7) + cell(`<div class="set-stack">${stack(backupPanel, cleanupPanel)}</div>`, 5) + cell(dangerPanel, 12)
-          : cell(backupPanel, 5) + cell(seasonPanel(), 7) },
+      // Players and managers get no backups or admin preferences; past seasons appear once there are some.
+      admin
+        ? { id: 'data', icon: SI.data, title: 'Data', note: 'Backups, the season archive and resets.', top: true,
+            cells: cell(seasonPanel(), 7) + cell(`<div class="set-stack">${stack(backupPanel, cleanupPanel)}</div>`, 5) + cell(dangerPanel, 12) }
+        : (seasons || []).length > 0 && { id: 'data', icon: SI.data, title: 'Past seasons', note: 'Look back at earlier seasons, read-only.', top: true,
+            cells: cell(seasonPanel(), 12) },
       admin
         ? { id: 'account', icon: SI.account, title: 'Security', note: 'Protect the admin sign-in.', top: true, cells: cell(tfaPanel(), 12) }
         : { id: 'account', icon: SI.profile, title: 'My profile', note: 'Your photo and cricket details.', top: true, cells: cell(photoPanel, 12) }
