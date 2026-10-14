@@ -24,7 +24,7 @@
       const n = isTest ? ++test : ++real;
       return {
         id: m.id, label: (isTest ? 'Test ' : 'Match ') + n, short: (isTest ? 'TM' : 'M') + n, type: 'match', test: isTest,
-        date: m.date || '', time: m.time || '', opponent: m.opponent || '', venue: m.venue || '', finished: !isTest && m.finished === true
+        date: m.date || '', time: m.time || '', opponent: m.opponent || '', venue: m.venue || '', finished: !isTest && m.finished === true, announced: m.announced === true
       };
     });
   }
