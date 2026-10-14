@@ -1535,7 +1535,6 @@
       ${pageHead('Summary', `${state.players.length} player${state.players.length === 1 ? '' : 's'} · ${state.trainings.length} training${state.trainings.length === 1 ? '' : 's'} · ${realMatchCount()} match${realMatchCount() === 1 ? '' : 'es'}`,
         admin && state.players.length ? `<div class="share-row">
           <button class="btn btn-gold" data-action="share-image">${IMAGE_ICON} Share as image</button>
-          <button class="btn btn-whatsapp" data-action="share-team">${WA_ICON} Send as text</button>
           <button class="btn btn-ghost" data-action="copy-team">${COPY_ICON} Copy</button></div>` : '')}
       ${myBalance()}
       ${leagueBlock()}
@@ -3390,7 +3389,6 @@ ${tabRows.map(r => {
     },
     'share-player'(el) { const p = findPlayer(el.dataset.id); if (p) openWhatsApp(playerMessage(p), p.phone); },
     'copy-player'(el) { const p = findPlayer(el.dataset.id); if (p) copyText(playerMessage(p)); },
-    'share-team'() { openWhatsApp(teamMessage()); },
     async 'share-image'(el) {
       const label = el.innerHTML;
       el.disabled = true;
