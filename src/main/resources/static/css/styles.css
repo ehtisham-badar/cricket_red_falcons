@@ -1294,3 +1294,17 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
 .mgr-ask { display: flex; gap: 10px; flex-wrap: wrap; }
 .mgr-ask .field { flex: 1 1 200px; min-width: 0; }
 @media (max-width: 720px) { .mgr-row { grid-template-columns: 1fr; } .mgr-btns { justify-content: flex-start; } }
+
+.bell { position: relative; }
+.bell[data-count]:not([data-count="0"])::after { content: attr(data-count); position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--red-hi, #d33); color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--bg); }
+.mgr-waiting { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 12px; }
+.note-card { display: flex; flex-direction: column; gap: 8px; padding: 14px; margin-bottom: 10px; border-radius: 14px; border: 1px solid var(--line); background: rgba(var(--hi-rgb), .025); }
+.note-head { display: flex; flex-direction: column; }
+.note-head small { color: var(--muted); font-size: 13px; }
+.note-detail { margin: 0; font-size: 14px; }
+.note-label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+.note-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.lineup-note { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 12px; margin: 10px 0; border-radius: 12px; border: 1px solid var(--line-2); background: rgba(var(--hi-rgb), .04); font-size: 14px; }
+.lineup-note.dirty { border-color: rgba(var(--red-rgb), .5); }
+.lineup-note.declined { border-color: rgba(var(--neg-rgb), .5); }
+.lineup-btns { display: flex; gap: 8px; }

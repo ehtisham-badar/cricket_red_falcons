@@ -89,6 +89,10 @@
   let mgr = readStore(MGR_KEY);               // { token, name, status } once this browser asked to be a manager
   let mgrDraft = { phrase: '', edits: {} };   // the phrase being typed to ask, and phrases being edited by the admin
   let mgrList = null;                         // admin: manager requests and approved managers
+  let inbox = null;                           // admin: { access, lineups } waiting for a decision
+  let declineDraft = {};                      // admin: notes being written while declining, by 'kind:id'
+  let xiDirty = {};                           // manager: matches whose lineup was changed here but not sent yet
+  let myLineups = [];                         // manager: their recent lineup requests and what became of them
   let tfa = null;                             // { enabled, recoveryLeft, devices } from the server
   let tfaSetup = null;                        // { secret, uri, qr } while setting up
   let tfaCodes = null;                        // recovery codes to show once after turning it on
@@ -496,7 +500,6 @@
   // ---------- saving (admin) ----------
   function commit() {
     render();
-    if (isManager()) { setSaveStatus('pending'); clearTimeout(saveTimer); saveTimer = setTimeout(flushXi, 450); return; }
     if (!isAdmin()) return;
     setSaveStatus('pending');
     clearTimeout(saveTimer);
@@ -523,36 +526,40 @@
     }
   }
 
-  // A manager sends only the playing XI and 12th man of the matches that aren't finished.
-  async function flushXi() {
-    saveTimer = null;
-    setSaveStatus('saving');
-    const playing = {}, twelfth = {};
-    state.matches.filter(m => !m.finished).forEach(m => {
-      playing[m.id] = state.players.filter(p => p.att[m.id]).map(p => p.id);
-      if (state.twelfth[m.id]) twelfth[m.id] = state.twelfth[m.id];
-    });
-    try {
-      await api('PUT', '/api/manager/xi', { playing, twelfth });
-      if (!saveTimer) setSaveStatus('saved');
-    } catch (e) {
-      if (e.status === 403) {
-        await refreshManager();
-        setSaveStatus('');
-        try { state = await fetchLedger(); } catch { /* the next poll will catch up */ }
-        render();
-        return;
-      }
-      if (e.status === 400) {
-        setSaveStatus('');
-        toast(e.message);
-        try { state = await fetchLedger(); render(); } catch { /* ignore */ }
-        return;
-      }
-      setSaveStatus('error');
-      saveTimer = setTimeout(flushXi, 4000);
-    }
+  // ---------- lineup requests (manager) ----------
+  // A manager's edits stay on this device until sent; the ledger changes only when the admin approves.
+  function touchXi(dayId) {
+    if (isManager()) { xiDirty[dayId] = true; render(); } else commit();
   }
+
+  // Puts one match's lineup back to what the ledger says (after sending, or discarding).
+  async function revertMatch(matchId) {
+    const live = await fetchLedger();
+    state.players.forEach(p => {
+      const lp = live.players.find(x => x.id === p.id);
+      if (lp && lp.att[matchId]) p.att[matchId] = true; else delete p.att[matchId];
+    });
+    if (live.twelfth[matchId]) state.twelfth[matchId] = live.twelfth[matchId]; else delete state.twelfth[matchId];
+    render();
+  }
+
+  async function loadMyLineups() {
+    if (!isManager()) return;
+    let next;
+    try { next = await api('GET', '/api/manager/lineups'); } catch { return; }
+    const before = new Map(myLineups.map(x => [x.id, x.status]));
+    next.forEach(x => {
+      if (before.get(x.id) === 'pending' && x.status !== 'pending') {
+        const label = (C.matches(state).find(m => m.id === x.matchId) || {}).label || 'the match';
+        toast(x.status === 'approved' ? `The admin approved your lineup for ${label}.` : `The admin declined your lineup for ${label}${x.note ? `: ${x.note}` : '.'}`);
+      }
+    });
+    const changed = JSON.stringify(next) !== JSON.stringify(myLineups);
+    myLineups = next;
+    if (changed) { try { state = Object.keys(xiDirty).length ? state : await fetchLedger(); } catch { /* ignore */ } render(); }
+  }
+
+  const lastLineup = matchId => myLineups.find(x => x.matchId === matchId);
 
   function setSaveStatus(s) {
     const el = $('#save-status');
@@ -678,12 +685,15 @@
       return;
     }
     if (!mgr || !mgr.token) return;
-    let status;
-    try { status = (await api('GET', '/api/manager/status')).status; } catch { return; }
+    let status, note = '';
+    try { const r = await api('GET', '/api/manager/status'); status = r.status; note = r.note || ''; } catch { return; }
     if (status === mgr.status) return;
     if (status === 'none') {
       setMgr(null);
-      toast('Your manager request was declined.');
+      toast('Your manager request was removed.');
+    } else if (status === 'declined') {
+      setMgr({ ...mgr, status, note });
+      toast(`Your manager request was declined${note ? `: ${note}` : '.'}`);
     } else {
       setMgr({ ...mgr, status });
       toast('Approved! Switch user and enter your phrase on the start screen to sign in as manager.');
@@ -691,42 +701,98 @@
     renderIfSettings();
   }
 
-  async function loadManagers() {
+  async function loadInbox() {
     if (!realAdmin()) return;
     let next;
-    try { next = await api('GET', '/api/manager/requests'); } catch { return; }
-    if (JSON.stringify(next) === JSON.stringify(mgrList)) return;
-    mgrList = next;
+    try { next = await api('GET', '/api/manager/inbox'); } catch { return; }
+    if (JSON.stringify(next) === JSON.stringify(inbox)) return;
+    const was = inbox ? inboxCount() : null;
+    inbox = next;
+    mgrList = next.access;
+    if (was !== null && inboxCount() > was) toast('New request waiting — tap the bell.');
     render();
   }
 
-  const pendingManagers = () => (mgrList || []).filter(m => m.status === 'pending');
+  const inboxCount = () => inbox ? inbox.access.filter(m => m.status === 'pending').length + inbox.lineups.length : 0;
 
   function managerPanel() {
-    const list = mgrList || [];
+    const waiting = (mgrList || []).filter(m => m.status === 'pending').length;
+    const active = (mgrList || []).filter(m => m.status === 'approved');
     const row = m => {
-      const pending = m.status === 'pending';
       const draft = m.id in mgrDraft.edits ? mgrDraft.edits[m.id] : m.phrase;
       return `<li class="mgr-row">
         <span class="mgr-who"><strong>${esc(m.name)}</strong>
-          <small>${esc(m.label)} · ${pending ? 'asked' : 'approved'} ${esc(formatDate(localDay(m.decidedAt || m.createdAt)))}</small></span>
+          <small>${esc(m.label)} · approved ${esc(formatDate(localDay(m.decidedAt || m.createdAt)))}</small></span>
         <span class="mgr-phrase">
           <input class="field" type="text" maxlength="60" value="${esc(draft)}" data-input="mgr-edit" data-id="${esc(m.id)}" data-focus="mgrp-${esc(m.id)}" aria-label="Phrase for ${esc(m.name)}" spellcheck="false" autocomplete="off">
           ${draft !== m.phrase ? `<button class="btn btn-gold small" data-action="mgr-save-phrase" data-id="${esc(m.id)}">Save phrase</button>` : ''}
         </span>
-        <span class="mgr-btns">${pending
-          ? `<button class="btn btn-gold small" data-action="mgr-approve" data-id="${esc(m.id)}">Approve</button>
-             <button class="btn btn-ghost small" data-action="mgr-remove" data-id="${esc(m.id)}" data-kind="decline">Decline</button>`
-          : `<button class="btn btn-ghost small" data-action="mgr-remove" data-id="${esc(m.id)}" data-kind="revoke">Revoke</button>`}</span>
+        <span class="mgr-btns"><button class="btn btn-ghost small" data-action="mgr-remove" data-id="${esc(m.id)}" data-kind="revoke">Revoke</button></span>
       </li>`;
     };
-    const pending = list.filter(m => m.status === 'pending'), active = list.filter(m => m.status === 'approved');
     return `<section class="panel">
-      <div class="panel-head"><h3>App managers</h3><p class="muted">A viewer asks for manager access with a phrase of their own. Once you approve, typing that phrase on the start screen signs them in (no two-factor). Managers can set the playing XI and 12th man of matches that aren’t finished, and nothing else. Change a phrase to sign that manager out, or revoke them, whenever you like.</p></div>
-      ${mgrList === null ? '<p class="muted">Loading…</p>' : !list.length ? '<p class="muted season-empty">No requests yet.</p>' : `
-        ${pending.length ? `<h3 class="sub first">Waiting for you</h3><ul class="mgr-list">${pending.map(row).join('')}</ul>` : ''}
-        ${active.length ? `<h3 class="sub ${pending.length ? '' : 'first'}">Managers</h3><ul class="mgr-list">${active.map(row).join('')}</ul>` : ''}`}
+      <div class="panel-head"><h3>App managers</h3><p class="muted">A viewer asks for manager access with a phrase of their own. Once you approve, typing that phrase on the start screen signs them in (no two-factor). A manager can propose the playing XI and 12th man of matches that aren’t finished; nothing changes until you approve it. Change a phrase to sign that manager out, or revoke them, whenever you like.</p></div>
+      ${waiting ? `<p class="mgr-waiting">${icon('<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>', 16)} ${waiting} request${waiting === 1 ? '' : 's'} waiting. <button class="chip" data-action="open-inbox">Open notifications</button></p>` : ''}
+      ${mgrList === null ? '<p class="muted">Loading…</p>' : !active.length ? '<p class="muted season-empty">No managers yet.</p>' : `<ul class="mgr-list">${active.map(row).join('')}</ul>`}
     </section>`;
+  }
+
+  // ---------- notifications (admin) ----------
+  const ago = iso => {
+    const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+    if (s < 60) return 'just now';
+    if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+    return `${Math.floor(s / 86400)} d ago`;
+  };
+
+  function sheetInbox() {
+    const items = [
+      ...(inbox ? inbox.access.filter(m => m.status === 'pending').map(m => ({ kind: 'access', at: m.createdAt, m })) : []),
+      ...(inbox ? inbox.lineups.map(l => ({ kind: 'lineup', at: l.createdAt, l })) : [])
+    ].sort((a, b) => a.at.localeCompare(b.at));
+    const card = it => {
+      const id = it.kind === 'access' ? it.m.id : it.l.id;
+      const key = `${it.kind}:${id}`;
+      let title, sub, detail = '';
+      if (it.kind === 'access') {
+        title = `${esc(it.m.name)} wants manager access`;
+        sub = `${esc(it.m.label)} · ${ago(it.at)}`;
+        detail = `<p class="note-detail">Their phrase: <strong>${esc(it.m.phrase)}</strong>. As manager they could propose the playing XI; you would still approve each change.</p>`;
+      } else {
+        const l = it.l;
+        const match = C.matches(state).find(x => x.id === l.matchId);
+        const now = state.players.filter(p => p.att[l.matchId]).map(p => p.id);
+        const add = l.playing.filter(x => !now.includes(x)).map(playerName);
+        const drop = now.filter(x => !l.playing.includes(x)).map(playerName);
+        title = `${esc(l.managerName)} proposes the XI for ${esc(match ? match.label : 'a match')}`;
+        sub = ago(it.at);
+        detail = `<p class="note-detail"><strong>Playing (${l.playing.length}):</strong> ${l.playing.map(x => esc(playerName(x))).join(', ') || '—'}</p>
+          <p class="note-detail"><strong>12th man:</strong> ${l.twelfth ? esc(playerName(l.twelfth)) : '—'}</p>
+          <p class="note-detail muted">${add.length || drop.length ? [...add.map(n => `+ ${esc(n)}`), ...drop.map(n => `− ${esc(n)}`)].join(' · ') : 'Same XI as now.'}</p>`;
+      }
+      const declining = key in declineDraft;
+      return `<article class="note-card">
+        <div class="note-head"><strong>${title}</strong><small>${sub}</small></div>
+        ${detail}
+        ${declining ? `<label class="note-label">Note for ${esc(it.kind === 'access' ? it.m.name : it.l.managerName)} (optional)
+            <textarea class="field" rows="2" maxlength="300" data-input="decline-note" data-key="${esc(key)}" data-focus="dn-${esc(key)}" placeholder="Why it was declined">${esc(declineDraft[key])}</textarea></label>
+          <div class="note-actions">
+            <button class="btn btn-danger small" data-action="inbox-decline-send" data-kind="${it.kind}" data-id="${esc(id)}">Send decline</button>
+            <button class="btn btn-ghost small" data-action="inbox-decline-cancel" data-key="${esc(key)}">Cancel</button>
+          </div>`
+          : `<div class="note-actions">
+            <button class="btn btn-gold small" data-action="inbox-approve" data-kind="${it.kind}" data-id="${esc(id)}">Approve</button>
+            <button class="btn btn-ghost small" data-action="inbox-decline-open" data-key="${esc(key)}">Decline</button>
+          </div>`}
+      </article>`;
+    };
+    return `<header class="sheet-head">
+        <div><span class="day-kind">Admin</span><h2>Notifications</h2>
+          <p class="muted">Manager requests and lineup changes wait here for your decision.</p></div>
+        <button class="icon-btn" data-action="close-sheet" aria-label="Close">${X_ICON}</button>
+      </header>
+      <div class="sheet-body">${inbox === null ? '<p class="muted center">Loading…</p>' : items.length ? items.map(card).join('') : '<p class="muted center">Nothing waiting. You’re all caught up.</p>'}</div>`;
   }
 
   function managerRequestPanel() {
@@ -735,6 +801,9 @@
       body = `<p class="muted">You’re signed in as an app manager. Open a match on the Days tab to set the playing XI and 12th man. Everything else stays view-only.</p>`;
     } else if (mgr && mgr.status === 'approved') {
       body = `<p class="muted">Approved! Switch user, then type your phrase on the start screen to sign in as manager.</p>`;
+    } else if (mgr && mgr.status === 'declined') {
+      body = `<p class="muted">The admin declined your request${mgr.note ? `: “${esc(mgr.note)}”` : '.'}</p>
+        <button class="btn btn-ghost" data-action="mgr-cancel">Ask again</button>`;
     } else if (mgr && mgr.status === 'pending') {
       body = `<p class="muted">Request sent. The admin has to approve it — this page updates by itself. Your phrase is the one you chose.</p>
         <button class="btn btn-ghost" data-action="mgr-cancel">Cancel request</button>`;
@@ -753,9 +822,10 @@
     clearInterval(pollTimer);
     pollTimer = setInterval(async () => {
       if (archive || document.visibilityState !== 'visible') return;
-      if (isAdmin()) { loadManagers(); return; }
+      if (isAdmin()) { loadInbox(); return; }
       await refreshManager();
-      if (saveTimer) return; // a manager's XI change is still on its way
+      if (isManager()) await loadMyLineups();
+      if (Object.keys(xiDirty).length) return; // a manager's unsent lineup must not be overwritten
       try {
         const d = await fetchLedger();
         if (comparable(d) !== comparable(state)) { state = d; render(); }
@@ -916,8 +986,8 @@
     loadSeasons();
     refreshPush();
     loadTfa();
-    loadManagers();
-    refreshManager();
+    loadInbox();
+    refreshManager().then(loadMyLineups);
     startPolling();
   }
 
@@ -930,11 +1000,15 @@
     if (focusKey && typeof active.selectionStart === 'number') sel = [active.selectionStart, active.selectionEnd];
 
     document.body.classList.toggle('is-admin', isAdmin());
+    const bell = $('#bell');
+    bell.hidden = !realAdmin();
+    bell.dataset.count = inboxCount();
+    bell.setAttribute('aria-label', inboxCount() ? `Notifications, ${inboxCount()} waiting` : 'Notifications');
     const shown = t => (!t.statsTab || statsVisible()) && (!t.daysTab || daysVisible()) && !(archive && t.id === 'settings');
     if (TABS.some(t => t.id === tab && !shown(t))) tab = 'summary';
     $('#tabs').innerHTML = TABS.filter(shown).map(t =>
       `<button class="tab ${t.id === tab ? 'active' : ''}" data-action="tab" data-tab="${t.id}" ${t.id === tab ? 'aria-current="page"' : ''}>
-        ${icon(t.icon)}<span>${t.label}</span>${t.id === 'settings' && realAdmin() && pendingManagers().length ? '<i class="tab-dot" title="Manager requests waiting"></i>' : ''}</button>`).join('');
+        ${icon(t.icon)}<span>${t.label}</span></button>`).join('');
     $('#who-badge').innerHTML = isAdmin()
       ? `<span class="badge badge-admin">${icon('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>', 14)} Admin</span>`
       : `<span class="badge badge-view">${icon('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>', 14)} ${esc(session.name)} · ${isManager() ? 'manager' : 'view only'}</span>`;
@@ -1851,6 +1925,7 @@
     let body = '';
     if (sheet.type === 'day') body = sheetDay();
     if (sheet.type === 'player') body = sheetPlayer();
+    if (sheet.type === 'inbox') body = sheetInbox();
     if (!body) { sheet = null; return ''; }
     return `<div class="sheet-backdrop" data-action="close-sheet"></div>
       <div class="sheet" role="dialog" aria-modal="true">${body}</div>`;
@@ -1949,6 +2024,27 @@
     </div>`;
   }
 
+  // What a manager sees above the attendance list: Share, and where their proposal stands.
+  function lineupBox(d, s) {
+    const share = s.n > 0 ? `<div class="xi-actions"><button class="btn btn-gold" data-action="share-xi" data-id="${esc(d.id)}">${IMAGE_ICON} Share Playing XI</button></div>` : '';
+    let status;
+    const last = lastLineup(d.id);
+    if (xiDirty[d.id]) {
+      status = `<div class="lineup-note dirty"><span>Changes below haven’t been sent. The admin has to approve them.</span>
+        <span class="lineup-btns"><button class="btn btn-gold small" data-action="xi-send" data-id="${esc(d.id)}">Send to admin</button>
+        <button class="btn btn-ghost small" data-action="xi-discard" data-id="${esc(d.id)}">Discard</button></span></div>`;
+    } else if (last && last.status === 'pending') {
+      status = `<div class="lineup-note">Waiting for the admin to approve your lineup (${last.playing.length} playing). Change it below to send a new one.</div>`;
+    } else if (last && last.status === 'declined') {
+      status = `<div class="lineup-note declined">The admin declined your last lineup${last.note ? `: “${esc(last.note)}”` : '.'}</div>`;
+    } else if (last && last.status === 'approved') {
+      status = `<div class="lineup-note ok">The admin approved your last lineup.</div>`;
+    } else {
+      status = '<p class="muted xi-hint">Mark who’s playing below, then send it to the admin for approval.</p>';
+    }
+    return share + status;
+  }
+
   function sheetDay() {
     const d = C.days(state).find(x => x.id === sheet.dayId);
     if (!d) return '';
@@ -1984,7 +2080,8 @@
         <div><strong>${s.n > 0 && s.amount > 0 ? fmt(s.share) : '—'}</strong><span>each</span></div>
       </div>
       <div class="sheet-body">
-        ${canPickXi(d) ? `<div class="xi-actions">
+ ${isMatch && !isAdmin() && canPickXi(d) ? lineupBox(d, s) : ''}
+        ${isMatch && isAdmin() ? `<div class="xi-actions">
           <button class="btn btn-ghost" data-action="random-xi" data-id="${esc(d.id)}">${DICE_ICON} Random XI + 12th</button>
           ${s.n > 0 || twelfthId ? `<button class="btn btn-danger" data-action="clear-xi" data-id="${esc(d.id)}">${X_ICON} Clear XI</button>` : ''}
           ${s.n > 0 ? `<button class="btn btn-gold" data-action="share-xi" data-id="${esc(d.id)}">${IMAGE_ICON} Share Playing XI</button>` : ''}
@@ -2335,7 +2432,7 @@
         p.att[day.id] = true;
         if (state.twelfth[day.id] === p.id) delete state.twelfth[day.id];
       }
-      commit();
+      touchXi(day.id);
     },
     'toggle-twelfth'(el) {
       const p = findPlayer(el.dataset.player);
@@ -2347,7 +2444,7 @@
         delete p.att[day];
         state.twelfth[day] = p.id;
       }
-      commit();
+      touchXi(day);
     },
     async 'mgr-request'() {
       const phrase = mgrDraft.phrase.trim();
@@ -2372,26 +2469,65 @@
       try {
         await api('PUT', '/api/manager/requests/' + encodeURIComponent(el.dataset.id) + '/phrase', { phrase });
         delete mgrDraft.edits[el.dataset.id];
-        mgrList = null; await loadManagers();
+        mgrList = null; await loadInbox();
         toast('Phrase changed. That manager is signed out.');
       } catch (e) { toast(e.message || 'Could not change the phrase.'); }
-    },
-    async 'mgr-approve'(el) {
-      if (!realAdmin()) return;
-      try { await api('POST', '/api/manager/requests/' + encodeURIComponent(el.dataset.id) + '/approve'); } catch { toast('Could not approve it.'); }
-      mgrList = null; await loadManagers();
-      toast('Manager approved.');
     },
     async 'mgr-remove'(el) {
       if (!realAdmin()) return;
       const m = (mgrList || []).find(x => x.id === el.dataset.id);
-      if (el.dataset.kind === 'revoke') {
-        const ok = await confirmDialog(`Revoke ${m ? m.name : 'manager'}’s access?`, 'They go back to view-only straight away. They can ask again.', 'Revoke', true);
-        if (!ok) return;
-      }
+      const ok = await confirmDialog(`Revoke ${m ? m.name : 'manager'}’s access?`, 'They go back to view-only straight away. They can ask again.', 'Revoke', true);
+      if (!ok) return;
       try { await api('DELETE', '/api/manager/requests/' + encodeURIComponent(el.dataset.id)); } catch { toast('Could not do that.'); }
-      mgrList = null; await loadManagers();
-      toast(el.dataset.kind === 'revoke' ? 'Access revoked.' : 'Request declined.');
+      await loadInbox();
+      toast('Access revoked.');
+    },
+    'open-inbox'() { sheet = { type: 'inbox' }; loadInbox(); render(); },
+    async 'inbox-approve'(el) {
+      if (!realAdmin()) return;
+      // Anything I have changed but not saved goes first, so approving a lineup doesn't clobber it.
+      if (saveTimer) { clearTimeout(saveTimer); await flushSave(); }
+      const path = el.dataset.kind === 'access' ? '/api/manager/requests/' : '/api/manager/lineups/';
+      try {
+        await api('POST', path + encodeURIComponent(el.dataset.id) + '/approve');
+        if (el.dataset.kind === 'lineup') state = await fetchLedger();
+        toast(el.dataset.kind === 'access' ? 'Manager approved.' : 'Lineup approved and applied.');
+      } catch (e) { toast(e.message || 'Could not approve it.'); }
+      await loadInbox();
+      render();
+    },
+    'inbox-decline-open'(el) { declineDraft[el.dataset.key] = ''; render(); },
+    'inbox-decline-cancel'(el) { delete declineDraft[el.dataset.key]; render(); },
+    async 'inbox-decline-send'(el) {
+      if (!realAdmin()) return;
+      const key = `${el.dataset.kind}:${el.dataset.id}`;
+      const path = el.dataset.kind === 'access' ? '/api/manager/requests/' : '/api/manager/lineups/';
+      try {
+        await api('POST', path + encodeURIComponent(el.dataset.id) + '/decline', { note: (declineDraft[key] || '').trim() });
+        toast('Declined.');
+      } catch (e) { toast(e.message || 'Could not decline it.'); }
+      delete declineDraft[key];
+      await loadInbox();
+      render();
+    },
+    async 'xi-send'(el) {
+      if (!isManager()) return;
+      const matchId = el.dataset.id;
+      const playing = state.players.filter(p => p.att[matchId]).map(p => p.id);
+      try {
+        await api('POST', '/api/manager/lineups', { matchId, playing, twelfth: state.twelfth[matchId] || '' });
+        delete xiDirty[matchId];
+        await revertMatch(matchId);
+        await loadMyLineups();
+        toast('Sent to the admin for approval.');
+      } catch (e) {
+        if (e.status === 403) { await refreshManager(); return; }
+        toast(e.message || 'Could not send it.');
+      }
+    },
+    async 'xi-discard'(el) {
+      delete xiDirty[el.dataset.id];
+      try { await revertMatch(el.dataset.id); } catch { render(); }
     },
     'bat-move'(el) {
       if (!isAdmin()) return;
@@ -2442,7 +2578,7 @@
     },
     async 'clear-xi'(el) {
       const day = findMatch(el.dataset.id);
-      if (!canPickXi(day)) return;
+      if (!day || !isAdmin()) return;
       const n = state.players.filter(p => p.att[day.id]).length;
       const ok = await confirmDialog(`Clear the XI for ${day.label}?`,
         `Removes the ${n} playing${state.twelfth[day.id] ? ' and the 12th man' : ''}. Until a new XI is picked, this match's league fee${C.dayAmount(state, day.id) > 0 ? ' is split across everyone taking part, and its expenses aren\'t assigned to anyone' : ' is split across everyone taking part'}.`,
@@ -2456,7 +2592,7 @@
     },
     async 'random-xi'(el) {
       const day = findMatch(el.dataset.id);
-      if (!canPickXi(day)) return;
+      if (!day || !isAdmin()) return;
       const pool = state.players.filter(C.inTournament);
       if (!pool.length) { toast('No players in the tournament to pick from.'); return; }
       const picked = state.players.some(p => p.att[day.id]) || state.twelfth[day.id];
@@ -2897,6 +3033,7 @@
       const fn = el.dataset && inputs[el.dataset.input];
       if (el.id === 'add-names') { draftNames = el.value; return; }
       if (el.dataset && el.dataset.input === 'season-name') { seasonDraft = el.value; return; }
+      if (el.dataset && el.dataset.input === 'decline-note') { declineDraft[el.dataset.key] = el.value; return; }
       if (el.dataset && el.dataset.input === 'mgr-phrase') { mgrDraft.phrase = el.value; return; }
       if (el.dataset && el.dataset.input === 'mgr-edit') { mgrDraft.edits[el.dataset.id] = el.value; render(); return; }
       if (el.dataset && /^tfa-/.test(el.dataset.input || '')) { tfaDraft[el.dataset.input.slice(4)] = el.value; return; }

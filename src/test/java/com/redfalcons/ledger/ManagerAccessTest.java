@@ -63,10 +63,10 @@ class ManagerAccessTest {
         // Pending: the phrase signs in as an ordinary viewer, and the admin sees the phrase.
         assertThat(send("GET", "/api/manager/status", null, null, null, secret).body()).contains("\"pending\"");
         assertThat(send("POST", "/api/login", "{\"name\":\"blue falcon rises\"}", null, null).body()).doesNotContain("managerToken");
-        String listed = send("GET", "/api/manager/requests", null, admin, null).body();
+        String listed = send("GET", "/api/manager/inbox", null, admin, null).body();
         assertThat(listed).contains("\"phrase\":\"blue falcon rises\"");
         String id = field(listed, "id");
-        assertThat(send("GET", "/api/manager/requests", null, null, null).statusCode()).isEqualTo(403);
+        assertThat(send("GET", "/api/manager/inbox", null, null, null).statusCode()).isEqualTo(403);
         assertThat(send("POST", "/api/manager/requests/" + id + "/approve", null, null, null).statusCode()).isEqualTo(403);
 
         // Approved: the phrase signs in straight away (no two-factor step) as a manager, not the admin.
@@ -77,22 +77,36 @@ class ManagerAccessTest {
         String mgr = field(login, "managerToken");
         assertThat(send("GET", "/api/manager/session", null, null, mgr).body()).contains("true");
 
-        // A manager sets the XI and 12th man, but cannot use the normal save.
-        String xi = "{\"playing\":{\"m1\":[\"p1\"]},\"twelfth\":{\"m1\":\"p2\"}}";
-        assertThat(send("PUT", "/api/manager/xi", xi, null, mgr).statusCode()).isEqualTo(200);
+        // A manager only proposes a lineup: nothing changes until the admin approves, and the normal save is closed.
+        String xi = "{\"matchId\":\"m1\",\"playing\":[\"p1\"],\"twelfth\":\"p2\"}";
+        assertThat(send("POST", "/api/manager/lineups", xi, null, null).statusCode()).isEqualTo(403);
+        String sent = send("POST", "/api/manager/lineups", xi, null, mgr).body();
+        assertThat(sent).contains("\"status\":\"pending\"");
+        String lineupId = field(sent, "id");
         assertThat(send("PUT", "/api/ledger", STATE, null, mgr).statusCode()).isEqualTo(403);
-        String loaded = send("GET", "/api/ledger", null, null, null).body();
-        assertThat(loaded).contains("\"att\":{\"m1\":true}").contains("\"twelfth\":{\"m1\":\"p2\"}");
+        assertThat(send("GET", "/api/ledger", null, null, null).body()).doesNotContain("\"m1\":true").contains("\"twelfth\":{}");
+        assertThat(send("GET", "/api/manager/inbox", null, null, mgr).statusCode()).isEqualTo(403);
+        assertThat(send("GET", "/api/manager/inbox", null, admin, null).body()).contains("\"lineups\":[{\"id\":\"" + lineupId);
 
-        // Too many players is refused; a finished match is left alone.
-        assertThat(send("PUT", "/api/manager/xi", "{\"playing\":{\"m1\":[\"p1\",\"p2\"]}}", null, mgr).statusCode()).isEqualTo(400);
-        assertThat(send("PUT", "/api/manager/xi", "{\"playing\":{\"m2\":[\"p1\"]}}", null, mgr).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/ledger", null, null, null).body()).doesNotContain("\"m2\":true");
+        // Too many players, and finished matches, are refused up front.
+        assertThat(send("POST", "/api/manager/lineups", "{\"matchId\":\"m1\",\"playing\":[\"p1\",\"p2\"]}", null, mgr).statusCode()).isEqualTo(400);
+        assertThat(send("POST", "/api/manager/lineups", "{\"matchId\":\"m2\",\"playing\":[\"p1\"]}", null, mgr).statusCode()).isEqualTo(400);
+
+        // Declining carries a note back to the manager; the ledger stays as it was.
+        assertThat(send("POST", "/api/manager/lineups/" + lineupId + "/approve", null, null, mgr).statusCode()).isEqualTo(403);
+        assertThat(send("POST", "/api/manager/lineups/" + lineupId + "/decline", "{\"note\":\"Babar is injured\"}", admin, null).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/manager/lineups", null, null, mgr).body()).contains("\"status\":\"declined\"").contains("Babar is injured");
+        assertThat(send("GET", "/api/ledger", null, null, null).body()).doesNotContain("\"m1\":true");
+
+        // Approving applies it to the ledger.
+        String second = send("POST", "/api/manager/lineups", xi, null, mgr).body();
+        assertThat(send("POST", "/api/manager/lineups/" + field(second, "id") + "/approve", null, admin, null).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/ledger", null, null, null).body()).contains("\"att\":{\"m1\":true}").contains("\"twelfth\":{\"m1\":\"p2\"}");
 
         // Changing the phrase signs the manager out; only the new phrase works.
         assertThat(send("PUT", "/api/manager/requests/" + id + "/phrase", "{\"phrase\":\"short\"}", admin, null).statusCode()).isEqualTo(400);
         assertThat(send("PUT", "/api/manager/requests/" + id + "/phrase", "{\"phrase\":\"green falcon sets\"}", admin, null).statusCode()).isEqualTo(200);
-        assertThat(send("PUT", "/api/manager/xi", xi, null, mgr).statusCode()).isEqualTo(403);
+        assertThat(send("POST", "/api/manager/lineups", xi, null, mgr).statusCode()).isEqualTo(403);
         assertThat(send("POST", "/api/login", "{\"name\":\"blue falcon rises\"}", null, null).body()).doesNotContain("managerToken");
         String again = send("POST", "/api/login", "{\"name\":\"green falcon sets\"}", null, null).body();
         assertThat(again).contains("\"manager\":true");
@@ -101,8 +115,15 @@ class ManagerAccessTest {
         // Revoked: nothing works any more.
         assertThat(send("DELETE", "/api/manager/requests/" + id, null, admin, null).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/manager/session", null, null, mgr2).body()).contains("false");
-        assertThat(send("PUT", "/api/manager/xi", xi, null, mgr2).statusCode()).isEqualTo(403);
+        assertThat(send("POST", "/api/manager/lineups", xi, null, mgr2).statusCode()).isEqualTo(403);
         assertThat(send("GET", "/api/manager/status", null, null, null, secret).body()).contains("\"none\"");
+        assertThat(send("POST", "/api/login", "{\"name\":\"green falcon sets\"}", null, null).body()).doesNotContain("managerToken");
+
+        // A declined access request keeps the admin's note, and the phrase is free again.
+        String ask2 = send("POST", "/api/manager/request", "{\"name\":\"Sam\",\"phrase\":\"green falcon sets\"}", null, null).body();
+        String id2 = field(send("GET", "/api/manager/inbox", null, admin, null).body(), "id");
+        assertThat(send("POST", "/api/manager/requests/" + id2 + "/decline", "{\"note\":\"Not this season\"}", admin, null).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/manager/status", null, null, null, field(ask2, "token")).body()).contains("\"declined\"").contains("Not this season");
         assertThat(send("POST", "/api/login", "{\"name\":\"green falcon sets\"}", null, null).body()).doesNotContain("managerToken");
     }
 }

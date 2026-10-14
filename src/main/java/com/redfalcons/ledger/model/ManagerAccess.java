@@ -13,6 +13,7 @@ public class ManagerAccess {
 
     public static final String PENDING = "pending";
     public static final String APPROVED = "approved";
+    public static final String DECLINED = "declined";
 
     @Id
     @Column(length = 64)
@@ -40,6 +41,10 @@ public class ManagerAccess {
     @Column(name = "decided_at", length = 40)
     private String decidedAt;
 
+    /** Why the admin declined, if they said. */
+    @Column(length = 300)
+    private String note;
+
     protected ManagerAccess() {
     }
 
@@ -58,6 +63,12 @@ public class ManagerAccess {
         this.decidedAt = at;
     }
 
+    public void decline(String note, String at) {
+        this.status = DECLINED;
+        this.note = note;
+        this.decidedAt = at;
+    }
+
     public void setPhrase(String phrase) { this.phrase = phrase; }
 
     public String getId() { return id; }
@@ -68,4 +79,5 @@ public class ManagerAccess {
     public String getStatus() { return status; }
     public String getCreatedAt() { return createdAt; }
     public String getDecidedAt() { return decidedAt; }
+    public String getNote() { return note; }
 }

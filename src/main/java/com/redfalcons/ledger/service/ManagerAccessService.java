@@ -2,6 +2,7 @@ package com.redfalcons.ledger.service;
 
 import com.redfalcons.ledger.model.ManagerAccess;
 import com.redfalcons.ledger.model.ManagerSession;
+import com.redfalcons.ledger.repo.LineupRequestRepository;
 import com.redfalcons.ledger.repo.ManagerAccessRepository;
 import com.redfalcons.ledger.repo.ManagerSessionRepository;
 import com.redfalcons.ledger.web.AdminAuth;
@@ -35,11 +36,14 @@ public class ManagerAccessService {
 
     private final ManagerAccessRepository repo;
     private final ManagerSessionRepository sessions;
+    private final LineupRequestRepository lineups;
     private final AdminAuth adminAuth;
 
-    public ManagerAccessService(ManagerAccessRepository repo, ManagerSessionRepository sessions, AdminAuth adminAuth) {
+    public ManagerAccessService(ManagerAccessRepository repo, ManagerSessionRepository sessions,
+                                LineupRequestRepository lineups, AdminAuth adminAuth) {
         this.repo = repo;
         this.sessions = sessions;
+        this.lineups = lineups;
         this.adminAuth = adminAuth;
     }
 
@@ -56,11 +60,11 @@ public class ManagerAccessService {
         return secret;
     }
 
-    /** "pending", "approved", or "none" (never asked, declined, or revoked). */
+    /** The caller's own request, if it still exists (a revoked one is gone; a declined one carries the admin's note). */
     @Transactional(readOnly = true)
-    public String status(String secret) {
-        if (secret == null || secret.isBlank()) return NONE;
-        return repo.findByRequestHash(AdminAuth.hash(secret)).map(ManagerAccess::getStatus).orElse(NONE);
+    public Optional<ManagerAccess> byRequest(String secret) {
+        if (secret == null || secret.isBlank()) return Optional.empty();
+        return repo.findByRequestHash(AdminAuth.hash(secret));
     }
 
     /** The requester withdraws their request, or gives up their access. */
@@ -114,6 +118,16 @@ public class ManagerAccessService {
         return m.isPresent();
     }
 
+    /** Declines a pending request, keeping it so the requester can read the note. */
+    @Transactional
+    public boolean decline(String id, String note) {
+        Optional<ManagerAccess> m = repo.findById(id);
+        if (m.isEmpty()) return false;
+        m.get().decline(clipNote(note), Instant.now().toString());
+        sessions.deleteByManagerId(id);
+        return true;
+    }
+
     /** The admin picks a new phrase; the manager's signed-in browsers are signed out. */
     @Transactional
     public boolean changePhrase(String id, String phrase) {
@@ -134,7 +148,14 @@ public class ManagerAccessService {
 
     private void delete(String id) {
         sessions.deleteByManagerId(id);
+        lineups.deleteByManagerId(id);
         repo.deleteById(id);
+    }
+
+    /** The manager behind a signed-in session, while still approved. */
+    @Transactional(readOnly = true)
+    public Optional<ManagerAccess> find(String token) {
+        return manager(token);
     }
 
     private Optional<ManagerAccess> manager(String token) {
@@ -150,9 +171,15 @@ public class ManagerAccessService {
         if (t.length() < PHRASE_MIN) throw new IllegalArgumentException("The phrase needs at least " + PHRASE_MIN + " characters.");
         if (t.length() > PHRASE_MAX) throw new IllegalArgumentException("The phrase can be at most " + PHRASE_MAX + " characters.");
         boolean taken = adminAuth.isAdminKey(t) || repo.findAll().stream()
-                .anyMatch(m -> !m.getId().equals(ownId) && m.getPhrase().equalsIgnoreCase(t));
+                .anyMatch(m -> !m.getId().equals(ownId) && !ManagerAccess.DECLINED.equals(m.getStatus())
+                        && m.getPhrase().equalsIgnoreCase(t));
         if (taken) throw new IllegalArgumentException("That phrase can't be used. Pick a different one.");
         return t;
+    }
+
+    static String clipNote(String note) {
+        String t = note == null ? "" : note.trim();
+        return t.isEmpty() ? null : t.length() > 300 ? t.substring(0, 300) : t;
     }
 
     private static String clip(String v, String fallback) {

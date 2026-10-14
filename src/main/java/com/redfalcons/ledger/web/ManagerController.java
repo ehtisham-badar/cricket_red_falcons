@@ -1,7 +1,8 @@
 package com.redfalcons.ledger.web;
 
 import com.redfalcons.ledger.model.ManagerAccess;
-import com.redfalcons.ledger.service.LedgerService;
+import com.redfalcons.ledger.model.LineupRequest;
+import com.redfalcons.ledger.service.LineupService;
 import com.redfalcons.ledger.service.ManagerAccessService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,12 +22,12 @@ public class ManagerController {
     static final String MANAGER_HEADER = "X-Manager-Token";
 
     private final ManagerAccessService access;
-    private final LedgerService ledger;
+    private final LineupService lineups;
     private final AdminAuth auth;
 
-    public ManagerController(ManagerAccessService access, LedgerService ledger, AdminAuth auth) {
+    public ManagerController(ManagerAccessService access, LineupService lineups, AdminAuth auth) {
         this.access = access;
-        this.ledger = ledger;
+        this.lineups = lineups;
         this.auth = auth;
     }
 
@@ -36,9 +37,6 @@ public class ManagerController {
     }
 
     public record PhraseBody(String phrase) {
-    }
-
-    public record XiBody(Map<String, List<String>> playing, Map<String, String> twelfth) {
     }
 
     // ---------- the requester ----------
@@ -54,10 +52,12 @@ public class ManagerController {
         }
     }
 
-    /** Whether the caller's request is "pending", "approved" or "none". */
+    /** Whether the caller's request is "pending", "approved", "declined" (with the admin's note) or "none". */
     @GetMapping("/status")
     public Map<String, String> status(@RequestHeader(value = REQUEST_HEADER, required = false) String secret) {
-        return Map.of("status", access.status(secret));
+        return access.byRequest(secret)
+                .map(m -> Map.of("status", m.getStatus(), "note", m.getNote() == null ? "" : m.getNote()))
+                .orElse(Map.of("status", ManagerAccessService.NONE, "note", ""));
     }
 
     /** Withdraws the caller's own request, or gives up their own access. */
@@ -80,22 +80,42 @@ public class ManagerController {
         return Map.of("ok", true);
     }
 
-    /** Sets the XI and 12th man for the matches sent. The admin may do this too. */
-    @PutMapping("/xi")
-    public ResponseEntity<?> xi(@RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String adminToken,
-                                @RequestHeader(value = MANAGER_HEADER, required = false) String token,
-                                @RequestBody XiBody body) {
-        boolean admin = auth.isValidToken(adminToken);
-        if (!admin && !access.isManager(token)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("error", "Manager access is no longer valid."));
+    public record LineupBody(String matchId, List<String> playing, String twelfth) {
+    }
+
+    public record LineupRow(String id, String managerName, String matchId, List<String> playing, String twelfth,
+                            String status, String note, String createdAt, String decidedAt) {
+        static LineupRow of(LineupRequest r) {
+            return new LineupRow(r.getId(), r.getManagerName(), r.getMatchId(),
+                    r.getPlaying().isEmpty() ? List.of() : List.of(r.getPlaying().split(",")), r.getTwelfth(),
+                    r.getStatus(), r.getNote() == null ? "" : r.getNote(), r.getCreatedAt(), r.getDecidedAt());
+        }
+    }
+
+    /** A manager proposes the XI and 12th man for a match; the admin has to approve it. */
+    @PostMapping("/lineups")
+    public ResponseEntity<?> submit(@RequestHeader(value = MANAGER_HEADER, required = false) String token,
+                                    @RequestBody LineupBody body) {
+        var manager = access.find(token);
+        if (manager.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Manager access is no longer valid."));
         }
         try {
-            ledger.saveXi(body == null ? null : body.playing(), body == null ? null : body.twelfth(), admin);
+            return ResponseEntity.ok(LineupRow.of(lineups.submit(manager.get(), body == null ? null : body.matchId(),
+                    body == null ? null : body.playing(), body == null ? null : body.twelfth())));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
-        return ResponseEntity.ok(Map.of("ok", true));
+    }
+
+    /** A manager's own recent lineup requests and what became of them. */
+    @GetMapping("/lineups")
+    public ResponseEntity<?> mine(@RequestHeader(value = MANAGER_HEADER, required = false) String token) {
+        var manager = access.find(token);
+        if (manager.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Manager access is no longer valid."));
+        }
+        return ResponseEntity.ok(lineups.mine(manager.get().getId()).stream().map(LineupRow::of).toList());
     }
 
     // ---------- the admin ----------
@@ -103,12 +123,43 @@ public class ManagerController {
     public record Row(String id, String name, String label, String phrase, String status, String createdAt, String decidedAt) {
     }
 
-    @GetMapping("/requests")
-    public ResponseEntity<?> list(@RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token) {
+    /** Everything waiting for the admin, plus the approved managers. */
+    @GetMapping("/inbox")
+    public ResponseEntity<?> inbox(@RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token) {
         if (!auth.isValidToken(token)) return forbidden();
-        return ResponseEntity.ok(access.list().stream()
-                .map(m -> new Row(m.getId(), m.getName(), m.getLabel(), m.getPhrase(), m.getStatus(), m.getCreatedAt(), m.getDecidedAt()))
-                .toList());
+        return ResponseEntity.ok(Map.of(
+                "access", access.list().stream().filter(m -> !ManagerAccess.DECLINED.equals(m.getStatus()))
+                        .map(m -> new Row(m.getId(), m.getName(), m.getLabel(), m.getPhrase(), m.getStatus(), m.getCreatedAt(), m.getDecidedAt()))
+                        .toList(),
+                "lineups", lineups.pending().stream().map(LineupRow::of).toList()));
+    }
+
+    public record DeclineBody(String note) {
+    }
+
+    @PostMapping("/requests/{id}/decline")
+    public ResponseEntity<?> declineAccess(@RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token,
+                                           @PathVariable String id, @RequestBody(required = false) DeclineBody body) {
+        if (!auth.isValidToken(token)) return forbidden();
+        return access.decline(id, body == null ? null : body.note()) ? ResponseEntity.ok(Map.of("declined", id)) : notFound();
+    }
+
+    @PostMapping("/lineups/{id}/approve")
+    public ResponseEntity<?> approveLineup(@RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token,
+                                           @PathVariable String id) {
+        if (!auth.isValidToken(token)) return forbidden();
+        try {
+            return lineups.approve(id) ? ResponseEntity.ok(Map.of("approved", id)) : notFound();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/lineups/{id}/decline")
+    public ResponseEntity<?> declineLineup(@RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token,
+                                           @PathVariable String id, @RequestBody(required = false) DeclineBody body) {
+        if (!auth.isValidToken(token)) return forbidden();
+        return lineups.decline(id, body == null ? null : body.note()) ? ResponseEntity.ok(Map.of("declined", id)) : notFound();
     }
 
     @PostMapping("/requests/{id}/approve")
