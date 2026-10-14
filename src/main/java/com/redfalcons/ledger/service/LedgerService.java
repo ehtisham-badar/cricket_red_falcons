@@ -272,8 +272,10 @@ public class LedgerService {
         List<MatchDto> matchIn = in.matches() != null ? in.matches() : storedMatches();
         Map<String, Boolean> storedTest = new HashMap<>();
         Map<String, String> storedTime = new HashMap<>();
+        Map<String, Boolean> storedAnnounced = new HashMap<>();
         matches.findAll().forEach(m -> {
             storedTest.put(m.getId(), m.isTest());
+            storedAnnounced.put(m.getId(), m.isAnnounced());
             storedTime.put(m.getId(), m.getTime());
         });
         List<MatchDay> newMatches = new ArrayList<>();
@@ -284,7 +286,8 @@ public class LedgerService {
                     // A test match never charges anyone, so it can't be finished.
                     Boolean.TRUE.equals(m.finished()) && !(m.test() != null ? m.test() : storedTest.getOrDefault(m.id(), false)),
                     m.test() != null ? m.test() : storedTest.getOrDefault(m.id(), false),
-                    m.time() != null ? clockTime(m.time()) : storedTime.getOrDefault(m.id(), "")));
+                    m.time() != null ? clockTime(m.time()) : storedTime.getOrDefault(m.id(), ""),
+                    m.announced() != null ? m.announced() : storedAnnounced.getOrDefault(m.id(), false)));
         }
 
         Set<String> validDays = new HashSet<>(trainingIds);
@@ -505,7 +508,8 @@ public class LedgerService {
 
     private List<MatchDto> storedMatches() {
         return matches.findAll(BY_POSITION).stream()
-                .map(m -> new MatchDto(m.getId(), m.getDate(), m.getOpponent(), m.getVenue(), m.isFinished(), m.isTest(), m.getTime())).toList();
+                .map(m -> new MatchDto(m.getId(), m.getDate(), m.getOpponent(), m.getVenue(), m.isFinished(), m.isTest(), m.getTime(),
+                        m.isAnnounced())).toList();
     }
 
     private static Map<String, String> parseTwelfth(String stored) {

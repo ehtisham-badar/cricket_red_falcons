@@ -1630,3 +1630,22 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
 }
 @media (prefers-reduced-motion: reduce) { .nm-sweep, .nm-block.secs strong, .nm-card.today .nm-status { animation: none; } }
 a.btn { text-decoration: none; }
+
+/* Match details: Playing XI and squad */
+.lu-list { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.lu-row { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 8px 12px 8px 10px; border-radius: 14px; border: 1px solid var(--line); background: rgba(var(--hi-rgb), .025); }
+.lu-list.squad .lu-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+.lu-row.opener { border-color: rgba(var(--gold-rgb), .35); background: linear-gradient(90deg, rgba(var(--gold-rgb), .1), rgba(var(--hi-rgb), .02)); }
+.lu-row.twelfth { border-style: dashed; border-color: rgba(var(--gold-rgb), .4); }
+.lu-n { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: rgba(var(--red-rgb), .18); color: var(--red-soft); font-weight: 800; font-size: 13px; }
+.lu-row.opener .lu-n, .lu-row.twelfth .lu-n { background: rgba(var(--gold-rgb), .2); color: var(--gold); }
+.lu-name { display: flex; flex-direction: column; min-width: 0; }
+.lu-name strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lu-name small { color: var(--muted); font-size: 12px; }
+.lu-tags { display: flex; gap: 4px; }
+.lu-tag { padding: 2px 7px; border-radius: var(--pill); font-size: 10px; font-weight: 800; letter-spacing: .06em; background: rgba(var(--hi-rgb), .08); color: var(--muted); }
+.lu-tag.c { background: linear-gradient(180deg, #f5d995, #e2b65c); color: #241a07; }
+.lu-tag.vc { background: rgba(var(--gold-rgb), .18); color: var(--gold-light); }
+.lu-tag.wk { background: rgba(var(--red-rgb), .22); color: var(--red-soft); }
+.lu-note { display: flex; align-items: center; gap: 8px; margin: 0 0 16px; padding: 10px 14px; border-radius: 12px; border: 1px dashed rgba(var(--gold-rgb), .4); background: rgba(var(--gold-rgb), .06); color: var(--gold-light); font-size: 14px; }
+.lu-admin { display: flex; justify-content: flex-end; margin: 14px 0 0; }

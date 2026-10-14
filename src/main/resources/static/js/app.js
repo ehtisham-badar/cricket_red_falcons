@@ -432,7 +432,7 @@
     // (m1–m5); keep those that hold any attendance, expenses or 12th man.
     let matches;
     if (Array.isArray(d.matches)) {
-      matches = d.matches.filter(m => m && m.id).map(m => ({ id: m.id, date: m.date || '', opponent: m.opponent || '', venue: m.venue || '', time: /^([01]\d|2[0-3]):[0-5]\d$/.test(m.time || '') ? m.time : '', test: m.test === true, finished: m.test !== true && m.finished === true }));
+      matches = d.matches.filter(m => m && m.id).map(m => ({ id: m.id, date: m.date || '', opponent: m.opponent || '', venue: m.venue || '', time: /^([01]\d|2[0-3]):[0-5]\d$/.test(m.time || '') ? m.time : '', test: m.test === true, finished: m.test !== true && m.finished === true, announced: m.announced === true }));
     } else {
       const used = id => players.some(p => p.att[id]) || (expenses[id] || []).length || (d.twelfth || {})[id];
       // These were charged as soon as they were marked, so they count as finished.
@@ -1620,6 +1620,72 @@
     return test ? { id: test.id, sample: test } : null;
   }
 
+  // ---------- Playing XI announcement ----------
+  function setAnnounced(matchId, on) {
+    const m = state.matches.find(x => x.id === matchId);
+    if (m) m.announced = !!on;
+  }
+  const xiOf = m => state.players.filter(p => p.att[m.id]);
+  // Whether this viewer may see a match's XI: once announced, or (as a preview) the admin.
+  const xiPublic = m => !!m.announced && xiOf(m).length > 0;
+
+  function announceButton(m, cls = 'btn-gold') {
+    if (!isAdmin() || m.finished || !xiOf(m).length) return '';
+    return m.announced
+      ? `<button class="btn btn-ghost small" data-action="unannounce-xi" data-id="${esc(m.id)}">Hide Playing XI</button>`
+      : `<button class="btn ${cls}" data-action="announce-xi" data-id="${esc(m.id)}">${icon('<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>', 18)} Announce Playing XI</button>`;
+  }
+
+  // "See details" for a match: the scorecard once finished, else the announced XI, else the full squad.
+  function sheetMatchInfo() {
+    const m = C.matches(state).find(x => x.id === sheet.id);
+    if (!m) return '';
+    if (m.finished) return sheetScorecard();
+    const preview = !m.announced && isAdmin() && xiOf(m).length > 0;
+    return xiPublic(m) || preview ? sheetLineup(m, preview) : sheetSquad(m);
+  }
+
+  function lineupHead(m, kind) {
+    return `<header class="sheet-head">
+        <div><span class="day-kind">${kind}</span><h2>Red Falcons v ${m.opponent ? esc(m.opponent) : 'TBC'}</h2>
+          <p class="muted">${esc(matchInfo(m)) || m.label}</p></div>
+        <button class="icon-btn" data-action="close-sheet" aria-label="Close">${X_ICON}</button>
+      </header>`;
+  }
+
+  const roleTags = p => [isCaptain(p) && 'c', p.viceCaptain && 'vc', isKeeper(p) && 'wk'].filter(Boolean)
+    .map(t => `<span class="lu-tag ${t}">${t.toUpperCase()}</span>`).join('');
+
+  function sheetLineup(m, preview) {
+    const xi = battingOrderOf(m.id);
+    const twelfth = findPlayer(state.twelfth[m.id]);
+    const row = (p, n, extra = '') => `<li class="lu-row ${extra}">
+        <span class="lu-n">${n}</span>${avatar(p, 40)}
+        <span class="lu-name"><strong>${esc(p.name)}</strong><small>${esc(p.role) || '—'}</small></span>
+        <span class="lu-tags">${roleTags(p)}</span>
+      </li>`;
+    return `${lineupHead(m, preview ? 'Playing XI · not announced' : 'Playing XI')}
+      <div class="sheet-body lu">
+        ${preview ? `<div class="finish-box"><span>${icon('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>', 18)}<span><strong>Only you can see this</strong><small>Players see the full squad until you announce the XI.</small></span></span>${announceButton(m)}</div>` : ''}
+        <h3 class="sub first">Batting order <span class="muted">${xi.length} players</span></h3>
+        <ol class="lu-list">${xi.map((p, i) => row(p, i + 1, i < 2 ? 'opener' : '')).join('')}</ol>
+        ${twelfth ? `<h3 class="sub">12th man</h3><ol class="lu-list">${row(twelfth, 12, 'twelfth')}</ol>` : ''}
+        ${!preview && isAdmin() ? `<p class="lu-admin">${announceButton(m)}</p>` : ''}
+      </div>`;
+  }
+
+  function sheetSquad(m) {
+    const squad = state.players.filter(C.inTournament);
+    return `${lineupHead(m, 'Squad')}
+      <div class="sheet-body lu">
+        <p class="lu-note">${icon('<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/>', 16)} The Playing XI will be announced before match day.</p>
+        <h3 class="sub first">Red Falcons squad <span class="muted">${squad.length} players</span></h3>
+        <ul class="lu-list squad">${squad.map(p => `<li class="lu-row">
+            ${avatar(p, 40)}<span class="lu-name"><strong>${esc(p.name)}</strong><small>${esc(p.role) || '—'}</small></span>
+            <span class="lu-tags">${roleTags(p)}</span></li>`).join('')}</ul>
+      </div>`;
+  }
+
   // A scorecard in the usual cricket layout: batting, bowling and fielding for the Red Falcons.
   function sheetScorecard() {
     const m = C.matches(state).find(x => x.id === sheet.id);
@@ -1632,7 +1698,7 @@
         <button class="icon-btn" data-action="close-sheet" aria-label="Close">${X_ICON}</button>
       </header>`;
     if (!src) {
-      return `${head}<div class="sheet-body"><p class="muted center">${statsVisible() ? 'No scorecard yet — it appears once the match stats are added.' : 'The scorecard hasn’t been shared with players yet.'}</p></div>`;
+      return `${head}<div class="sheet-body"><p class="muted center">The scorecard appears here once the match stats are added.</p></div>`;
     }
     const order = battingOrderOf(src.id);
     const rows = order.map(p => ({ p, e: C.statOf(state, src.id, p.id) }));
@@ -1678,7 +1744,8 @@
     const status = days == null ? 'Date to be confirmed' : days === 0 ? 'Match day!' : days === 1 ? 'Tomorrow' : `In ${days} days`;
     const opp = (m.opponent || '').trim();
     const initials = opp ? opp.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() : '?';
-    const xi = state.players.filter(p => p.att[m.id]);
+    const xi = xiPublic(m) ? xiOf(m) : [];
+    const pending = !m.announced && isAdmin() && xiOf(m).length > 0;
     const chips = [
       `<span class="nm-chip">${ic('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>')} ${esc(m.date ? formatMatchDate(m.date) : 'Date to be confirmed')}</span>`,
       `<span class="nm-chip ${m.time ? '' : 'tbc'}">${ic('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>')} ${m.time ? esc(fmtClock(m.time)) : 'Time to be confirmed'}</span>`,
@@ -1687,7 +1754,9 @@
     const squad = xi.length
       ? `<div class="nm-xi"><span class="nm-xi-faces">${xi.slice(0, 11).map(p => `<span title="${esc(p.name)}">${avatar(p, 34)}</span>`).join('')}</span>
           <span class="nm-xi-text"><strong>Playing XI announced</strong><small>${xi.length} player${xi.length === 1 ? '' : 's'}${state.twelfth[m.id] ? ' + 12th man' : ''}</small></span></div>`
-      : `<div class="nm-xi none">${ic('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>', 18)}<span class="nm-xi-text"><strong>XI not announced yet</strong><small>Watch this space before match day</small></span></div>`;
+      : pending
+        ? `<div class="nm-xi none">${ic('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>', 18)}<span class="nm-xi-text"><strong>XI picked · not announced</strong><small>Players see “XI not announced yet”</small></span></div>`
+        : `<div class="nm-xi none">${ic('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>', 18)}<span class="nm-xi-text"><strong>XI not announced yet</strong><small>Watch this space before match day</small></span></div>`;
     return `<section class="panel nm-card ${days === 0 ? 'today' : ''}" data-nm="${esc(m.id)}">
       <span class="nm-sweep" aria-hidden="true"></span>
       <div class="nm-top">
@@ -1706,7 +1775,8 @@
         ${squad}
         <div class="nm-actions">
           ${m.venue ? `<a class="btn btn-ghost" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(m.venue)}" target="_blank" rel="noopener">${ic('<path d="m3 11 19-9-9 19-2-8-8-2z"/>', 18)} Directions</a>` : ''}
-          <button class="btn btn-gold nm-details" data-action="open-scorecard" data-id="${esc(m.id)}">See details</button>
+          ${pending ? announceButton(m) : ''}
+          <button class="btn ${pending ? 'btn-ghost' : 'btn-gold'} nm-details" data-action="open-scorecard" data-id="${esc(m.id)}">See details</button>
         </div>
       </div>
     </section>`;
@@ -2581,7 +2651,7 @@ ${tabRows.map(r => {
     if (sheet.type === 'player') body = sheetPlayer();
     if (sheet.type === 'profile') body = sheetProfile();
     if (sheet.type === 'inbox') body = sheetInbox();
-    if (sheet.type === 'scorecard') body = sheetScorecard();
+    if (sheet.type === 'scorecard') body = sheetMatchInfo();
     if (sheet.type === 'feed') body = sheetFeed();
     if (!body) { sheet = null; return ''; }
     return `<div class="sheet-backdrop" data-action="close-sheet"></div>
@@ -2788,6 +2858,7 @@ ${tabRows.map(r => {
           <button class="btn btn-ghost" data-action="random-xi" data-id="${esc(d.id)}">${DICE_ICON} Random XI + 12th</button>
           ${s.n > 0 || twelfthId ? `<button class="btn btn-danger" data-action="clear-xi" data-id="${esc(d.id)}">${X_ICON} Clear XI</button>` : ''}
           ${s.n > 0 ? `<button class="btn btn-gold" data-action="share-xi" data-id="${esc(d.id)}">${IMAGE_ICON} Share Playing XI</button>` : ''}
+          ${announceButton(d, 'btn-primary')}
         </div>
         ${s.n > 0 ? '' : '<p class="muted xi-hint">Mark who’s playing below, or pick at random, to share the Playing XI picture.</p>'}` : ''}
         ${isMatch && !d.test ? finishBox(d, s) : ''}
@@ -3348,6 +3419,28 @@ ${tabRows.map(r => {
       delete state.battingOrder[el.dataset.day];
       touchXi(el.dataset.day);
     },
+    async 'announce-xi'(el) {
+      if (!isAdmin()) return;
+      const m = findMatch(el.dataset.id);
+      if (!m || !xiOf(m).length) return;
+      const ok = await confirmDialog(`Announce the Playing XI for ${m.label}?`,
+        `The ${xiOf(m).length} players${state.twelfth[m.id] ? ' and the 12th man' : ''} show on everyone’s home screen and in See details. Picking a new XI hides it again until you announce.`,
+        'Announce');
+      if (!ok) return;
+      setAnnounced(m.id, true);
+      commit();
+      toast(`${m.label} Playing XI announced.`);
+    },
+    async 'unannounce-xi'(el) {
+      if (!isAdmin()) return;
+      const m = findMatch(el.dataset.id);
+      if (!m) return;
+      const ok = await confirmDialog(`Hide the Playing XI for ${m.label}?`, 'Players will see the full squad again until you announce.', 'Hide XI');
+      if (!ok) return;
+      setAnnounced(m.id, false);
+      commit();
+      toast(`${m.label} Playing XI hidden.`);
+    },
     async 'finish-match'(el) {
       if (!isAdmin()) return;
       const d = findMatch(el.dataset.id);
@@ -3390,6 +3483,7 @@ ${tabRows.map(r => {
       state.players.forEach(p => { delete p.att[day.id]; });
       delete state.twelfth[day.id];
       delete state.battingOrder[day.id];
+      setAnnounced(day.id, false);
       commit();
       toast(`${day.label} XI cleared.`);
     },
@@ -3408,6 +3502,7 @@ ${tabRows.map(r => {
       const xi = shuffled.slice(0, state.settings.maxPerMatch);
       state.players.forEach(p => { delete p.att[day.id]; });
       delete state.battingOrder[day.id];
+      setAnnounced(day.id, false);   // a new XI isn't public until it's announced again
       xi.forEach(p => { p.att[day.id] = true; });
       if (shuffled[xi.length]) state.twelfth[day.id] = shuffled[xi.length].id; else delete state.twelfth[day.id];
       commit();
@@ -3621,7 +3716,7 @@ ${tabRows.map(r => {
       if (!isAdmin()) return;
       const folded = readStore(COLLAPSED_KEY) || {};
       if (folded.match) { folded.match = false; writeStore(COLLAPSED_KEY, folded); }
-      state.matches.push({ id: 'm' + rid(), date: today(), time: '', opponent: '', venue: '', finished: false });
+      state.matches.push({ id: 'm' + rid(), date: today(), time: '', opponent: '', venue: '', finished: false, announced: false });
       commit();
       toast(`Match ${realMatchCount()} added — set its date and opponent.`);
     },

@@ -34,11 +34,15 @@ public class MatchDay {
     @Column(name = "match_time", length = 5)
     private String time;
 
+    /** The admin has announced the Playing XI, so it shows on everyone's home screen. Null means no. */
+    @Column(name = "xi_announced")
+    private Boolean announced;
+
     protected MatchDay() {
     }
 
     public MatchDay(String id, int position, String date, String opponent, String venue, boolean finished, boolean test,
-                    String time) {
+                    String time, boolean announced) {
         this.id = id;
         this.position = position;
         this.date = date;
@@ -47,6 +51,7 @@ public class MatchDay {
         this.finished = finished;
         this.test = test;
         this.time = time;
+        this.announced = announced;
     }
 
     public String getId() { return id; }
@@ -57,4 +62,5 @@ public class MatchDay {
     public boolean isFinished() { return Boolean.TRUE.equals(finished); }
     public boolean isTest() { return Boolean.TRUE.equals(test); }
     public String getTime() { return time == null ? "" : time; }
+    public boolean isAnnounced() { return Boolean.TRUE.equals(announced); }
 }

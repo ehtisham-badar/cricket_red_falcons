@@ -60,7 +60,9 @@ public record LedgerDto(
      * test match, which never charges anyone (null on save keeps the stored flag). {@code time} is the kick-off
      * as HH:MM, "" while it isn't confirmed (null on save keeps the stored time).
      */
-    public record MatchDto(String id, String date, String opponent, String venue, Boolean finished, Boolean test, String time) {
+    /** {@code announced}: the admin announced the Playing XI (null on save keeps the stored choice). */
+    public record MatchDto(String id, String date, String opponent, String venue, Boolean finished, Boolean test, String time,
+                           Boolean announced) {
     }
 
     /**
