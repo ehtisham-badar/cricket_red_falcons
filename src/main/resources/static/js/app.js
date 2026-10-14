@@ -32,7 +32,7 @@
   ];
 
   let session = readStore(SESSION_KEY);      // { name, admin, token }
-  let tab = readStore(TAB_KEY) || 'summary';
+  let tab = 'summary';                        // set from the remembered tab once we know who is signed in
   let state = null;                           // { players, trainings, expenses, tournament, settings }
   let sheet = null;                           // { type: 'day', dayId } | { type: 'player', id }
   let saveTimer = null;
@@ -542,6 +542,7 @@
       if (e.status === 403) {
         session = { name: session.name, admin: false, token: null };
         writeStore(SESSION_KEY, null);
+        tab = 'summary';
         setSaveStatus('');
         toast('Admin access is no longer valid. You are now view-only.');
         render();
@@ -698,7 +699,8 @@
   function dropManager() {
     session = { name: session.name, admin: false, token: null };
     writeStore(SESSION_KEY, session);
-    if (tab === 'days' && !daysVisible()) tab = 'summary';
+    tab = 'summary';
+    saveTab();
     toast('Your manager access was ended. You are now view-only.');
     render();
   }
@@ -1008,6 +1010,7 @@
 
   // ---------- splash / login ----------
   function showSplash() {
+    resetView();
     hideLoader();
     hideCodeStep();
     clearInterval(pollTimer);
@@ -1026,10 +1029,19 @@
     setTimeout(() => $('#login-name').focus(), 50);
   }
 
+  // The last tab is remembered per signed-in person, so someone else signing in on this device never
+  // lands on the previous person's tab.
+  const whoKey = () => !session ? '' : session.admin ? 'admin' : (session.managerToken ? 'manager:' : 'viewer:') + (session.name || '');
+  function saveTab() { writeStore(TAB_KEY, { who: whoKey(), tab }); }
+  function restoreTab() {
+    const saved = readStore(TAB_KEY);
+    tab = saved && typeof saved === 'object' && saved.who === whoKey() && saved.tab ? saved.tab : 'summary';
+  }
+
   // A new user starts on Summary with nothing open.
   function resetView() {
     tab = 'summary';
-    writeStore(TAB_KEY, tab);
+    saveTab();
     sheet = null;
     draftNames = '';
     $('#dialog-root').innerHTML = '';
@@ -1100,6 +1112,7 @@
 
   async function enterApp() {
     showLoader();
+    restoreTab();
     try {
       if (session.token) {
         const s = await api('GET', '/api/session');
@@ -1165,8 +1178,27 @@
     requestAnimationFrame(() => { navTick = false; markSettingsNav(); });
   }, { passive: true });
 
+  // Scrollable areas whose position should survive a re-render (render() rebuilds the page on every change).
+  const KEEP_SCROLL = '.sheet-body, .table-wrap, .seg, [data-keep-scroll]';
+  function scrollState() {
+    const list = {};
+    document.querySelectorAll(KEEP_SCROLL).forEach((el, i) => { list[(el.closest('#sheet-root') ? 's' : 'v') + i + el.className] = [el.scrollTop, el.scrollLeft]; });
+    return { y: window.scrollY, sheetKey: sheet ? JSON.stringify(sheet) : '', list };
+  }
+  function restoreScroll(before) {
+    const sheetKey = sheet ? JSON.stringify(sheet) : '';
+    document.querySelectorAll(KEEP_SCROLL).forEach((el, i) => {
+      const inSheet = !!el.closest('#sheet-root');
+      if (inSheet && sheetKey !== before.sheetKey) return;      // a different sheet opened: start at its top
+      const pos = before.list[(inSheet ? 's' : 'v') + i + el.className];
+      if (pos) { el.scrollTop = pos[0]; el.scrollLeft = pos[1]; }
+    });
+    if (Math.abs(window.scrollY - before.y) > 1) window.scrollTo(0, before.y);
+  }
+
   function render() {
     if (!state) return;
+    const scroll = scrollState();
     const active = document.activeElement;
     const focusKey = active && active.dataset ? active.dataset.focus : null;
     let sel = null;
@@ -1192,6 +1224,8 @@
     $('#sheet-root').innerHTML = sheet ? renderSheet() : '';
     document.body.classList.toggle('sheet-open', !!sheet);
     markSettingsNav();
+
+    restoreScroll(scroll);
 
     if (focusKey) {
       const el = document.querySelector(`[data-focus="${CSS.escape(focusKey)}"]`);
@@ -3055,7 +3089,7 @@ ${tabRows.map(r => {
   function findExpense(el) { return (state.expenses[el.dataset.day] || []).find(e => e.id === el.dataset.id); }
 
   const actions = {
-    tab(el) { tab = el.dataset.tab; writeStore(TAB_KEY, tab); sheet = null; render(); animateView(); window.scrollTo({ top: 0 }); if (tab === 'announce') loadAnnouncements(); },
+    tab(el) { tab = el.dataset.tab; saveTab(); sheet = null; render(); animateView(); window.scrollTo({ top: 0 }); if (tab === 'announce') loadAnnouncements(); },
     'ann-template'(el) {
       const x = ANN_TEMPLATES.find(y => y.id === el.dataset.t);
       if (!x) return;
