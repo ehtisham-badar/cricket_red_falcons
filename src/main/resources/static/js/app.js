@@ -1181,33 +1181,6 @@
     return out.join('\n');
   }
 
-  function teamMessage() {
-    const stats = C.allStats(state);
-    const tour = C.tournamentStats(state);
-    const rows = state.players.map(p => ({ p, net: C.playerCalc(state, p, stats, fmt, tour).net }));
-    const due = rows.filter(r => r.net < 0).sort((a, b) => a.net - b.net);
-    const back = rows.filter(r => r.net > 0);
-    const settled = rows.filter(r => r.net === 0);
-    const out = ['*Red Falcons CC — balances*'];
-    if (tour.fee > 0) out.push(`League fee ${fmt(tour.fee)}: ${fmt(tour.perMatch)} per match, split among the XI who played it`);
-    const advance = C.advancePerPlayer(state);
-    if (advance > 0) out.push(`Advance ${fmt(advance)} each, to pay now`);
-    if (due.length) {
-      out.push('', '*Still to pay*');
-      due.forEach((r, i) => {
-        const adv = advanceNow(r.p, r.net);
-        out.push(`${i + 1}. ${r.p.name} — ${fmt(-r.net)}${adv > 0 ? ` (advance ${fmt(adv)} now)` : ''}`);
-      });
-    }
-    if (back.length) {
-      out.push('', '*To be paid back*');
-      back.forEach(r => out.push(`• ${r.p.name} — ${fmt(r.net)}`));
-    }
-    if (settled.length) out.push('', `Settled ✅ ${settled.map(r => r.p.name).join(', ')}`);
-    if (due.length) out.push(...payToLines());
-    out.push('', `Your full breakdown: ${location.origin}`);
-    return out.join('\n');
-  }
 
   // ---------- balances picture ----------
   async function balanceImage() {
@@ -1495,9 +1468,7 @@
         ${shown ? `<span class="pnet ${netClass(c.net)}"><strong>${fmtNet(c.net)}</strong><small>${netText(c.net)}</small></span>` : '<span class="pnet zero"><small>Private</small></span>'}
       </button>`;
       const exp = `<button class="icon-btn exp-btn" data-action="open-player" data-id="${esc(p.id)}" aria-label="Expense card for ${esc(p.name)}" title="Expenses and payments">${WALLET_ICON}</button>`;
-      const wa = admin && c.net < 0
-        ? `<button class="icon-btn wa" data-action="share-player" data-id="${esc(p.id)}" aria-label="Send ${esc(p.name)} a reminder on WhatsApp" title="${waNumber(p.phone) ? `Send reminder to ${esc(p.phone)}` : 'Send reminder (no number saved — pick the chat)'}">${WA_ICON}</button>` : '';
-      return `<div class="prow-wrap">${row}${exp}${wa}</div>`;
+      return `<div class="prow-wrap">${row}${exp}</div>`;
     }).join('');
 
     // Matches the admin hasn't finished yet stay off the sheet.
@@ -1534,8 +1505,7 @@
     return `
       ${pageHead('Summary', `${state.players.length} player${state.players.length === 1 ? '' : 's'} · ${state.trainings.length} training${state.trainings.length === 1 ? '' : 's'} · ${realMatchCount()} match${realMatchCount() === 1 ? '' : 'es'}`,
         admin && state.players.length ? `<div class="share-row">
-          <button class="btn btn-gold" data-action="share-image">${IMAGE_ICON} Share as image</button>
-          <button class="btn btn-ghost" data-action="copy-team">${COPY_ICON} Copy</button></div>` : '')}
+          <button class="btn btn-gold" data-action="share-image">${IMAGE_ICON} Share as image</button></div>` : '')}
       ${myBalance()}
       ${leagueBlock()}
       <div class="stats" ${ownOnly() ? 'hidden' : ''}>${cards.map(c => `<div class="stat ${c.cls}"><span>${c.label}</span><strong>${c.value}</strong><small>${esc(c.note)}</small></div>`).join('')}</div>
@@ -3402,7 +3372,6 @@ ${tabRows.map(r => {
         el.innerHTML = label;
       }
     },
-    'copy-team'() { copyText(teamMessage()); },
     async 'share-xi'(el) {
       const day = C.days(state).find(d => d.id === el.dataset.id);
       if (!day) return;
