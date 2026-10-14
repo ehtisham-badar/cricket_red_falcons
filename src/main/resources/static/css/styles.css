@@ -62,6 +62,36 @@
   --red-hi: #3bb46d; --red-lo: #23804b;
   --panel-1: #182920; --panel-2: #13211a; --card-hi: #1b2c23; --head-1: #20352a; --zebra: #172820; --row-hover: #213629;
 }
+/* Midnight Blue: deep navy with royal blue in place of falcon red, same gold. */
+:root[data-theme="navy"] {
+  --bg: #0b1220; --bg-2: #0f1828; --card: #141e31; --card-2: #1a263c;
+  --text: #eef1f7; --muted: #9aa5b8;
+  --red: #2f6fd6; --red-deep: #173d80; --red-soft: #7fb0ff;
+  --zero: #8a93a3;
+  --red-rgb: 47, 111, 214; --text-rgb: 238, 241, 247; --bg-rgb: 11, 18, 32;
+  --red-hi: #3d80ea; --red-lo: #2559b0;
+  --panel-1: #17223a; --panel-2: #121b2e; --card-hi: #18233a; --head-1: #1f2c46; --zebra: #152036; --row-hover: #1f2d48;
+}
+/* Royal Purple: dark plum with violet, same gold. */
+:root[data-theme="royal"] {
+  --bg: #140d1c; --bg-2: #1a1224; --card: #20162c; --card-2: #281c36;
+  --text: #f3eef8; --muted: #ab9fba;
+  --red: #8b45d6; --red-deep: #4e2385; --red-soft: #c79bff;
+  --zero: #958c9f;
+  --red-rgb: 139, 69, 214; --text-rgb: 243, 238, 248; --bg-rgb: 20, 13, 28;
+  --red-hi: #9a57e6; --red-lo: #7134b5;
+  --panel-1: #241930; --panel-2: #1c1427; --card-hi: #251a31; --head-1: #2d2040; --zebra: #22182e; --row-hover: #2e2141;
+}
+/* Sunset: warm dusk with sunset orange, same gold. */
+:root[data-theme="sunset"] {
+  --bg: #170f0b; --bg-2: #1e1410; --card: #251913; --card-2: #2e2018;
+  --text: #f8efe6; --muted: #b5a291;
+  --red: #e2662a; --red-deep: #8a3510; --red-soft: #ffa274;
+  --zero: #9c8f84;
+  --red-rgb: 226, 102, 42; --text-rgb: 248, 239, 230; --bg-rgb: 23, 15, 11;
+  --red-hi: #ef7738; --red-lo: #bd521d;
+  --panel-1: #2a1d16; --panel-2: #211711; --card-hi: #2b1e17; --head-1: #36261c; --zebra: #281b15; --row-hover: #37271d;
+}
 /* Daylight: light and readable outdoors, same red and gold. */
 :root[data-theme="day"] {
   --bg: #f5efe4; --bg-2: #ede4d3; --card: #fffdf8; --card-2: #f8f1e4;
@@ -1534,3 +1564,7 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
 .sc-dnb { margin: 10px 0 0; font-size: 14px; color: var(--muted); }
 .sc-dnb strong { color: var(--text); }
 .sc-note { margin: 16px 0 0; font-size: 12px; }
+.theme-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.theme-grid .theme-opt { grid-template-columns: 48px minmax(0, 1fr) 24px; gap: 10px; }
+.theme-grid .theme-swatch { width: 48px; }
+@media (max-width: 560px) { .theme-grid { grid-template-columns: minmax(0, 1fr); } }

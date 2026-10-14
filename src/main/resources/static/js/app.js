@@ -12,7 +12,10 @@
   const THEMES = [
     { id: 'night', name: 'Falcon Night', note: 'Charcoal, falcon red and gold', bar: '#121215', colors: ['#111114', '#d0222c', '#e2b65c'] },
     { id: 'pitch', name: 'Pitch Green', note: 'Cricket-field green and gold', bar: '#0c1511', colors: ['#0c1511', '#2f9e5e', '#e2b65c'] },
-    { id: 'day', name: 'Daylight', note: 'Light, for reading outdoors', bar: '#f5efe4', colors: ['#f5efe4', '#c81e28', '#b07f22'] }
+    { id: 'day', name: 'Daylight', note: 'Light, for reading outdoors', bar: '#f5efe4', colors: ['#f5efe4', '#c81e28', '#b07f22'] },
+    { id: 'navy', name: 'Midnight Blue', note: 'Deep navy, royal blue and gold', bar: '#0b1220', colors: ['#0b1220', '#2f6fd6', '#e2b65c'] },
+    { id: 'royal', name: 'Royal Purple', note: 'Dark plum, violet and gold', bar: '#140d1c', colors: ['#140d1c', '#8b45d6', '#e2b65c'] },
+    { id: 'sunset', name: 'Sunset', note: 'Warm dusk, sunset orange and gold', bar: '#170f0b', colors: ['#170f0b', '#e2662a', '#e2b65c'] }
   ];
   const COLLAPSED_KEY = 'rf.collapsed';      // Days sections this viewer has folded: { training, match }
   const DEVICE_KEY = 'rf.device';            // this browser's trusted-device token (skips the two-factor code)
@@ -2391,7 +2394,7 @@
     const themePanel = `
       <section class="panel">
         <div class="panel-head"><h3>Theme</h3><p class="muted">Changes the look on this device only.</p></div>
-        <div class="theme-list" role="radiogroup" aria-label="Theme">
+        <div class="theme-list theme-grid" role="radiogroup" aria-label="Theme">
           ${THEMES.map(t => `<button class="theme-opt ${t.id === current ? 'on' : ''}" role="radio" aria-checked="${t.id === current}" data-action="set-theme" data-theme="${t.id}">
             <span class="theme-swatch" style="background:${t.colors[0]}"><i style="background:${t.colors[1]}"></i><i style="background:${t.colors[2]}"></i></span>
             <span class="theme-text"><strong>${t.name}</strong><small>${t.note}</small></span>
