@@ -30,10 +30,15 @@ public class MatchDay {
     @Column(name = "is_test")
     private Boolean test;
 
+    /** Kick-off time as HH:MM, or '' (null on older rows) until it is confirmed. */
+    @Column(name = "match_time", length = 5)
+    private String time;
+
     protected MatchDay() {
     }
 
-    public MatchDay(String id, int position, String date, String opponent, String venue, boolean finished, boolean test) {
+    public MatchDay(String id, int position, String date, String opponent, String venue, boolean finished, boolean test,
+                    String time) {
         this.id = id;
         this.position = position;
         this.date = date;
@@ -41,6 +46,7 @@ public class MatchDay {
         this.venue = venue;
         this.finished = finished;
         this.test = test;
+        this.time = time;
     }
 
     public String getId() { return id; }
@@ -50,4 +56,5 @@ public class MatchDay {
     public String getVenue() { return venue; }
     public boolean isFinished() { return Boolean.TRUE.equals(finished); }
     public boolean isTest() { return Boolean.TRUE.equals(test); }
+    public String getTime() { return time == null ? "" : time; }
 }

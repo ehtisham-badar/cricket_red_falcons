@@ -94,6 +94,7 @@
   let editedAt = 0;                           // when the admin last changed something on this screen
   let announcements = null;                   // staff: every announcement written, newest first
   let annDraft = { title: '', body: '', matchId: '', later: false, at: '' };   // the announcement being written
+  let calMonth = null;                        // the month the fixtures calendar shows: { y, m }
   let feed = null;                            // viewers and managers: what the admin has announced, newest first
   let inbox = null;                           // admin: { access, lineups } waiting for a decision
   let declineDraft = {};                      // admin: notes being written while declining, by 'kind:id'
@@ -428,7 +429,7 @@
     // (m1–m5); keep those that hold any attendance, expenses or 12th man.
     let matches;
     if (Array.isArray(d.matches)) {
-      matches = d.matches.filter(m => m && m.id).map(m => ({ id: m.id, date: m.date || '', opponent: m.opponent || '', venue: m.venue || '', test: m.test === true, finished: m.test !== true && m.finished === true }));
+      matches = d.matches.filter(m => m && m.id).map(m => ({ id: m.id, date: m.date || '', opponent: m.opponent || '', venue: m.venue || '', time: /^([01]\d|2[0-3]):[0-5]\d$/.test(m.time || '') ? m.time : '', test: m.test === true, finished: m.test !== true && m.finished === true }));
     } else {
       const used = id => players.some(p => p.att[id]) || (expenses[id] || []).length || (d.twelfth || {})[id];
       // These were charged as soon as they were marked, so they count as finished.
@@ -771,7 +772,7 @@
   }
 
   // "Match 3 vs Lahore Lions on Sat, 24 Oct 2026 at Model Town"
-  const matchLine = m => `${m.label}${m.opponent ? ` vs ${m.opponent}` : ''}${m.date ? ` on ${formatMatchDate(m.date)}` : ''}${m.venue ? ` at ${m.venue}` : ''}`;
+  const matchLine = m => `${m.label}${m.opponent ? ` vs ${m.opponent}` : ''}${m.date ? ` on ${formatMatchDate(m.date)}${m.time ? ` at ${fmtClock(m.time)}` : ''}` : ''}${m.venue ? ` (${m.venue})` : ''}`;
 
   // A local date-time (for the picker) the given number of days before the match, or '' when that is already past.
   function suggestAt(m, daysBefore, hour) {
@@ -786,7 +787,7 @@
   const ANN_TEMPLATES = [
     { id: 'reminder', label: 'Match reminder', title: 'Match reminder', make: m => m ? `Reminder: ${matchLine(m)}. Please be ready and on time.` : 'Reminder: we have a match coming up. Please be ready and on time.', at: m => suggestAt(m, 0, 8) },
     { id: 'before', label: 'Day before', title: 'Match tomorrow', make: m => m ? `${matchLine(m)} is tomorrow. Get some rest and bring your kit.` : 'We have a match tomorrow. Get some rest and bring your kit.', at: m => suggestAt(m, 1, 18) },
-    { id: 'report', label: 'Report time', title: 'Report time', make: m => m ? `Please report for ${m.label}${m.venue ? ` at ${m.venue}` : ''} by __ (time).` : 'Please report at __ (time).', at: () => '' },
+    { id: 'report', label: 'Report time', title: 'Report time', make: m => m ? `Please report for ${m.label}${m.venue ? ` at ${m.venue}` : ''} by __ (time).${m.time ? ` Kick-off is ${fmtClock(m.time)}.` : ''}` : 'Please report at __ (time).', at: () => '' },
     { id: 'xi', label: 'XI announced', title: 'Playing XI announced', make: m => m ? `The playing XI for ${m.label}${m.opponent ? ` vs ${m.opponent}` : ''} is out. Check the app.` : 'The playing XI is out. Check the app.', at: () => '' },
     { id: 'update', label: 'Match update', title: 'Match update', make: m => m ? `Update for ${m.label}: ` : 'Match update: ', at: () => '' }
   ];
@@ -1534,6 +1535,104 @@
     </section>`;
   }
 
+  // ---------- fixtures: next match, countdown, calendar ----------
+  const fmtClock = hhmm => {
+    const m = /^(\d{2}):(\d{2})$/.exec(hhmm || '');
+    if (!m) return '';
+    const h = +m[1];
+    return `${h % 12 || 12}:${m[2]} ${h < 12 ? 'am' : 'pm'}`;
+  };
+  const dayDiff = iso => Math.round((new Date(`${iso}T00:00:00`) - new Date(`${today()}T00:00:00`)) / 86400000);
+
+  // Real matches the admin hasn't finished, soonest first; ones with no date yet come last.
+  function upcomingFixtures() {
+    return C.matches(state).filter(m => !m.test && !m.finished)
+      .sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999') || (a.time || '99:99').localeCompare(b.time || '99:99'))
+      .filter(m => !m.date || dayDiff(m.date) >= 0);
+  }
+
+  // How long to go. Without a confirmed time it counts days; with one it counts down live.
+  function countdownHtml(m) {
+    const block = (n, label) => `<div class="nm-block"><strong>${n}</strong><span>${label}</span></div>`;
+    if (!m.date) return '<p class="nm-msg">Date to be confirmed</p>';
+    if (m.time) {
+      const ms = new Date(`${m.date}T${m.time}:00`) - new Date();
+      if (ms <= 0) return `<p class="nm-msg">${-ms < 4 * 3600000 ? 'It’s match time' : 'Awaiting the result'}</p>`;
+      const mins = Math.floor(ms / 60000);
+      return `<div class="nm-blocks">${block(Math.floor(mins / 1440), 'days')}${block(Math.floor(mins / 60) % 24, 'hours')}${block(mins % 60, 'mins')}</div>`;
+    }
+    const d = dayDiff(m.date);
+    if (d <= 0) return '<div class="nm-blocks"><div class="nm-block wide"><strong>Today</strong><span>match day</span></div></div>';
+    if (d === 1) return '<div class="nm-blocks"><div class="nm-block wide"><strong>Tomorrow</strong><span>match day</span></div></div>';
+    return `<div class="nm-blocks">${block(d, d === 1 ? 'day to go' : 'days to go')}</div>`;
+  }
+
+  function nextMatchCard() {
+    const m = upcomingFixtures()[0];
+    if (!m) return '';
+    const when = m.date ? `${formatMatchDate(m.date)}` : 'Date to be confirmed';
+    const time = m.time ? fmtClock(m.time) : '';
+    const icon2 = d => icon(d, 16);
+    return `<section class="panel nm-card" data-nm="${esc(m.id)}">
+      <div class="nm-main">
+        <span class="day-kind">Next match</span>
+        <h3>${m.label}${m.opponent ? ` · vs ${esc(m.opponent)}` : ''}</h3>
+        <ul class="nm-meta">
+          <li>${icon2('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>')} ${esc(when)}</li>
+          <li>${icon2('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>')} ${time ? esc(time) : '<span class="nm-tbc">Time to be confirmed</span>'}</li>
+          ${m.venue ? `<li>${icon2('<path d="M12 22s7-6.5 7-12a7 7 0 0 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/>')} ${esc(m.venue)}</li>` : ''}
+        </ul>
+      </div>
+      <div class="nm-count" data-id="${esc(m.id)}">${countdownHtml(m)}</div>
+    </section>`;
+  }
+
+  // A month grid with every match marked, and the upcoming ones listed underneath.
+  function fixturesPanel() {
+    const real = C.matches(state).filter(m => !m.test && m.date);
+    const upcoming = upcomingFixtures();
+    if (!real.length && !upcoming.length) return '';
+    if (!calMonth) {
+      const base = upcoming.find(m => m.date) ? new Date(`${upcoming.find(m => m.date).date}T00:00:00`) : new Date();
+      calMonth = { y: base.getFullYear(), m: base.getMonth() };
+    }
+    const { y, m } = calMonth;
+    const first = new Date(y, m, 1);
+    const lead = (first.getDay() + 6) % 7;             // Monday first
+    const days = new Date(y, m + 1, 0).getDate();
+    const key = d => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const byDay = {};
+    real.forEach(x => { (byDay[x.date] = byDay[x.date] || []).push(x); });
+    const cells = [];
+    for (let i = 0; i < lead; i++) cells.push('<span class="cal-cell empty"></span>');
+    for (let d = 1; d <= days; d++) {
+      const k = key(d), here = byDay[k] || [];
+      const open = here.some(x => !x.finished);
+      const tip = here.map(x => `${x.label}${x.opponent ? ` vs ${x.opponent}` : ''}${x.time ? `, ${fmtClock(x.time)}` : ''}`).join(' · ');
+      cells.push(`<span class="cal-cell ${k === today() ? 'today' : ''} ${here.length ? (open ? 'match' : 'played') : ''}" ${tip ? `title="${esc(tip)}"` : ''}>${d}${here.length ? '<i></i>' : ''}</span>`);
+    }
+    const monthName = first.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+    const list = upcoming.length > 1 ? `<ul class="fx-list">${upcoming.map(x => `<li><span class="fx-date">${x.date ? esc(formatDate(x.date).replace(/ \d{4}$/, '')) : 'TBC'}</span>
+        <span class="fx-what"><strong>${x.label}${x.opponent ? ` · vs ${esc(x.opponent)}` : ''}</strong><small>${x.time ? esc(fmtClock(x.time)) : 'Time to be confirmed'}${x.venue ? ` · ${esc(x.venue)}` : ''}</small></span></li>`).join('')}</ul>` : '';
+    return `<section class="panel fx-panel">
+      <div class="fx-head"><h3>Fixtures</h3>
+        <span class="fx-nav"><button class="icon-btn" data-action="cal-prev" aria-label="Previous month">${icon('<path d="m15 18-6-6 6-6"/>', 18)}</button>
+          <button class="chip" data-action="cal-today">${esc(monthName)}</button>
+          <button class="icon-btn" data-action="cal-next" aria-label="Next month">${icon('<path d="m9 18 6-6-6-6"/>', 18)}</button></span></div>
+      <div class="cal-grid">${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(w => `<span class="cal-dow">${w}</span>`).join('')}${cells.join('')}</div>
+      <p class="muted fx-legend"><i class="dot-open"></i> Upcoming <i class="dot-played"></i> Played</p>
+      ${list}
+    </section>`;
+  }
+
+  // Keeps the countdown ticking while the Summary screen is open.
+  setInterval(() => {
+    document.querySelectorAll('.nm-count').forEach(el => {
+      const m = C.matches(state || { matches: [], trainings: [] }).find(x => x.id === el.dataset.id);
+      if (m) el.innerHTML = countdownHtml(m);
+    });
+  }, 30000);
+
   const realMatchCount = () => state.matches.filter(m => !m.test && matchVisible(m)).length;
 
   function viewSummary() {
@@ -1598,6 +1697,8 @@
       ${pageHead('Summary', `${state.players.length} player${state.players.length === 1 ? '' : 's'} · ${state.trainings.length} training${state.trainings.length === 1 ? '' : 's'} · ${realMatchCount()} match${realMatchCount() === 1 ? '' : 'es'}`,
         admin && state.players.length ? `<div class="share-row">
           <button class="btn btn-gold" data-action="share-image">${IMAGE_ICON} Share as image</button></div>` : '')}
+      ${nextMatchCard()}
+      ${fixturesPanel()}
       ${myBalance()}
       ${leagueBlock()}
       <div class="stats" ${ownOnly() ? 'hidden' : ''}>${cards.map(c => `<div class="stat ${c.cls}"><span>${c.label}</span><strong>${c.value}</strong><small>${esc(c.note)}</small></div>`).join('')}</div>
@@ -1698,6 +1799,7 @@
         </header>
         ${d.type === 'match' && admin && !d.test ? `<div class="match-fields">
           <input class="field" type="date" value="${esc(d.date)}" data-input="match-date" data-id="${esc(d.id)}" aria-label="Match date">
+          <input class="field" type="time" value="${esc(d.time)}" data-input="match-time" data-id="${esc(d.id)}" aria-label="Kick-off time (leave empty until confirmed)" title="Kick-off time — leave empty until it is confirmed">
           <input class="field" type="text" placeholder="Opponent" value="${esc(d.opponent)}" maxlength="80" data-input="match-opponent" data-id="${esc(d.id)}" data-focus="mopp-${esc(d.id)}" aria-label="Opponent">
           <input class="field" type="text" placeholder="Venue" value="${esc(d.venue)}" maxlength="80" data-input="match-venue" data-id="${esc(d.id)}" data-focus="mven-${esc(d.id)}" aria-label="Venue">
         </div>` : ''}
@@ -1762,7 +1864,7 @@
 
   // "Sat, 24 Oct 2026 · vs Lahore Lions · Model Town" — whatever is set.
   function matchInfo(d) {
-    return [formatMatchDate(d.date), d.opponent && 'vs ' + d.opponent, d.venue].filter(Boolean).join(' · ');
+    return [formatMatchDate(d.date) + (d.date && d.time ? ', ' + fmtClock(d.time) : ''), d.opponent && 'vs ' + d.opponent, d.venue].filter(Boolean).join(' · ');
   }
 
   function tourToggle(p) {
@@ -2922,6 +3024,9 @@ ${tabRows.map(r => {
       try { await api('DELETE', '/api/announcements/' + encodeURIComponent(a.id)); } catch (e) { toast(e.message || 'Could not delete it.'); }
       await loadAnnouncements();
     },
+    'cal-prev'() { calMonth = calMonth.m === 0 ? { y: calMonth.y - 1, m: 11 } : { y: calMonth.y, m: calMonth.m - 1 }; render(); },
+    'cal-next'() { calMonth = calMonth.m === 11 ? { y: calMonth.y + 1, m: 0 } : { y: calMonth.y, m: calMonth.m + 1 }; render(); },
+    'cal-today'() { calMonth = null; render(); },
     'p-flag'(el) {
       const p = findPlayer(el.dataset.id);
       const k = el.dataset.flag;
@@ -3349,7 +3454,7 @@ ${tabRows.map(r => {
       if (!isAdmin()) return;
       const folded = readStore(COLLAPSED_KEY) || {};
       if (folded.match) { folded.match = false; writeStore(COLLAPSED_KEY, folded); }
-      state.matches.push({ id: 'm' + rid(), date: today(), opponent: '', venue: '', finished: false });
+      state.matches.push({ id: 'm' + rid(), date: today(), time: '', opponent: '', venue: '', finished: false });
       commit();
       toast(`Match ${realMatchCount()} added — set its date and opponent.`);
     },
@@ -3581,6 +3686,7 @@ ${tabRows.map(r => {
       const n = parseInt(el.value, 10);
       if (n > 0) state.tournament.matchCount = n;
     },
+    'match-time'(el) { const m = state.matches.find(x => x.id === el.dataset.id); if (m) m.time = el.value; },
     'match-date'(el) { const m = state.matches.find(x => x.id === el.dataset.id); if (m) m.date = el.value; },
     'match-opponent'(el) { const m = state.matches.find(x => x.id === el.dataset.id); if (m) m.opponent = el.value; },
     'match-venue'(el) { const m = state.matches.find(x => x.id === el.dataset.id); if (m) m.venue = el.value; },

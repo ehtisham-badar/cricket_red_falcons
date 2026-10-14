@@ -57,9 +57,10 @@ public record LedgerDto(
 
     /**
      * {@code finished}: the admin has finished the match, so it charges its XI. {@code test}: a generated
-     * test match, which never charges anyone (null on save keeps the stored flag).
+     * test match, which never charges anyone (null on save keeps the stored flag). {@code time} is the kick-off
+     * as HH:MM, "" while it isn't confirmed (null on save keeps the stored time).
      */
-    public record MatchDto(String id, String date, String opponent, String venue, Boolean finished, Boolean test) {
+    public record MatchDto(String id, String date, String opponent, String venue, Boolean finished, Boolean test, String time) {
     }
 
     /**

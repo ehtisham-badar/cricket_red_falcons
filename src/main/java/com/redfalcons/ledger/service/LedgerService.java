@@ -267,7 +267,11 @@ public class LedgerService {
         // Without matches (an older app), keep the stored ones.
         List<MatchDto> matchIn = in.matches() != null ? in.matches() : storedMatches();
         Map<String, Boolean> storedTest = new HashMap<>();
-        matches.findAll().forEach(m -> storedTest.put(m.getId(), m.isTest()));
+        Map<String, String> storedTime = new HashMap<>();
+        matches.findAll().forEach(m -> {
+            storedTest.put(m.getId(), m.isTest());
+            storedTime.put(m.getId(), m.getTime());
+        });
         List<MatchDay> newMatches = new ArrayList<>();
         Set<String> matchIds = new LinkedHashSet<>();
         for (MatchDto m : matchIn) {
@@ -275,7 +279,8 @@ public class LedgerService {
             newMatches.add(new MatchDay(m.id(), newMatches.size(), isoDate(m.date()), clip(m.opponent(), 80), clip(m.venue(), 80),
                     // A test match never charges anyone, so it can't be finished.
                     Boolean.TRUE.equals(m.finished()) && !(m.test() != null ? m.test() : storedTest.getOrDefault(m.id(), false)),
-                    m.test() != null ? m.test() : storedTest.getOrDefault(m.id(), false)));
+                    m.test() != null ? m.test() : storedTest.getOrDefault(m.id(), false),
+                    m.time() != null ? clockTime(m.time()) : storedTime.getOrDefault(m.id(), "")));
         }
 
         Set<String> validDays = new HashSet<>(trainingIds);
@@ -493,7 +498,7 @@ public class LedgerService {
 
     private List<MatchDto> storedMatches() {
         return matches.findAll(BY_POSITION).stream()
-                .map(m -> new MatchDto(m.getId(), m.getDate(), m.getOpponent(), m.getVenue(), m.isFinished(), m.isTest())).toList();
+                .map(m -> new MatchDto(m.getId(), m.getDate(), m.getOpponent(), m.getVenue(), m.isFinished(), m.isTest(), m.getTime())).toList();
     }
 
     private static Map<String, String> parseTwelfth(String stored) {
@@ -564,6 +569,13 @@ public class LedgerService {
     }
 
     private static final Set<String> HANDS = Set.of("right", "left");
+    private static final Pattern CLOCK = Pattern.compile("([01]\\d|2[0-3]):[0-5]\\d");
+
+    /** A kick-off time as HH:MM, or "" when it isn't a valid one. */
+    private static String clockTime(String v) {
+        String t = v == null ? "" : v.trim();
+        return CLOCK.matcher(t).matches() ? t : "";
+    }
 
     /** The value if it is one of the allowed ones, else "". */
     private static String pick(String v, Set<String> allowed) {
