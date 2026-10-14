@@ -1430,6 +1430,20 @@
     return state.tournament.name.trim() || 'Tournament';
   }
 
+  // Share of the league fee already paid to management, as a round progress around the club crest.
+  function pctRing(pct) {
+    const R = 52, C = 2 * Math.PI * R;
+    return `<div class="pct-ring" role="img" aria-label="${pct}% of the league fee paid to management" title="${pct}% paid to management">
+      <svg viewBox="0 0 120 120" aria-hidden="true">
+        <defs><linearGradient id="pctGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:var(--gold-light)"/><stop offset="1" style="stop-color:var(--gold-deep)"/></linearGradient></defs>
+        <circle class="track" cx="60" cy="60" r="${R}"/>
+        ${pct > 0 ? `<circle class="fill" cx="60" cy="60" r="${R}" transform="rotate(-90 60 60)" stroke-dasharray="${(C * pct / 100).toFixed(2)} ${C.toFixed(2)}"/>` : ''}
+      </svg>
+      <img class="pct-logo" src="img/logo.jpeg" alt="">
+      <span class="pct-badge">${pct}%</span>
+    </div>`;
+  }
+
   function leagueBlock() {
     const t = C.totals(state, fmt);
     const admin = isAdmin();
@@ -1437,10 +1451,10 @@
     const pct = t.tournamentFee > 0 ? Math.min(100, Math.round(t.sentToManagement / t.tournamentFee * 100)) : 0;
     return `<section class="panel league">
       <div class="league-head">
-        <div><span class="day-kind">League</span><h3>${esc(leagueName())}</h3></div>
-        ${t.tournamentFee > 0 ? `<span class="league-pct">${pct}% paid to management</span>` : ''}
+        <div><span class="day-kind">League</span><h3>${esc(leagueName())}</h3>
+          ${t.tournamentFee > 0 ? `<span class="league-pct">${pct}% paid to management</span>` : ''}</div>
+        ${t.tournamentFee > 0 ? pctRing(pct) : ''}
       </div>
-      ${t.tournamentFee > 0 ? `<div class="league-bar"><span style="width:${pct}%"></span></div>` : ''}
       <div class="league-figs">
         <div><span>League fee</span><strong>${t.tournamentFee > 0 ? fmt(t.tournamentFee) : '—'}</strong>
           ${t.tournamentFee > 0 ? '' : `<small>${admin ? 'Set it on the Days tab' : 'Not set'}</small>`}</div>
@@ -1929,6 +1943,26 @@
     return `<div class="prof-stats">${bat}${bowl}${field}</div>`;
   }
 
+  // Every match the admin has finished, with this player's part in it (and their score when stats are shown).
+  function matchHistory(p) {
+    const rows = C.matches(state).filter(m => m.finished || (m.test && isAdmin()));
+    if (!rows.length) return '';
+    const item = m => {
+      const took = p.att[m.id], twelfth = state.twelfth[m.id] === p.id;
+      const status = took ? ['played', 'Played'] : twelfth ? ['twelfth', '12th man'] : ['out', 'Did not play'];
+      const shown = statsMatchVisible(m) && state.stats[m.id] && state.stats[m.id][p.id];
+      const e = shown ? C.statOf(state, m.id, p.id) : null;
+      const line = e ? [C.batted(e) ? `${C.runsOf(e)}${e.out ? '' : '*'} (${e.balls})` : '', C.bowled(e) ? `${e.wickets}/${C.concededOf(e)}` : '',
+        e.catches ? `${e.catches} ct` : ''].filter(Boolean).join(' · ') : '';
+      const when = [m.opponent && `vs ${m.opponent}`, m.date && formatDate(m.date).replace(/ \d{4}$/, '')].filter(Boolean).join(' · ');
+      return `<li class="mh-row ${status[0]}">
+        <span class="mh-main"><strong>${m.label}${m.test ? ' <em class="mh-test">test</em>' : ''}</strong>${when ? `<small>${esc(when)}</small>` : ''}</span>
+        <span class="mh-end"><span class="mh-status ${status[0]}">${status[1]}</span>${line ? `<small>${esc(line)}</small>` : ''}</span>
+      </li>`;
+    };
+    return `<h3 class="sub">Matches</h3><ul class="mh-list">${rows.map(item).join('')}</ul>`;
+  }
+
   function sheetProfile() {
     const idx = state.players.findIndex(x => x.id === sheet.id);
     const p = state.players[idx];
@@ -1983,6 +2017,7 @@
           <dt>Tournament</dt><dd>${state.tournament.name ? `${esc(state.tournament.name)} · ` : ''}${C.inTournament(p) ? 'Taking part' : 'Not taking part'}</dd>
         </dl>
         ${profileStats(p, played)}
+        ${matchHistory(p)}
         ${editor}
       </div>`;
   }
@@ -2515,7 +2550,7 @@ ${tabRows.map(r => {
     const stats = C.allStats(state);
     const c = C.playerCalc(state, p, stats, fmt);
     // Test matches only exist for the stats; they never show in a player's attendance.
-    const days = C.days(state).filter(d => !d.test);
+    const days = C.days(state).filter(d => d.type === 'training' || (!d.test && matchVisible(d)));
     const inTour = C.inTournament(p);
 
     const fields = admin ? `
