@@ -21,7 +21,8 @@ public class NotificationService {
 
     private static final String EXPENSE = "expense:";
     private static final int BULK_LIMIT = 5;
-    private static final int KEEP = 100;
+    private static final int KEEP = 200;
+    private static final java.time.Duration MAX_AHEAD = java.time.Duration.ofDays(366);
 
     private final AppNotificationRepository repo;
 
@@ -29,9 +30,64 @@ public class NotificationService {
         this.repo = repo;
     }
 
+    /** What everyone sees: the newest 30 that are due (scheduled ones wait for their time), newest first. */
     @Transactional(readOnly = true)
     public List<AppNotification> latest() {
-        return repo.findTop30ByOrderByCreatedAtDesc();
+        Instant now = Instant.now();
+        return repo.findAll().stream()
+                .filter(n -> !Instant.parse(n.getVisibleAt()).isAfter(now))
+                .sorted(Comparator.comparing((AppNotification n) -> Instant.parse(n.getVisibleAt())).reversed())
+                .limit(30).toList();
+    }
+
+    /** Every announcement, including scheduled ones, newest first (for the people who write them). */
+    @Transactional(readOnly = true)
+    public List<AppNotification> announcements() {
+        return repo.findAll().stream().filter(AppNotification::isAnnouncement)
+                .sorted(Comparator.comparing((AppNotification n) -> Instant.parse(n.getCreatedAt())).reversed()).toList();
+    }
+
+    /** @param sendAt an ISO instant to hold it back until, or null/blank to show it straight away */
+    @Transactional
+    public AppNotification announce(String authorId, String author, String title, String body, String matchId, String sendAt) {
+        String t = title == null ? "" : title.trim();
+        String b = body == null ? "" : body.trim();
+        if (b.isEmpty()) throw new IllegalArgumentException("Write a message first.");
+        if (b.length() > 300) throw new IllegalArgumentException("Keep the message under 300 characters.");
+        if (t.isEmpty()) t = "Announcement";
+        if (t.length() > 80) t = t.substring(0, 80);
+        Instant now = Instant.now();
+        String publish = null;
+        if (sendAt != null && !sendAt.isBlank()) {
+            Instant at;
+            try {
+                at = Instant.parse(sendAt.trim());
+            } catch (java.time.format.DateTimeParseException e) {
+                throw new IllegalArgumentException("That send time isn't valid.");
+            }
+            if (at.isAfter(now.plus(MAX_AHEAD))) throw new IllegalArgumentException("Pick a time within the next year.");
+            if (at.isAfter(now)) publish = at.toString();
+        }
+        String match = matchId == null ? "" : matchId.trim();
+        AppNotification n = repo.save(AppNotification.announcement(AdminAuth.randomToken().substring(0, 16), authorId, author, t, b,
+                match.isEmpty() ? null : match, publish, now.toString()));
+        prune();
+        return n;
+    }
+
+    /** The admin may delete any announcement; a manager only their own. */
+    @Transactional
+    public boolean deleteAnnouncement(String id, String actorId, boolean admin) {
+        return repo.findById(id).filter(AppNotification::isAnnouncement)
+                .filter(n -> admin || n.getAuthorId().equals(actorId))
+                .map(n -> { repo.delete(n); return true; }).orElse(false);
+    }
+
+    private void prune() {
+        List<AppNotification> all = repo.findAll();
+        if (all.size() > KEEP) {
+            all.stream().sorted(Comparator.comparing(AppNotification::getCreatedAt)).limit(all.size() - KEEP).forEach(repo::delete);
+        }
     }
 
     /**

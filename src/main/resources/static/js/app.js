@@ -27,6 +27,7 @@
     { id: 'days', label: 'Days', daysTab: true, icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' },
     { id: 'stats', label: 'Stats', statsTab: true, icon: '<path d="M18 20V10M12 20V4M6 20v-6"/>' },
     { id: 'players', label: 'Players', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>' },
+    { id: 'announce', label: 'Announce', staffTab: true, icon: '<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>' },
     { id: 'settings', label: 'Settings', icon: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>' }
   ];
 
@@ -91,6 +92,8 @@
   let mgrDraft = { phrase: '', edits: {} };   // the phrase being typed to ask, and phrases being edited by the admin
   let mgrList = null;                         // admin: manager requests and approved managers
   let editedAt = 0;                           // when the admin last changed something on this screen
+  let announcements = null;                   // staff: every announcement written, newest first
+  let annDraft = { title: '', body: '', matchId: '', later: false, at: '' };   // the announcement being written
   let feed = null;                            // viewers and managers: what the admin has announced, newest first
   let inbox = null;                           // admin: { access, lineups } waiting for a decision
   let declineDraft = {};                      // admin: notes being written while declining, by 'kind:id'
@@ -337,6 +340,8 @@
   const canPickXi = d => !!d && d.type === 'match' && (isAdmin() || (isManager() && !d.finished));
   // Plain viewers see a match only once the admin has finished it. A manager also sees open matches (they
   // set the XI there); test matches are the admin's alone.
+  // The admin and managers write announcements; everyone else reads them.
+  const isStaff = () => realAdmin() || !!(session && session.managerToken);
   const seesOpenMatches = () => realAdmin() || !!(session && session.managerToken);
   const matchVisible = m => m.test ? realAdmin() : (m.finished || seesOpenMatches());
   // Stats and counts follow the stricter rule: only the admin sees anything from a match before it is finished.
@@ -755,6 +760,87 @@
     </section>`;
   }
 
+  // ---------- announcements (admin and managers) ----------
+  async function loadAnnouncements() {
+    if (!isStaff()) return;
+    let next;
+    try { next = await api('GET', '/api/announcements'); } catch { return; }
+    if (JSON.stringify(next) === JSON.stringify(announcements)) return;
+    announcements = next;
+    if (tab === 'announce') render();
+  }
+
+  // "Match 3 vs Lahore Lions on Sat, 24 Oct 2026 at Model Town"
+  const matchLine = m => `${m.label}${m.opponent ? ` vs ${m.opponent}` : ''}${m.date ? ` on ${formatMatchDate(m.date)}` : ''}${m.venue ? ` at ${m.venue}` : ''}`;
+
+  // A local date-time (for the picker) the given number of days before the match, or '' when that is already past.
+  function suggestAt(m, daysBefore, hour) {
+    if (!m || !m.date) return '';
+    const d = new Date(`${m.date}T${String(hour).padStart(2, '0')}:00`);
+    d.setDate(d.getDate() - daysBefore);
+    if (d.getTime() <= Date.now()) return '';
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  const ANN_TEMPLATES = [
+    { id: 'reminder', label: 'Match reminder', title: 'Match reminder', make: m => m ? `Reminder: ${matchLine(m)}. Please be ready and on time.` : 'Reminder: we have a match coming up. Please be ready and on time.', at: m => suggestAt(m, 0, 8) },
+    { id: 'before', label: 'Day before', title: 'Match tomorrow', make: m => m ? `${matchLine(m)} is tomorrow. Get some rest and bring your kit.` : 'We have a match tomorrow. Get some rest and bring your kit.', at: m => suggestAt(m, 1, 18) },
+    { id: 'report', label: 'Report time', title: 'Report time', make: m => m ? `Please report for ${m.label}${m.venue ? ` at ${m.venue}` : ''} by __ (time).` : 'Please report at __ (time).', at: () => '' },
+    { id: 'xi', label: 'XI announced', title: 'Playing XI announced', make: m => m ? `The playing XI for ${m.label}${m.opponent ? ` vs ${m.opponent}` : ''} is out. Check the app.` : 'The playing XI is out. Check the app.', at: () => '' },
+    { id: 'update', label: 'Match update', title: 'Match update', make: m => m ? `Update for ${m.label}: ` : 'Match update: ', at: () => '' }
+  ];
+
+  function viewAnnounce() {
+    const d = annDraft;
+    const realMatches = C.matches(state).filter(m => !m.test);
+    const when = a => a.status === 'scheduled' ? `for ${esc(new Date(a.sendAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}` : `${ago(a.sendAt || a.createdAt)}`;
+    const item = a => {
+      const m = a.matchId ? realMatches.find(x => x.id === a.matchId) : null;
+      const mine = realAdmin() || a.author === session.name;
+      return `<article class="note-card ${a.status === 'scheduled' ? 'is-scheduled' : ''}">
+        <div class="note-head"><strong>${esc(a.title)}</strong>
+          <small><span class="ann-status ${a.status}">${a.status === 'scheduled' ? 'Scheduled' : 'Sent'}</span> ${when(a)} · by ${esc(a.author || 'Admin')}</small></div>
+        <p class="note-detail">${esc(a.body)}</p>
+        ${m ? `<span class="ann-chip">${m.label}${m.opponent ? ` · vs ${esc(m.opponent)}` : ''}</span>` : ''}
+        <div class="note-actions">
+          <button class="btn btn-ghost small" data-action="ann-duplicate" data-id="${esc(a.id)}">${COPY_ICON} Duplicate</button>
+          ${mine ? `<button class="btn btn-ghost small" data-action="ann-delete" data-id="${esc(a.id)}">Delete</button>` : ''}
+        </div></article>`;
+    };
+    return `
+      ${pageHead('Announcements', 'Write a message for the team. It shows up in everyone’s notifications inside the app — it is not a push.')}
+      <section class="panel ann-composer" id="ann-composer">
+        <div class="panel-head"><h3>New announcement</h3><p class="muted">Start from a template, or write your own. Pick a match to fill in its details.</p></div>
+        <label class="ann-field"><span>About match <small class="muted">(optional)</small></span>
+          <select class="field select" data-input="ann-match" data-focus="ann-match">
+            <option value="">No particular match</option>
+            ${realMatches.map(m => `<option value="${esc(m.id)}" ${d.matchId === m.id ? 'selected' : ''}>${esc(matchLine(m))}</option>`).join('')}
+          </select></label>
+        <div class="ann-templates"><span class="muted">Templates</span>
+          ${ANN_TEMPLATES.map(x => `<button class="chip" data-action="ann-template" data-t="${x.id}">${x.label}</button>`).join('')}</div>
+        <label class="ann-field"><span>Title</span>
+          <input class="field" type="text" maxlength="80" value="${esc(d.title)}" placeholder="e.g. Match reminder" data-input="ann-title" data-focus="ann-title"></label>
+        <label class="ann-field"><span>Message <small class="muted" id="ann-count">${d.body.length}/300</small></span>
+          <textarea class="field" rows="4" maxlength="300" placeholder="What should the team know?" data-input="ann-body" data-focus="ann-body">${esc(d.body)}</textarea></label>
+        <div class="ann-when">
+          <button class="tog ${d.later ? '' : 'on'}" data-action="ann-mode" data-later="0" aria-pressed="${!d.later}">Send now</button>
+          <button class="tog ${d.later ? 'on' : ''}" data-action="ann-mode" data-later="1" aria-pressed="${d.later}">Send later</button>
+          ${d.later ? `<input class="field" type="datetime-local" value="${esc(d.at)}" data-input="ann-at" data-focus="ann-at" aria-label="Send at">` : ''}
+        </div>
+        <div class="ann-actions">
+          <button class="btn btn-gold" data-action="ann-send">${icon('<path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/>', 18)} ${d.later ? 'Schedule' : 'Send'}</button>
+          <button class="btn btn-ghost" data-action="ann-clear">Clear</button>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><h3>Sent</h3><p class="muted">Duplicate one to reuse it, for example for the next match.</p></div>
+        ${announcements === null ? '<p class="muted">Loading…</p>' : announcements.length ? announcements.map(item).join('') : '<p class="muted season-empty">Nothing sent yet.</p>'}
+      </section>`;
+  }
+
+  const realMatchesById = id => id ? C.matches(state).find(m => m.id === id && !m.test) : null;
+
   // ---------- notifications (viewers and managers) ----------
   const newestFeed = () => (feed && feed.length ? feed[0].createdAt : '');
   const unreadCount = () => {
@@ -784,13 +870,18 @@
     const items = feed || [];
     return `<header class="sheet-head">
         <div><span class="day-kind">Updates</span><h2>Notifications</h2>
-          <p class="muted">What the admin has recorded lately.</p></div>
+          <p class="muted">Announcements from the team, and expenses the admin records.</p></div>
         <button class="icon-btn" data-action="close-sheet" aria-label="Close">${X_ICON}</button>
       </header>
       <div class="sheet-body">${feed === null ? '<p class="muted center">Loading…</p>' : items.length
-        ? items.map(n => `<article class="note-card"><div class="note-head"><strong>${esc(n.title)}</strong><small>${ago(n.createdAt)}</small></div>
-            <p class="note-detail">${esc(n.body)}</p></article>`).join('')
-        : '<p class="muted center">Nothing new yet. Expenses the admin adds will show up here.</p>'}</div>`;
+        ? items.map(n => {
+          const m = n.matchId ? C.matches(state).find(x => x.id === n.matchId) : null;
+          return `<article class="note-card ${n.kind === 'announcement' ? 'is-ann' : ''}"><div class="note-head"><strong>${esc(n.title)}</strong>
+            <small>${n.kind === 'announcement' && n.author ? `${esc(n.author)} · ` : ''}${ago(n.createdAt)}</small></div>
+            <p class="note-detail">${esc(n.body)}</p>
+            ${m && matchVisible(m) ? `<span class="ann-chip">${m.label}${m.opponent ? ` · vs ${esc(m.opponent)}` : ''}</span>` : ''}</article>`;
+        }).join('')
+        : '<p class="muted center">Nothing new yet. Announcements and new expenses will show up here.</p>'}</div>`;
   }
 
   // ---------- notifications (admin) ----------
@@ -879,6 +970,7 @@
     clearInterval(pollTimer);
     pollTimer = setInterval(async () => {
       if (archive || document.visibilityState !== 'visible') return;
+      if (isStaff() && tab === 'announce') loadAnnouncements();
       if (isAdmin()) { loadInbox(); syncProfiles(); return; }
       await refreshManager();
       if (isManager()) await loadMyLineups();
@@ -1046,6 +1138,7 @@
     loadTfa();
     loadInbox();
     loadFeed();
+    loadAnnouncements();
     refreshManager().then(loadMyLineups);
     startPolling();
   }
@@ -1081,7 +1174,7 @@
     bell.hidden = false;
     bell.dataset.count = bellCount;
     bell.setAttribute('aria-label', bellCount ? `Notifications, ${bellCount} new` : 'Notifications');
-    const shown = t => (!t.statsTab || statsVisible()) && (!t.daysTab || daysVisible()) && !(archive && t.id === 'settings');
+    const shown = t => (!t.staffTab || isStaff()) && (!t.statsTab || statsVisible()) && (!t.daysTab || daysVisible()) && !(archive && t.id === 'settings');
     if (TABS.some(t => t.id === tab && !shown(t))) tab = 'summary';
     $('#tabs').innerHTML = TABS.filter(shown).map(t =>
       `<button class="tab ${t.id === tab ? 'active' : ''}" data-action="tab" data-tab="${t.id}" ${t.id === tab ? 'aria-current="page"' : ''}>
@@ -1090,7 +1183,7 @@
       ? `<span class="badge badge-admin">${icon('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>', 14)} Admin</span>`
       : `<span class="badge badge-view">${icon('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>', 14)} ${esc(session.name)} · ${isManager() ? 'manager' : 'view only'}</span>`;
 
-    const views = { summary: viewSummary, days: viewDays, stats: viewStats, players: viewPlayers, settings: viewSettings };
+    const views = { summary: viewSummary, days: viewDays, stats: viewStats, players: viewPlayers, announce: viewAnnounce, settings: viewSettings };
     $('#view').innerHTML = archiveBar() + (views[tab] || viewSummary)();
     $('#sheet-root').innerHTML = sheet ? renderSheet() : '';
     document.body.classList.toggle('sheet-open', !!sheet);
@@ -2771,7 +2864,64 @@ ${tabRows.map(r => {
   function findExpense(el) { return (state.expenses[el.dataset.day] || []).find(e => e.id === el.dataset.id); }
 
   const actions = {
-    tab(el) { tab = el.dataset.tab; writeStore(TAB_KEY, tab); sheet = null; render(); animateView(); window.scrollTo({ top: 0 }); },
+    tab(el) { tab = el.dataset.tab; writeStore(TAB_KEY, tab); sheet = null; render(); animateView(); window.scrollTo({ top: 0 }); if (tab === 'announce') loadAnnouncements(); },
+    'ann-template'(el) {
+      const x = ANN_TEMPLATES.find(y => y.id === el.dataset.t);
+      if (!x) return;
+      const m = realMatchesById(annDraft.matchId);
+      annDraft.title = x.title;
+      annDraft.body = x.make(m);
+      const at = x.at(m);
+      if (at) { annDraft.later = true; annDraft.at = at; toast('Timed for the right moment — change it if you like.'); }
+      render();
+    },
+    'ann-mode'(el) {
+      annDraft.later = el.dataset.later === '1';
+      if (annDraft.later && !annDraft.at) {
+        const d = new Date(Date.now() + 3600000);
+        d.setMinutes(0, 0, 0);
+        const pad = n => String(n).padStart(2, '0');
+        annDraft.at = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:00`;
+      }
+      render();
+    },
+    'ann-clear'() { annDraft = { title: '', body: '', matchId: '', later: false, at: '' }; render(); },
+    async 'ann-send'() {
+      if (!isStaff()) return;
+      const d = annDraft;
+      if (!d.body.trim()) { toast('Write a message first.'); return; }
+      let sendAt = '';
+      if (d.later) {
+        const when = new Date(d.at);
+        if (!d.at || isNaN(when.getTime())) { toast('Pick when to send it.'); return; }
+        sendAt = when.toISOString();
+      }
+      try {
+        await api('POST', '/api/announcements', { title: d.title, body: d.body, matchId: d.matchId, sendAt });
+        const later = d.later;
+        annDraft = { title: '', body: '', matchId: '', later: false, at: '' };
+        await loadAnnouncements();
+        render();
+        toast(later ? 'Scheduled. It will appear for everyone at that time.' : 'Sent. It now shows in everyone’s notifications.');
+      } catch (e) { toast(e.message || 'Could not send it.'); }
+    },
+    'ann-duplicate'(el) {
+      const a = (announcements || []).find(x => x.id === el.dataset.id);
+      if (!a) return;
+      annDraft = { title: a.title, body: a.body, matchId: a.matchId || '', later: false, at: '' };
+      render();
+      const box = $('#ann-composer');
+      if (box) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      toast('Copied into the form — edit it and send.');
+    },
+    async 'ann-delete'(el) {
+      const a = (announcements || []).find(x => x.id === el.dataset.id);
+      if (!a) return;
+      const ok = await confirmDialog('Delete this announcement?', a.status === 'scheduled' ? 'It will not be sent.' : 'It disappears from everyone’s notifications.', 'Delete', true);
+      if (!ok) return;
+      try { await api('DELETE', '/api/announcements/' + encodeURIComponent(a.id)); } catch (e) { toast(e.message || 'Could not delete it.'); }
+      await loadAnnouncements();
+    },
     'p-flag'(el) {
       const p = findPlayer(el.dataset.id);
       const k = el.dataset.flag;
@@ -3467,6 +3617,14 @@ ${tabRows.map(r => {
       const fn = el.dataset && inputs[el.dataset.input];
       if (el.id === 'add-names') { draftNames = el.value; return; }
       if (el.dataset && el.dataset.input === 'season-name') { seasonDraft = el.value; return; }
+      if (el.dataset && /^ann-/.test(el.dataset.input || '')) {
+        const k = el.dataset.input;
+        if (k === 'ann-title') annDraft.title = el.value;
+        else if (k === 'ann-body') { annDraft.body = el.value; const c = $('#ann-count'); if (c) c.textContent = `${el.value.length}/300`; }
+        else if (k === 'ann-at') annDraft.at = el.value;
+        else if (k === 'ann-match') { annDraft.matchId = el.value; render(); }
+        return;
+      }
       if (el.dataset && /^me-/.test(el.dataset.input || '')) { saveMyProfile(el); return; }
       if (el.dataset && el.dataset.input === 'decline-note') { declineDraft[el.dataset.key] = el.value; return; }
       if (el.dataset && el.dataset.input === 'mgr-phrase') { mgrDraft.phrase = el.value; return; }

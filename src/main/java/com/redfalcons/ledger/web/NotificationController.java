@@ -12,7 +12,7 @@ import java.util.List;
 @RequestMapping("/api/notifications")
 public class NotificationController {
 
-    public record Item(String id, String title, String body, String createdAt) {
+    public record Item(String id, String title, String body, String createdAt, String kind, String author, String matchId) {
     }
 
     private final NotificationService notifications;
@@ -23,6 +23,8 @@ public class NotificationController {
 
     @GetMapping
     public List<Item> feed() {
-        return notifications.latest().stream().map(n -> new Item(n.getId(), n.getTitle(), n.getBody(), n.getCreatedAt())).toList();
+        return notifications.latest().stream()
+                .map(n -> new Item(n.getId(), n.getTitle(), n.getBody(), n.getVisibleAt(), n.isAnnouncement() ? "announcement" : "expense",
+                        n.getAuthor(), n.getMatchId())).toList();
     }
 }
