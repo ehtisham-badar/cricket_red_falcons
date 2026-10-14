@@ -32,6 +32,25 @@ public class Player {
     /** WhatsApp number for reminders; admin-only. Null on rows from before this column. */
     private String phone = "";
 
+    /** Profile details; null on rows from before they existed. */
+    @Column(name = "batting_hand", length = 8)
+    private String battingHand;
+
+    @Column(name = "bowling_arm", length = 8)
+    private String bowlingArm;
+
+    @Column(name = "bowling_style", length = 40)
+    private String bowlingStyle;
+
+    private Boolean keeper;
+    private Boolean captain;
+
+    @Column(name = "vice_captain")
+    private Boolean viceCaptain;
+
+    @Column(length = 3)
+    private String jersey;
+
     /** Ids of the days ('t1', 'm1'…) this player attended. */
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "player_attendance", joinColumns = @JoinColumn(name = "player_id"))
@@ -61,4 +80,23 @@ public class Player {
     public boolean isInTournament() { return !Boolean.FALSE.equals(inTournament); }
     public String getPhone() { return phone == null ? "" : phone; }
     public Set<String> getAttended() { return attended; }
+
+    public void setProfile(String battingHand, String bowlingArm, String bowlingStyle, boolean keeper, boolean captain,
+                           boolean viceCaptain, String jersey) {
+        this.battingHand = battingHand;
+        this.bowlingArm = bowlingArm;
+        this.bowlingStyle = bowlingStyle;
+        this.keeper = keeper;
+        this.captain = captain;
+        this.viceCaptain = viceCaptain;
+        this.jersey = jersey;
+    }
+
+    public String getBattingHand() { return battingHand == null ? "" : battingHand; }
+    public String getBowlingArm() { return bowlingArm == null ? "" : bowlingArm; }
+    public String getBowlingStyle() { return bowlingStyle == null ? "" : bowlingStyle; }
+    public boolean isKeeper() { return Boolean.TRUE.equals(keeper); }
+    public boolean isCaptain() { return Boolean.TRUE.equals(captain); }
+    public boolean isViceCaptain() { return Boolean.TRUE.equals(viceCaptain); }
+    public String getJersey() { return jersey == null ? "" : jersey; }
 }

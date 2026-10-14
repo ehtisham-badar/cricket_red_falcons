@@ -30,10 +30,15 @@ public record LedgerDto(
 
     /**
      * {@code paid} is the total of {@code payments}; files without payments are read from {@code paid}.
-     * {@code phone} is only sent to the admin; null on save keeps the stored number.
+     * {@code phone} is only sent to the admin; null on save keeps the stored number. The profile fields
+     * ({@code battingHand} and {@code bowlingArm} are "right", "left" or ""; {@code jersey} is a number) are
+     * everyone's to see; a save without {@code battingHand} keeps the stored profile. {@code photoAt} says
+     * when the player's photo last changed ("" when none) and is ignored on save.
      */
     public record PlayerDto(String id, String name, String role, String paid, Boolean tournament,
-                            Map<String, Boolean> att, List<PaymentDto> payments, String phone) {
+                            Map<String, Boolean> att, List<PaymentDto> payments, String phone,
+                            String battingHand, String bowlingArm, String bowlingStyle,
+                            Boolean keeper, Boolean captain, Boolean viceCaptain, String jersey, String photoAt) {
     }
 
     public record PaymentDto(String id, String date, String amount, String method, String note) {

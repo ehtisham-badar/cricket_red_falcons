@@ -12,6 +12,7 @@ import com.redfalcons.ledger.model.TournamentPayment;
 import com.redfalcons.ledger.repo.DayAmountRepository;
 import com.redfalcons.ledger.repo.ExpenseRepository;
 import com.redfalcons.ledger.repo.MatchDayRepository;
+import com.redfalcons.ledger.repo.PlayerPhotoRepository;
 import com.redfalcons.ledger.repo.MatchStatRepository;
 import com.redfalcons.ledger.repo.PaymentRepository;
 import com.redfalcons.ledger.repo.PlayerRepository;
@@ -73,13 +74,18 @@ public class LedgerService {
     private final SettingRepository settings;
     private final MatchDayRepository matches;
     private final MatchStatRepository stats;
+    private final NotificationService notifications;
+    private final PlayerPhotoRepository photos;
     /** Largest count a single stat can hold. */
     private static final int STAT_MAX = 999;
 
     public LedgerService(PlayerRepository players, TrainingRepository trainings, DayAmountRepository legacyAmounts,
                          ExpenseRepository expenses, PaymentRepository payments,
                          TournamentPaymentRepository tournamentPayments, SettingRepository settings,
-                         MatchDayRepository matches, MatchStatRepository stats) {
+                         MatchDayRepository matches, MatchStatRepository stats, NotificationService notifications,
+                         PlayerPhotoRepository photos) {
+        this.notifications = notifications;
+        this.photos = photos;
         this.matches = matches;
         this.stats = stats;
         this.players = players;
@@ -110,7 +116,8 @@ public class LedgerService {
         List<PlayerDto> ps = full.players() == null ? List.of() : full.players().stream().map(p -> {
             boolean hide = ownOnly && !p.id().equals(viewerId);
             return new PlayerDto(p.id(), p.name(), p.role(), hide ? "" : p.paid(), p.tournament(), p.att(),
-                    hide ? List.of() : p.payments(), null);
+                    hide ? List.of() : p.payments(), null, p.battingHand(), p.bowlingArm(), p.bowlingStyle(),
+                    p.keeper(), p.captain(), p.viceCaptain(), p.jersey(), p.photoAt());
         }).toList();
         return new LedgerDto(full.app(), full.version(), full.savedAt(), ps, full.amounts(), full.trainings(), full.expenses(),
                 full.tournament(), st, full.twelfth(), full.battingOrder(), full.matches(),
@@ -125,13 +132,17 @@ public class LedgerService {
                 .computeIfAbsent(x.getPlayerId(), k -> new ArrayList<>())
                 .add(new PaymentDto(x.getId(), x.getDate(), x.getAmount(), x.getMethod(), x.getNote())));
 
+        Map<String, String> photoAt = new HashMap<>();
+        photos.versions().forEach(row -> photoAt.put((String) row[0], (String) row[1]));
         List<PlayerDto> playerDtos = players.findAll(BY_POSITION).stream()
                 .map(p -> {
                     Map<String, Boolean> att = new LinkedHashMap<>();
                     p.getAttended().forEach(d -> att.put(d, true));
                     List<PaymentDto> paid = paymentsByPlayer.getOrDefault(p.getId(), legacyPayments(p.getId(), p.getPaid()));
                     return new PlayerDto(p.getId(), p.getName(), p.getRole(), sum(paid.stream().map(PaymentDto::amount)),
-                            p.isInTournament(), att, paid, p.getPhone());
+                            p.isInTournament(), att, paid, p.getPhone(), p.getBattingHand(), p.getBowlingArm(),
+                            p.getBowlingStyle(), p.isKeeper(), p.isCaptain(), p.isViceCaptain(), p.getJersey(),
+                            photoAt.getOrDefault(p.getId(), ""));
                 })
                 .toList();
 
@@ -257,7 +268,14 @@ public class LedgerService {
 
         // A save without phone numbers (an older app, or a backup file) keeps the stored ones.
         Map<String, String> storedPhones = new HashMap<>();
-        players.findAll().forEach(p -> storedPhones.put(p.getId(), p.getPhone()));
+        Map<String, Player> storedProfiles = new HashMap<>();
+        players.findAll().forEach(p -> {
+            storedPhones.put(p.getId(), p.getPhone());
+            Player copy = new Player(p.getId(), 0, "", "", "", true, "", Set.of());
+            copy.setProfile(p.getBattingHand(), p.getBowlingArm(), p.getBowlingStyle(), p.isKeeper(), p.isCaptain(),
+                    p.isViceCaptain(), p.getJersey());
+            storedProfiles.put(p.getId(), copy);
+        });
 
         List<Player> newPlayers = new ArrayList<>();
         List<Payment> newPayments = new ArrayList<>();
@@ -280,8 +298,18 @@ public class LedgerService {
                 amounts.add(numeric(x.amount()));
             }
             String phone = p.phone() != null ? clip(p.phone(), 20) : storedPhones.getOrDefault(p.id(), "");
-            newPlayers.add(new Player(p.id(), newPlayers.size(), nz(p.name()).trim(), nz(p.role()),
-                    sum(amounts.stream()), !Boolean.FALSE.equals(p.tournament()), phone, attended));
+            Player row = new Player(p.id(), newPlayers.size(), nz(p.name()).trim(), nz(p.role()),
+                    sum(amounts.stream()), !Boolean.FALSE.equals(p.tournament()), phone, attended);
+            Player kept = storedProfiles.get(p.id());
+            if (p.battingHand() != null || kept == null) {
+                row.setProfile(pick(p.battingHand(), HANDS), pick(p.bowlingArm(), HANDS), clip(p.bowlingStyle(), 40),
+                        Boolean.TRUE.equals(p.keeper()), Boolean.TRUE.equals(p.captain()), Boolean.TRUE.equals(p.viceCaptain()),
+                        jersey(p.jersey()));
+            } else {
+                row.setProfile(kept.getBattingHand(), kept.getBowlingArm(), kept.getBowlingStyle(), kept.isKeeper(),
+                        kept.isCaptain(), kept.isViceCaptain(), kept.getJersey());
+            }
+            newPlayers.add(row);
         }
 
         List<Expense> newExpenses = new ArrayList<>();
@@ -296,6 +324,9 @@ public class LedgerService {
                         numeric(e.amount()), paidBy));
             }
         });
+
+        Map<String, String> oldExpenseAmounts = new HashMap<>();
+        expenses.idsAndAmounts().forEach(row -> oldExpenseAmounts.put((String) row[0], (String) row[1]));
 
         players.deleteAll(); // not InBatch, so Hibernate also removes the player_attendance rows
         trainings.deleteAllInBatch();
@@ -404,6 +435,15 @@ public class LedgerService {
                 if (pay.get(i) != null) settings.save(new Setting(PAY_KEYS.get(i), clip(pay.get(i), 60)));
             }
         }
+        photos.versions().stream().map(row -> (String) row[0]).filter(id -> !playerIds.contains(id)).forEach(photos::deleteById);
+
+        Map<String, String> dayLabels = new HashMap<>();
+        for (int i = 0; i < newTrainings.size(); i++) dayLabels.put(newTrainings.get(i).getId(), "Training " + (i + 1));
+        for (int i = 0; i < newMatches.size(); i++) dayLabels.put(newMatches.get(i).getId(), "Match " + (i + 1));
+        Map<String, String> playerNames = new HashMap<>();
+        newPlayers.forEach(p -> playerNames.put(p.getId(), p.getName()));
+        notifications.expensesSaved(oldExpenseAmounts, newExpenses, dayLabels, playerNames,
+                settings.findById("currency").map(Setting::getValue).orElse("Rs "));
         return load();
     }
 
@@ -499,6 +539,19 @@ public class LedgerService {
         } catch (NumberFormatException e) {
             return "";
         }
+    }
+
+    private static final Set<String> HANDS = Set.of("right", "left");
+
+    /** The value if it is one of the allowed ones, else "". */
+    private static String pick(String v, Set<String> allowed) {
+        return v != null && allowed.contains(v) ? v : "";
+    }
+
+    /** A jersey number: up to three digits, or "". */
+    private static String jersey(String v) {
+        String t = v == null ? "" : v.replaceAll("\\D", "");
+        return t.length() > 3 ? t.substring(0, 3) : t;
     }
 
     private static int parseIntOr(String v, int fallback) {

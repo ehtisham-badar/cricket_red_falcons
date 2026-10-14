@@ -16,6 +16,7 @@
   ];
   const COLLAPSED_KEY = 'rf.collapsed';      // Days sections this viewer has folded: { training, match }
   const DEVICE_KEY = 'rf.device';            // this browser's trusted-device token (skips the two-factor code)
+  const FEED_SEEN_KEY = 'rf.feedSeen';       // newest notification this device has opened
   const MGR_KEY = 'rf.manager';              // this browser's pending manager request: { token, name, status }
   const ME_KEY = 'rf.me';                     // viewer's chosen player id, or NOT_ME to show the picker
   const NOT_ME = '__none';
@@ -89,6 +90,7 @@
   let mgr = readStore(MGR_KEY);               // { token, name, status } once this browser asked to be a manager
   let mgrDraft = { phrase: '', edits: {} };   // the phrase being typed to ask, and phrases being edited by the admin
   let mgrList = null;                         // admin: manager requests and approved managers
+  let feed = null;                            // viewers and managers: what the admin has announced, newest first
   let inbox = null;                           // admin: { access, lineups } waiting for a decision
   let declineDraft = {};                      // admin: notes being written while declining, by 'kind:id'
   let xiDirty = {};                           // manager: matches whose lineup was changed here but not sent yet
@@ -348,6 +350,9 @@
   const DICE_ICON = icon('<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="16" cy="16" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="16" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="16" r="1.2" fill="currentColor"/>', 18);
   const BELL_ICON = icon('<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>', 18);
   const COPY_ICON = icon('<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>', 18);
+  const WALLET_ICON = icon('<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M16 15h2"/>', 18);
+  const PERSON_PATH = '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>';
+  const BOWL_STYLES = ['', 'Fast', 'Medium-fast', 'Medium', 'Off spin', 'Leg spin', 'Left-arm spin'];
   const WA_ICON = icon('<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>', 18);
 
   // Pre-fills the payment account for ledgers saved before it was a setting.
@@ -397,7 +402,11 @@
       const id = p.id || rid();
       return {
         id, name: p.name || '', role: p.role || '', tournament: p.tournament !== false, att: p.att || {},
-        payments: paymentsFrom(id, p), phone: p.phone == null ? '' : String(p.phone)
+        payments: paymentsFrom(id, p), phone: p.phone == null ? '' : String(p.phone),
+        battingHand: p.battingHand === 'left' || p.battingHand === 'right' ? p.battingHand : '',
+        bowlingArm: p.bowlingArm === 'left' || p.bowlingArm === 'right' ? p.bowlingArm : '',
+        bowlingStyle: p.bowlingStyle || '', keeper: p.keeper === true, captain: p.captain === true, viceCaptain: p.viceCaptain === true,
+        jersey: p.jersey == null ? '' : String(p.jersey).replace(/\D/g, '').slice(0, 3), photoAt: p.photoAt || ''
       };
     });
     const ids = new Set(players.map(p => p.id));
@@ -738,6 +747,44 @@
     </section>`;
   }
 
+  // ---------- notifications (viewers and managers) ----------
+  const newestFeed = () => (feed && feed.length ? feed[0].createdAt : '');
+  const unreadCount = () => {
+    if (!feed) return 0;
+    const seen = readStore(FEED_SEEN_KEY);
+    return seen == null ? 0 : feed.filter(n => n.createdAt > seen).length;
+  };
+  const markFeedSeen = () => { if (feed) writeStore(FEED_SEEN_KEY, newestFeed()); };
+
+  // Fetches what the admin has announced; a new one pops up as a toast while the app is open.
+  async function loadFeed() {
+    if (realAdmin()) return;
+    let next;
+    try { next = await api('GET', '/api/notifications'); } catch { return; }
+    if (JSON.stringify(next) === JSON.stringify(feed)) return;
+    const first = feed === null;
+    const before = feed && feed.length ? feed[0].createdAt : '';
+    feed = next;
+    // A device that has never looked starts from now, so old announcements don't pile up as unread.
+    if (readStore(FEED_SEEN_KEY) == null) markFeedSeen();
+    if (sheet && sheet.type === 'feed') markFeedSeen();
+    else if (!first && next.length && next[0].createdAt > before) toast(`${next[0].title}: ${next[0].body}`);
+    render();
+  }
+
+  function sheetFeed() {
+    const items = feed || [];
+    return `<header class="sheet-head">
+        <div><span class="day-kind">Updates</span><h2>Notifications</h2>
+          <p class="muted">What the admin has recorded lately.</p></div>
+        <button class="icon-btn" data-action="close-sheet" aria-label="Close">${X_ICON}</button>
+      </header>
+      <div class="sheet-body">${feed === null ? '<p class="muted center">Loading…</p>' : items.length
+        ? items.map(n => `<article class="note-card"><div class="note-head"><strong>${esc(n.title)}</strong><small>${ago(n.createdAt)}</small></div>
+            <p class="note-detail">${esc(n.body)}</p></article>`).join('')
+        : '<p class="muted center">Nothing new yet. Expenses the admin adds will show up here.</p>'}</div>`;
+  }
+
   // ---------- notifications (admin) ----------
   const ago = iso => {
     const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
@@ -827,6 +874,7 @@
       if (isAdmin()) { loadInbox(); return; }
       await refreshManager();
       if (isManager()) await loadMyLineups();
+      await loadFeed();
       if (Object.keys(xiDirty).length) return; // a manager's unsent lineup must not be overwritten
       try {
         const d = await fetchLedger();
@@ -989,6 +1037,7 @@
     refreshPush();
     loadTfa();
     loadInbox();
+    loadFeed();
     refreshManager().then(loadMyLineups);
     startPolling();
   }
@@ -1003,9 +1052,10 @@
 
     document.body.classList.toggle('is-admin', isAdmin());
     const bell = $('#bell');
-    bell.hidden = !realAdmin();
-    bell.dataset.count = inboxCount();
-    bell.setAttribute('aria-label', inboxCount() ? `Notifications, ${inboxCount()} waiting` : 'Notifications');
+    const bellCount = realAdmin() ? inboxCount() : unreadCount();
+    bell.hidden = false;
+    bell.dataset.count = bellCount;
+    bell.setAttribute('aria-label', bellCount ? `Notifications, ${bellCount} new` : 'Notifications');
     const shown = t => (!t.statsTab || statsVisible()) && (!t.daysTab || daysVisible()) && !(archive && t.id === 'settings');
     if (TABS.some(t => t.id === tab && !shown(t))) tab = 'summary';
     $('#tabs').innerHTML = TABS.filter(shown).map(t =>
@@ -1397,14 +1447,15 @@
       const c = C.playerCalc(state, p, stats, fmt, tour);
       const shown = seesMoneyOf(p);
       const adv = shown ? advanceNow(p, c.net) : 0;
-      const row = `<button class="prow" data-net="${shown ? netClass(c.net) : 'zero'}" data-action="open-player" data-id="${esc(p.id)}">
-        <span class="sr">${i + 1}</span>
+      const row = `<button class="prow" data-net="${shown ? netClass(c.net) : 'zero'}" data-action="open-profile" data-id="${esc(p.id)}">
+        <span class="sr">${i + 1}</span>${avatar(p, 34)}
         <span class="pname"><strong>${esc(p.name) || '<em>Unnamed</em>'}</strong><small>${esc(p.role) || '—'}${C.inTournament(p) ? '' : ' · not in tournament'}${adv > 0 ? ` · <span class="adv-due">advance ${fmt(adv)}</span>` : ''}</small></span>
         ${shown ? `<span class="pnet ${netClass(c.net)}"><strong>${fmtNet(c.net)}</strong><small>${netText(c.net)}</small></span>` : '<span class="pnet zero"><small>Private</small></span>'}
       </button>`;
-      return admin && c.net < 0
-        ? `<div class="prow-wrap">${row}<button class="icon-btn wa" data-action="share-player" data-id="${esc(p.id)}" aria-label="Send ${esc(p.name)} a reminder on WhatsApp" title="${waNumber(p.phone) ? `Send reminder to ${esc(p.phone)}` : 'Send reminder (no number saved — pick the chat)'}">${WA_ICON}</button></div>`
-        : row;
+      const exp = `<button class="icon-btn exp-btn" data-action="open-player" data-id="${esc(p.id)}" aria-label="Expense card for ${esc(p.name)}" title="Expenses and payments">${WALLET_ICON}</button>`;
+      const wa = admin && c.net < 0
+        ? `<button class="icon-btn wa" data-action="share-player" data-id="${esc(p.id)}" aria-label="Send ${esc(p.name)} a reminder on WhatsApp" title="${waNumber(p.phone) ? `Send reminder to ${esc(p.phone)}` : 'Send reminder (no number saved — pick the chat)'}">${WA_ICON}</button>` : '';
+      return `<div class="prow-wrap">${row}${exp}${wa}</div>`;
     }).join('');
 
     // Matches the admin hasn't finished yet stay off the sheet.
@@ -1424,7 +1475,7 @@
               ${state.players.map((p, i) => {
                 const c = C.playerCalc(state, p, stats, fmt, tour);
                 return `<tr data-action="open-player" data-id="${esc(p.id)}">
-                  <td class="sticky">${i + 1}</td><td class="sticky sticky-2 name-cell">${esc(p.name)}</td>
+                  <td class="sticky">${i + 1}</td><td class="sticky sticky-2 name-cell"><button class="pl-name" data-action="open-profile" data-id="${esc(p.id)}">${esc(p.name)}</button><button class="icon-btn exp-btn mini" data-action="open-player" data-id="${esc(p.id)}" aria-label="Expense card for ${esc(p.name)}" title="Expenses and payments">${WALLET_ICON}</button></td>
                   ${sheetDays.map(d => `<td class="dot-cell">${p.att[d.id] ? `<span class="dot ${d.type}" title="${d.type === 'match' ? 'Played' : 'Arrived'}"></span>` : isTwelfth(p, d) ? '<span class="dot twelfth" title="12th man"></span>' : '<span class="dot-empty"></span>'}</td>`).join('')}
                   <td class="league-cell">${tour.charges[p.id].amount > 0 ? fmt(tour.charges[p.id].amount) : '—'}</td>
                   ${seesMoneyOf(p) ? `<td>${fmt(c.cost)}</td><td>${fmt(c.paid)}</td><td>${c.credit > 0 ? fmt(c.credit) : '—'}</td>
@@ -1711,7 +1762,7 @@
       { label: 'Most catches', x: top(all, 'catches', t => `${t.catches}`) },
       { label: 'Best strike rate', note: 'min 20 balls', x: top(srList, 'strikeRate', t => SR(t.runs, t.balls)) }
     ];
-    const name = t => `<td class="st-name">${esc(t.player.name)}</td>`;
+    const name = t => `<td class="st-name"><button class="pl-name" data-action="open-profile" data-id="${esc(t.player.id)}">${esc(t.player.name)}</button></td>`;
     const batting = all.filter(t => t.innings > 0).sort((a, b) => b.runs - a.runs || (b.strikeRate || 0) - (a.strikeRate || 0));
     const bowling = all.filter(t => t.bowlBalls > 0 || t.conceded > 0).sort((a, b) => b.wickets - a.wickets || (a.economy || 99) - (b.economy || 99));
     const fielding = all.filter(t => t.catches + t.drops + t.misfields + t.goodFielding > 0).sort((a, b) => b.catches - a.catches || a.drops - b.drops);
@@ -1734,12 +1785,125 @@
         <td class="strong">${t.catches}</td><td>${t.drops}</td><td>${t.misfields}</td><td>${t.goodFielding}</td></tr>`))}`;
   }
 
+  // ---------- player photos ----------
+  let photoTarget = null;
+
+  // The photo calls speak raw bytes, not JSON. The admin may change anyone's; a player only their own.
+  async function photoApi(method, id, blob) {
+    const headers = { 'X-Viewer': id };
+    if (blob) headers['Content-Type'] = 'image/jpeg';
+    if (session && session.token) headers['X-Admin-Token'] = session.token;
+    const res = await fetch(`${API}/api/players/${encodeURIComponent(id)}/photo`, { method, headers, body: blob });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+    return data;
+  }
+
+  // Centre-crops to a square and shrinks to 320 px, so uploads stay small whatever the phone's camera gives.
+  async function shrinkPhoto(file) {
+    const bmp = await createImageBitmap(file);
+    const size = Math.min(bmp.width, bmp.height);
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 320;
+    canvas.getContext('2d').drawImage(bmp, (bmp.width - size) / 2, (bmp.height - size) / 2, size, size, 0, 0, 320, 320);
+    return new Promise((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error('Could not read that picture.')), 'image/jpeg', 0.85));
+  }
+
+  async function uploadPhoto(file) {
+    const p = findPlayer(photoTarget);
+    if (!p || !file) return;
+    try {
+      const r = await photoApi('PUT', p.id, await shrinkPhoto(file));
+      p.photoAt = r.photoAt;
+      render();
+      toast('Photo updated.');
+    } catch (e) { toast(e.message || 'Could not upload the photo.'); }
+  }
+
+  // ---------- player profile ----------
+  const photoUrl = p => `${API}/api/players/${encodeURIComponent(p.id)}/photo?v=${encodeURIComponent(p.photoAt)}`;
+  // A player's picture, or a red placeholder with a silhouette when none was uploaded.
+  const avatar = (p, size = 44) => `<span class="avatar ${p.photoAt ? '' : 'ph'}" style="--s:${size}px">${p.photoAt
+    ? `<img src="${esc(photoUrl(p))}" alt="" loading="lazy" decoding="async">` : icon(PERSON_PATH, Math.round(size * 0.56))}</span>`;
+  const isCaptain = p => p.captain || /captain/i.test(p.role);
+  const isKeeper = p => p.keeper || /keeper/i.test(p.role);
+  const battingText = p => p.battingHand ? `${p.battingHand === 'left' ? 'Left' : 'Right'}-hand bat` : '—';
+  const bowlingText = p => [p.bowlingArm ? `${p.bowlingArm === 'left' ? 'Left' : 'Right'}-arm` : '', p.bowlingStyle.toLowerCase()].filter(Boolean).join(' ') || '—';
+
+  function profileStats(p) {
+    const t = C.leagueStats(state).find(x => x.player.id === p.id);
+    if (!t || !t.matches) return '';
+    const tile = (label, value) => `<div class="stat"><span>${label}</span><strong>${value}</strong></div>`;
+    const bat = t.innings > 0 ? `<h3 class="sub">Batting</h3><div class="prof-tiles">
+        ${tile('Matches', t.matches)}${tile('Runs', t.runs)}${tile('Highest', t.high ? t.high.runs + (t.high.out ? '' : '*') : '—')}
+        ${tile('Average', t.average == null ? '—' : t.average.toFixed(2))}${tile('Strike rate', SR(t.runs, t.balls))}
+        ${tile('Fours', t.fours)}${tile('Sixes', t.sixes)}${tile('Innings', t.innings)}</div>` : '';
+    const bowl = t.bowlBalls > 0 || t.conceded > 0 ? `<h3 class="sub">Bowling</h3><div class="prof-tiles">
+        ${tile('Overs', C.oversOf(t.bowlBalls))}${tile('Wickets', t.wickets)}${tile('Runs', t.conceded)}
+        ${tile('Economy', ECON(t.conceded, t.bowlBalls))}${tile('Best', t.best ? `${t.best.wickets}/${t.best.runs}` : '—')}</div>` : '';
+    const field = t.catches + t.drops + t.misfields + t.goodFielding > 0 ? `<h3 class="sub">Fielding</h3><div class="prof-tiles">
+        ${tile('Catches', t.catches)}${tile('Drops', t.drops)}${tile('Misfields', t.misfields)}${tile('Good fielding', t.goodFielding)}</div>` : '';
+    return `<div class="prof-stats">${bat}${bowl}${field}</div>`;
+  }
+
+  function sheetProfile() {
+    const idx = state.players.findIndex(x => x.id === sheet.id);
+    const p = state.players[idx];
+    if (!p) return '';
+    const admin = isAdmin();
+    const played = C.matches(state).filter(m => p.att[m.id]).length;
+    const badges = [isCaptain(p) ? 'Captain' : '', p.viceCaptain ? 'Vice-captain' : '', isKeeper(p) ? 'Wicket-keeper' : '']
+      .filter(Boolean).map(b => `<span class="prof-badge">${b}</span>`).join('');
+    const editor = admin ? `<div class="prof-edit">
+        <h3 class="sub">Edit profile</h3>
+        <div class="form-grid">
+          <label><span>Batting hand</span><select class="field select" data-input="p-bat" data-id="${esc(p.id)}">
+            ${[['', 'Not set'], ['right', 'Right-hand'], ['left', 'Left-hand']].map(([v, l]) => `<option value="${v}" ${p.battingHand === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+          <label><span>Bowling arm</span><select class="field select" data-input="p-bowl-arm" data-id="${esc(p.id)}">
+            ${[['', 'Not set'], ['right', 'Right-arm'], ['left', 'Left-arm']].map(([v, l]) => `<option value="${v}" ${p.bowlingArm === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+          <label><span>Bowling style</span><select class="field select" data-input="p-bowl-style" data-id="${esc(p.id)}">
+            ${BOWL_STYLES.map(s => `<option value="${esc(s)}" ${p.bowlingStyle === s ? 'selected' : ''}>${s || 'Not set'}</option>`).join('')}</select></label>
+          <label><span>Jersey number</span><input class="field" type="text" inputmode="numeric" maxlength="3" value="${esc(p.jersey)}" data-input="p-jersey" data-id="${esc(p.id)}" data-focus="pjersey-${esc(p.id)}"></label>
+          <div class="form-row"><span>Roles</span><span class="prof-flags">
+            ${[['captain', 'Captain'], ['viceCaptain', 'Vice-captain'], ['keeper', 'Wicket-keeper']].map(([k, l]) =>
+              `<button class="tog ${p[k] ? 'on' : ''}" data-action="p-flag" data-id="${esc(p.id)}" data-flag="${k}" aria-pressed="${!!p[k]}">${l}</button>`).join('')}</span></div>
+          <div class="form-row"><span>Photo</span><span class="prof-flags">
+            <button class="btn btn-ghost small" data-action="photo-pick" data-id="${esc(p.id)}">${p.photoAt ? 'Change photo' : 'Upload photo'}</button>
+            ${p.photoAt ? `<button class="btn btn-ghost small" data-action="photo-remove" data-id="${esc(p.id)}">Remove</button>` : ''}</span></div>
+        </div></div>` : '';
+    return `
+      <header class="sheet-head">
+        <div><span class="day-kind">Player #${idx + 1}</span></div>
+        <button class="icon-btn" data-action="close-sheet" aria-label="Close">${X_ICON}</button>
+      </header>
+      <div class="sheet-body">
+        <div class="prof-card">
+          ${avatar(p, 112)}
+          <div class="prof-main">
+            <div class="prof-namerow"><h2 class="prof-name">${esc(p.name) || 'Unnamed'}</h2>
+              <button class="icon-btn exp-btn" data-action="open-player" data-id="${esc(p.id)}" title="Expenses and payments" aria-label="Expense card for ${esc(p.name)}">${WALLET_ICON}</button></div>
+            ${p.jersey ? `<span class="prof-jersey">#${esc(p.jersey)}</span>` : ''}
+            <div class="prof-badges">${badges}</div>
+            <span class="muted">${esc(p.role) || '—'}</span>
+          </div>
+        </div>
+        <dl class="kv prof-kv">
+          <dt>Batting</dt><dd>${battingText(p)}</dd>
+          <dt>Bowling</dt><dd>${bowlingText(p)}</dd>
+          <dt>Matches played</dt><dd>${played}</dd>
+          <dt>Tournament</dt><dd>${C.inTournament(p) ? 'Taking part' : 'Not taking part'}</dd>
+        </dl>
+        ${profileStats(p)}
+        ${editor}
+      </div>`;
+  }
+
   function viewPlayers() {
     const admin = isAdmin();
     const list = state.players.map((p, i) => `
       <div class="player-line">
         <span class="sr">${i + 1}</span>
-        <button class="pl-name" data-action="open-player" data-id="${esc(p.id)}">${esc(p.name) || '<em>Unnamed</em>'}</button>
+        <span class="pl-namecell">${avatar(p, 30)}<button class="pl-name" data-action="open-profile" data-id="${esc(p.id)}">${esc(p.name) || '<em>Unnamed</em>'}</button><button class="icon-btn exp-btn mini" data-action="open-player" data-id="${esc(p.id)}" aria-label="Expense card for ${esc(p.name)}" title="Expenses and payments">${WALLET_ICON}</button></span>
         ${admin
           ? `<select class="field select" data-input="role" data-id="${esc(p.id)}" aria-label="Role for ${esc(p.name)}">${ROLES.map(r => `<option value="${esc(r)}" ${r === p.role ? 'selected' : ''}>${r || 'No role'}</option>`).join('')}</select>
              ${tourToggle(p)}
@@ -1877,6 +2041,16 @@
           <button class="tog ${s[r.key] === 'all' ? 'on' : ''}" data-action="set-tab-visibility" data-key="${r.key}" aria-pressed="${s[r.key] === 'all'}">${s[r.key] === 'all' ? 'Shown' : 'Admin only'}</button></div>`).join('')}
       </section>` : '';
 
+    const me = !realAdmin() ? myPlayer() : null;
+    const photoPanel = !realAdmin() ? `
+      <section class="panel photo-panel">
+        <div class="panel-head"><h3>My photo</h3><p class="muted">Shown on your player profile for everyone in the team.</p></div>
+        ${me ? `<div class="photo-row">${avatar(me, 84)}<div class="photo-actions">
+            <button class="btn btn-gold" data-action="photo-pick" data-id="${esc(me.id)}">${me.photoAt ? 'Change photo' : 'Upload photo'}</button>
+            ${me.photoAt ? `<button class="btn btn-ghost" data-action="photo-remove" data-id="${esc(me.id)}">Remove</button>` : ''}</div></div>`
+          : '<p class="muted">Pick your name on the Summary page first, so the app knows which player you are.</p>'}
+      </section>` : '';
+
     const accountPanel = `
       <section class="panel account-card">
         <span class="account-avatar">${admin ? icon('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>', 22) : esc((session.name || '?').trim().charAt(0).toUpperCase())}</span>
@@ -1904,7 +2078,7 @@
           ? cell(seasonPanel(), 7) + cell(`<div class="set-stack">${stack(backupPanel, cleanupPanel)}</div>`, 5) + cell(dangerPanel, 12)
           : cell(backupPanel, 5) + cell(seasonPanel(), 7) },
       { id: 'account', title: 'Account', note: 'Who is signed in on this device.', top: true,
-        cells: admin ? cell(accountPanel, 5) + cell(tfaPanel(), 7) : cell(accountPanel, 12) }
+        cells: admin ? cell(accountPanel, 5) + cell(tfaPanel(), 7) : cell(accountPanel, 5) + cell(photoPanel, 7) }
     ].filter(Boolean);
 
     return `
@@ -1927,7 +2101,9 @@
     let body = '';
     if (sheet.type === 'day') body = sheetDay();
     if (sheet.type === 'player') body = sheetPlayer();
+    if (sheet.type === 'profile') body = sheetProfile();
     if (sheet.type === 'inbox') body = sheetInbox();
+    if (sheet.type === 'feed') body = sheetFeed();
     if (!body) { sheet = null; return ''; }
     return `<div class="sheet-backdrop" data-action="close-sheet"></div>
       <div class="sheet" role="dialog" aria-modal="true">${body}</div>`;
@@ -2449,6 +2625,25 @@
 
   const actions = {
     tab(el) { tab = el.dataset.tab; writeStore(TAB_KEY, tab); sheet = null; render(); animateView(); window.scrollTo({ top: 0 }); },
+    'p-flag'(el) {
+      const p = findPlayer(el.dataset.id);
+      const k = el.dataset.flag;
+      if (!isAdmin() || !p || !['captain', 'viceCaptain', 'keeper'].includes(k)) return;
+      p[k] = !p[k];
+      commit();
+    },
+    'photo-pick'(el) { photoTarget = el.dataset.id; $('#photo-file').click(); },
+    async 'photo-remove'(el) {
+      const p = findPlayer(el.dataset.id);
+      if (!p) return;
+      try {
+        await photoApi('DELETE', p.id);
+        p.photoAt = '';
+        render();
+        toast('Photo removed.');
+      } catch (e) { toast(e.message || 'Could not remove the photo.'); }
+    },
+    'open-profile'(el) { sheet = { type: 'profile', id: el.dataset.id }; render(); },
     'open-player'(el) { sheet = { type: 'player', id: el.dataset.id }; render(); },
     'open-day'(el) { sheet = { type: 'day', dayId: el.dataset.id }; render(); },
     'close-sheet'() { sheet = null; render(); },
@@ -2530,7 +2725,10 @@
       await loadInbox();
       toast('Access revoked.');
     },
-    'open-inbox'() { sheet = { type: 'inbox' }; loadInbox(); render(); },
+    'open-inbox'() {
+      if (realAdmin()) { sheet = { type: 'inbox' }; loadInbox(); } else { sheet = { type: 'feed' }; markFeedSeen(); loadFeed(); }
+      render();
+    },
     async 'inbox-approve'(el) {
       if (!realAdmin()) return;
       // Anything I have changed but not saved goes first, so approving a lineup doesn't clobber it.
@@ -3032,6 +3230,10 @@
   };
 
   const inputs = {
+    'p-bat'(el) { const p = findPlayer(el.dataset.id); if (p) p.battingHand = el.value; },
+    'p-bowl-arm'(el) { const p = findPlayer(el.dataset.id); if (p) p.bowlingArm = el.value; },
+    'p-bowl-style'(el) { const p = findPlayer(el.dataset.id); if (p) p.bowlingStyle = el.value; },
+    'p-jersey'(el) { el.value = el.value.replace(/\D/g, '').slice(0, 3); const p = findPlayer(el.dataset.id); if (p) p.jersey = el.value; },
     'training-desc'(el) { const t = state.trainings.find(x => x.id === el.dataset.id); if (t) t.desc = el.value; },
     'exp-item'(el) { const e = findExpense(el); if (e) e.item = el.value; },
     'exp-amount'(el) { el.value = cleanNumber(el.value); const e = findExpense(el); if (e) e.amount = el.value; },
@@ -3102,6 +3304,12 @@
 
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape' && sheet && !$('#dialog-root').innerHTML) { sheet = null; render(); }
+    });
+
+    $('#photo-file').addEventListener('change', e => {
+      const f = e.target.files[0];
+      e.target.value = '';
+      uploadPhoto(f);
     });
 
     $('#import-file').addEventListener('change', e => {
