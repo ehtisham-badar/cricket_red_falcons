@@ -1396,3 +1396,19 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
 .me-grid label { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
 .me-grid label span { color: var(--muted); font-size: 13px; }
 .set-sections .panel-head:only-child { margin-bottom: 0; padding-bottom: 0; }
+
+/* ---- Profile stat tiles: numbers never get cut off, at any screen size ---- */
+.prof-tiles { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 10px; }
+.prof-tiles .stat { display: flex; flex-direction: column; justify-content: space-between; gap: 6px; padding: 12px 12px 12px 18px; border-radius: 16px; }
+.prof-tiles .stat::before { top: 12px; bottom: 12px; }
+.prof-tiles .stat span { font-size: 11px; letter-spacing: .07em; line-height: 1.25; overflow-wrap: anywhere; }
+.prof-tiles .stat strong { margin-top: 0; font-size: clamp(19px, 2.4vw, 24px); line-height: 1.1; overflow: visible; text-overflow: clip; white-space: nowrap; }
+@media (max-width: 520px) {
+  .prof-tiles { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+  .prof-tiles .stat { padding: 10px 8px 10px 14px; }
+  .prof-tiles .stat strong { font-size: clamp(17px, 5.4vw, 21px); }
+  .prof-name { font-size: clamp(19px, 6vw, 22px); }
+  /* The big summary cards shrink their figures instead of cutting them off. */
+  .stat strong { font-size: clamp(17px, 5.6vw, 24px); }
+}
+@media (max-width: 340px) { .prof-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
