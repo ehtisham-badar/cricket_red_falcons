@@ -1179,6 +1179,8 @@
         : row;
     }).join('');
 
+    // Matches the admin hasn't finished yet stay off the sheet.
+    const sheetDays = days.filter(C.isCharged);
     const table = state.players.length ? `
       <section class="panel">
         <div class="panel-head"><h3>Season sheet</h3><p class="muted">Who attended what, and where everyone stands.</p></div>
@@ -1186,7 +1188,7 @@
           <table class="sheet-table">
             <thead>
               <tr><th class="sticky">#</th><th class="sticky sticky-2">Player</th>
-                ${days.map(d => `<th class="day-col ${d.type}" title="${esc(d.label)}${d.desc ? ' — ' + esc(d.desc) : ''}">${d.short}<small>${!C.isCharged(d) ? 'pending' : stats[d.id].n > 0 && stats[d.id].amount > 0 ? fmt(stats[d.id].share) : '—'}</small></th>`).join('')}
+                ${sheetDays.map(d => `<th class="day-col ${d.type}" title="${esc(d.label)}${d.desc ? ' — ' + esc(d.desc) : ''}">${d.short}<small>${!C.isCharged(d) ? 'pending' : stats[d.id].n > 0 && stats[d.id].amount > 0 ? fmt(stats[d.id].share) : '—'}</small></th>`).join('')}
                 <th class="day-col tour" title="League fee for the matches each player played">League<small>${tour.fee > 0 ? fmt(tour.perMatch) + '/match' : '—'}</small></th>
                 <th>Cost</th><th>Paid</th><th title="Items bought for the team">Bought</th><th>Balance</th></tr>
             </thead>
@@ -1195,14 +1197,14 @@
                 const c = C.playerCalc(state, p, stats, fmt, tour);
                 return `<tr data-action="open-player" data-id="${esc(p.id)}">
                   <td class="sticky">${i + 1}</td><td class="sticky sticky-2 name-cell">${esc(p.name)}</td>
-                  ${days.map(d => `<td class="dot-cell">${p.att[d.id] ? `<span class="dot ${d.type}" title="${d.type === 'match' ? 'Played' : 'Arrived'}"></span>` : isTwelfth(p, d) ? '<span class="dot twelfth" title="12th man"></span>' : '<span class="dot-empty"></span>'}</td>`).join('')}
+                  ${sheetDays.map(d => `<td class="dot-cell">${p.att[d.id] ? `<span class="dot ${d.type}" title="${d.type === 'match' ? 'Played' : 'Arrived'}"></span>` : isTwelfth(p, d) ? '<span class="dot twelfth" title="12th man"></span>' : '<span class="dot-empty"></span>'}</td>`).join('')}
                   <td class="league-cell">${tour.charges[p.id].amount > 0 ? fmt(tour.charges[p.id].amount) : '—'}</td>
                   ${seesMoneyOf(p) ? `<td>${fmt(c.cost)}</td><td>${fmt(c.paid)}</td><td>${c.credit > 0 ? fmt(c.credit) : '—'}</td>
                   <td class="${netClass(c.net)} strong">${fmtNet(c.net)}</td>` : '<td>—</td><td>—</td><td>—</td><td class="zero">Private</td>'}</tr>`;
               }).join('')}
             </tbody>
             <tfoot><tr><td class="sticky"></td><td class="sticky sticky-2">Attended</td>
-              ${days.map(d => `<td>${stats[d.id].n}</td>`).join('')}<td>${fmt(Object.values(tour.charges).reduce((x, c) => x + c.amount, 0))}</td>
+              ${sheetDays.map(d => `<td>${stats[d.id].n}</td>`).join('')}<td>${fmt(Object.values(tour.charges).reduce((x, c) => x + c.amount, 0))}</td>
               <td>${fmt(t.spent)}</td><td>${ownOnly() ? '—' : fmt(t.collected)}</td><td>${t.fronted > 0 ? fmt(t.fronted) : '—'}</td><td></td></tr></tfoot>
           </table>
         </div>
