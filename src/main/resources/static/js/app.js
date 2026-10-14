@@ -1910,8 +1910,10 @@
     const p = state.players[idx];
     if (!p) return '';
     const admin = isAdmin();
-    // A match only counts once the admin has finished it.
-    const played = C.matches(state).filter(m => m.finished && p.att[m.id]).length;
+    // A real match only counts once the admin has finished it. Test matches count for the admin only.
+    const playedIn = C.matches(state).filter(m => p.att[m.id] && (m.finished || (m.test && isAdmin())));
+    const played = playedIn.length;
+    const playedTests = playedIn.filter(m => m.test).length;
     const badges = [isCaptain(p) ? 'Captain' : '', p.viceCaptain ? 'Vice-captain' : '', isKeeper(p) ? 'Wicket-keeper' : '']
       .filter(Boolean).map(b => `<span class="prof-badge">${b}</span>`).join('');
     const editor = admin ? `<div class="prof-edit">
@@ -1953,7 +1955,7 @@
         <dl class="kv prof-kv">
           <dt>Batting</dt><dd>${battingText(p)}</dd>
           <dt>Bowling</dt><dd>${bowlingText(p)}</dd>
-          <dt>Matches played</dt><dd>${played}</dd>
+          <dt>Matches played</dt><dd>${played}${playedTests ? ` <small class="muted">(incl. ${playedTests} test)</small>` : ''}</dd>
           <dt>Tournament</dt><dd>${state.tournament.name ? `${esc(state.tournament.name)} · ` : ''}${C.inTournament(p) ? 'Taking part' : 'Not taking part'}</dd>
         </dl>
         ${profileStats(p, played)}
@@ -2456,7 +2458,8 @@
     const admin = isAdmin();
     const stats = C.allStats(state);
     const c = C.playerCalc(state, p, stats, fmt);
-    const days = C.days(state);
+    // Test matches only exist for the stats; they never show in a player's attendance.
+    const days = C.days(state).filter(d => !d.test);
     const inTour = C.inTournament(p);
 
     const fields = admin ? `
