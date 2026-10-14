@@ -22,7 +22,7 @@
 
   const TABS = [
     { id: 'summary', label: 'Summary', icon: '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>' },
-    { id: 'days', label: 'Days', icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' },
+    { id: 'days', label: 'Days', daysTab: true, icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' },
     { id: 'stats', label: 'Stats', statsTab: true, icon: '<path d="M18 20V10M12 20V4M6 20v-6"/>' },
     { id: 'players', label: 'Players', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>' },
     { id: 'settings', label: 'Settings', icon: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>' }
@@ -321,6 +321,7 @@
   const isAdmin = () => !archive && realAdmin();
   // Viewer access "own": viewers see only their own balance and payments.
   const ownOnly = () => !realAdmin() && state && state.settings.viewerAccess === 'own';
+  const daysVisible = () => realAdmin() || (!!state && state.settings.daysVisibility === 'all');
   const statsVisible = () => realAdmin() || (!!state && state.settings.statsVisibility === 'all');
   const seesMoneyOf = p => !ownOnly() || (myPlayer() || {}).id === p.id;
   const cur = () => state.settings.currency;
@@ -447,7 +448,8 @@
         payTitle: s.payTitle != null ? s.payTitle : DEFAULT_PAY_TO.payTitle,
         payAccount: s.payAccount != null ? s.payAccount : DEFAULT_PAY_TO.payAccount,
         viewerAccess: s.viewerAccess === 'own' ? 'own' : 'all',
-        statsVisibility: s.statsVisibility === 'all' ? 'all' : 'admin'
+        statsVisibility: s.statsVisibility === 'all' ? 'all' : 'admin',
+        daysVisibility: s.daysVisibility === 'all' ? 'all' : 'admin'
       }
     };
   }
@@ -776,7 +778,7 @@
     if (focusKey && typeof active.selectionStart === 'number') sel = [active.selectionStart, active.selectionEnd];
 
     document.body.classList.toggle('is-admin', isAdmin());
-    const shown = t => (!t.statsTab || statsVisible()) && !(archive && t.id === 'settings');
+    const shown = t => (!t.statsTab || statsVisible()) && (!t.daysTab || daysVisible()) && !(archive && t.id === 'settings');
     if (TABS.some(t => t.id === tab && !shown(t))) tab = 'summary';
     $('#tabs').innerHTML = TABS.filter(shown).map(t =>
       `<button class="tab ${t.id === tab ? 'active' : ''}" data-action="tab" data-tab="${t.id}" ${t.id === tab ? 'aria-current="page"' : ''}>
@@ -1634,20 +1636,15 @@
         <p class="muted access-hint">Players pick their name to sign in, so this keeps balances out of casual view — it isn’t a password lock.</p>
       </section>` : '';
 
-    const statsOpts = [
-      { id: 'admin', name: 'Admin only', note: 'Only you see the Stats tab' },
-      { id: 'all', name: 'Everyone', note: 'Players see Stats too (read-only)' }
+    const tabRows = [
+      { key: 'daysVisibility', label: 'Days', path: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' },
+      { key: 'statsVisibility', label: 'Stats', path: '<path d="M18 20V10M12 20V4M6 20v-6"/>' }
     ];
     const statsPanel = admin ? `
       <section class="panel">
-        <div class="panel-head"><h3>Stats visibility</h3><p class="muted">Who can open the Stats tab.</p></div>
-        <div class="theme-list" role="radiogroup" aria-label="Stats visibility">
-          ${statsOpts.map(o => `<button class="theme-opt access-opt ${s.statsVisibility === o.id ? 'on' : ''}" role="radio" aria-checked="${s.statsVisibility === o.id}" data-action="set-stats-visibility" data-value="${o.id}">
-            <span class="access-icon">${icon(o.id === 'admin' ? '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>' : '<path d="M18 20V10M12 20V4M6 20v-6"/>', 20)}</span>
-            <span class="theme-text"><strong>${o.name}</strong><small>${o.note}</small></span>
-            <span class="theme-check">${icon('<path d="M20 6 9 17l-5-5"/>', 16)}</span>
-          </button>`).join('')}
-        </div>
+        <div class="panel-head"><h3>Tabs for players</h3><p class="muted">Choose which tabs view-only players can open. You always see all of them.</p></div>
+        ${tabRows.map(r => `<div class="step"><span class="step-label">${icon(r.path, 18)} ${r.label}</span>
+          <button class="tog ${s[r.key] === 'all' ? 'on' : ''}" data-action="set-tab-visibility" data-key="${r.key}" aria-pressed="${s[r.key] === 'all'}">${s[r.key] === 'all' ? 'Shown' : 'Admin only'}</button></div>`).join('')}
       </section>` : '';
 
     const accountPanel = `
@@ -2403,11 +2400,14 @@
       const offset = window.innerWidth <= 960 ? 140 : 90;
       if (target) window.scrollTo({ top: target.getBoundingClientRect().top + window.scrollY - offset, behavior: 'smooth' });
     },
-    'set-stats-visibility'(el) {
+    'set-tab-visibility'(el) {
       if (!isAdmin()) return;
-      state.settings.statsVisibility = el.dataset.value === 'all' ? 'all' : 'admin';
+      const key = el.dataset.key;
+      if (key !== 'statsVisibility' && key !== 'daysVisibility') return;
+      state.settings[key] = state.settings[key] === 'all' ? 'admin' : 'all';
       commit();
-      toast(state.settings.statsVisibility === 'all' ? 'Players can now see the Stats tab.' : 'Stats are now admin only.');
+      const name = key === 'daysVisibility' ? 'Days' : 'Stats';
+      toast(state.settings[key] === 'all' ? `Players can now see the ${name} tab.` : `${name} is now admin only.`);
     },
     async 'random-stats'(el) {
       const d = findMatch(el.dataset.id);

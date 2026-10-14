@@ -44,6 +44,7 @@ public class LedgerService {
     private static final Set<String> VIEWER_ACCESS_VALUES = Set.of("all", "own");
     private static final String STATS_VISIBILITY = "statsVisibility";
     private static final Set<String> STATS_VISIBILITY_VALUES = Set.of("admin", "all");
+    private static final String DAYS_VISIBILITY = "daysVisibility";
     private static final int DEFAULT_MATCH_COUNT = 5;
     private static final Set<String> CURRENCIES = Set.of("Rs ", "PKR ", "₹", "$", "£");
     private static final Sort BY_POSITION = Sort.by("position");
@@ -160,7 +161,7 @@ public class LedgerService {
                 parseIntOr(s.get("maxPerMatch"), 11),
                 Boolean.parseBoolean(s.getOrDefault("roundUp", "false")),
                 s.get("payBank"), s.get("payTitle"), s.get("payAccount"), s.getOrDefault(VIEWER_ACCESS, "all"),
-                s.getOrDefault(STATS_VISIBILITY, "admin"));
+                s.getOrDefault(STATS_VISIBILITY, "admin"), s.getOrDefault(DAYS_VISIBILITY, "admin"));
 
         return new LedgerDto("cricket-ledger", 3, Instant.now().toString(), playerDtos,
                 dayTotals(expenseMap), trainingDtos, expenseMap,
@@ -348,6 +349,9 @@ public class LedgerService {
             }
             if (s.statsVisibility() != null && STATS_VISIBILITY_VALUES.contains(s.statsVisibility())) {
                 settings.save(new Setting(STATS_VISIBILITY, s.statsVisibility()));
+            }
+            if (s.daysVisibility() != null && STATS_VISIBILITY_VALUES.contains(s.daysVisibility())) {
+                settings.save(new Setting(DAYS_VISIBILITY, s.daysVisibility()));
             }
             if (s.viewerAccess() != null && VIEWER_ACCESS_VALUES.contains(s.viewerAccess())) {
                 settings.save(new Setting(VIEWER_ACCESS, s.viewerAccess()));

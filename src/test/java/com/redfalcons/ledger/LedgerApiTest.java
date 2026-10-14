@@ -178,7 +178,7 @@ class LedgerApiTest {
         assertThat(send("GET", "/api/ledger", null, token).body()).contains(statsJson);
         // With stats shown to everyone, viewers get them too.
         assertThat(send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{\"m1\":true}}],\"settings\":{\"statsVisibility\":\"all\"}}", token).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/ledger", null, null).body()).contains(statsJson).contains("\"statsVisibility\":\"all\"");
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains(statsJson).contains("\"statsVisibility\":\"all\"").contains("\"daysVisibility\":\"admin\"");
         assertThat(send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{\"m1\":true}}],\"settings\":{\"statsVisibility\":\"admin\"}}", token).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"stats\":{}");
 
