@@ -2532,6 +2532,8 @@ ${tabRows.map(r => {
         ? { id: 'account', icon: SI.account, title: 'Security', note: 'Protect the admin sign-in.', top: true, cells: cell(tfaPanel(), 12) }
         : { id: 'account', icon: SI.profile, title: 'My profile', note: 'Your photo and cricket details.', top: true, cells: cell(photoPanel, 12) }
     ].filter(Boolean);
+    // Players and managers see their own profile first.
+    if (!admin) sections.unshift(...sections.splice(sections.findIndex(x => x.id === 'account'), 1));
 
     return `
       ${pageHead('Settings', admin ? 'Team, money, access and data — grouped by what they change.' : 'Your view of the Red Falcons ledger.')}
