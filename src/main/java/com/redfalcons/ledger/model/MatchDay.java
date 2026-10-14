@@ -26,16 +26,21 @@ public class MatchDay {
     /** Only finished matches charge their XI (league share and expenses). Null on older rows means no. */
     private Boolean finished;
 
+    /** A generated test match: never charged, and removed all at once by the admin. Null means a real match. */
+    @Column(name = "is_test")
+    private Boolean test;
+
     protected MatchDay() {
     }
 
-    public MatchDay(String id, int position, String date, String opponent, String venue, boolean finished) {
+    public MatchDay(String id, int position, String date, String opponent, String venue, boolean finished, boolean test) {
         this.id = id;
         this.position = position;
         this.date = date;
         this.opponent = opponent;
         this.venue = venue;
         this.finished = finished;
+        this.test = test;
     }
 
     public String getId() { return id; }
@@ -44,4 +49,5 @@ public class MatchDay {
     public String getOpponent() { return opponent; }
     public String getVenue() { return venue; }
     public boolean isFinished() { return Boolean.TRUE.equals(finished); }
+    public boolean isTest() { return Boolean.TRUE.equals(test); }
 }

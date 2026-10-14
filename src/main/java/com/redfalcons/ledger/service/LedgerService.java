@@ -184,7 +184,24 @@ public class LedgerService {
                 settingsDto, parseTwelfth(s.get(TWELFTH)), parseBatting(s), storedMatches(), storedStats());
     }
 
-    /** Replaces the whole ledger with the given state (admin only). */
+    /** Bowling styles a player may pick for themselves. */
+    public static final Set<String> BOWLING_STYLES =
+            Set.of("", "Fast", "Medium-fast", "Medium", "Off spin", "Leg spin", "Left-arm spin");
+
+    /** A player's own cricket details (batting hand, bowling arm and style); the rest of the profile is untouched. */
+    @Transactional
+    public boolean updateProfile(String playerId, String battingHand, String bowlingArm, String bowlingStyle) {
+        Player p = players.findById(playerId).orElse(null);
+        if (p == null) return false;
+        if (!(HANDS.contains(nz(battingHand)) || nz(battingHand).isEmpty())
+                || !(HANDS.contains(nz(bowlingArm)) || nz(bowlingArm).isEmpty())
+                || !BOWLING_STYLES.contains(nz(bowlingStyle))) {
+            throw new IllegalArgumentException("Pick one of the listed options.");
+        }
+        p.setProfile(nz(battingHand), nz(bowlingArm), nz(bowlingStyle), p.isKeeper(), p.isCaptain(), p.isViceCaptain(), p.getJersey());
+        return true;
+    }
+
     /**
      * Sets who plays (and the 12th man) for the matches named in {@code playing}; nothing else changes.
      * A match missing from {@code twelfth} has its 12th man cleared, and one missing from {@code batting}
@@ -228,6 +245,7 @@ public class LedgerService {
         if (out.length() <= SETTING_MAX) settings.save(new Setting(TWELFTH, out.toString()));
     }
 
+    /** Replaces the whole ledger with the given state (admin only). */
     @Transactional
     public LedgerDto save(LedgerDto in) {
         if (in == null || in.players() == null) {
@@ -248,12 +266,16 @@ public class LedgerService {
 
         // Without matches (an older app), keep the stored ones.
         List<MatchDto> matchIn = in.matches() != null ? in.matches() : storedMatches();
+        Map<String, Boolean> storedTest = new HashMap<>();
+        matches.findAll().forEach(m -> storedTest.put(m.getId(), m.isTest()));
         List<MatchDay> newMatches = new ArrayList<>();
         Set<String> matchIds = new LinkedHashSet<>();
         for (MatchDto m : matchIn) {
             if (m == null || blank(m.id()) || trainingIds.contains(m.id()) || !matchIds.add(m.id())) continue;
             newMatches.add(new MatchDay(m.id(), newMatches.size(), isoDate(m.date()), clip(m.opponent(), 80), clip(m.venue(), 80),
-                    Boolean.TRUE.equals(m.finished())));
+                    // A test match never charges anyone, so it can't be finished.
+                    Boolean.TRUE.equals(m.finished()) && !(m.test() != null ? m.test() : storedTest.getOrDefault(m.id(), false)),
+                    m.test() != null ? m.test() : storedTest.getOrDefault(m.id(), false)));
         }
 
         Set<String> validDays = new HashSet<>(trainingIds);
@@ -471,7 +493,7 @@ public class LedgerService {
 
     private List<MatchDto> storedMatches() {
         return matches.findAll(BY_POSITION).stream()
-                .map(m -> new MatchDto(m.getId(), m.getDate(), m.getOpponent(), m.getVenue(), m.isFinished())).toList();
+                .map(m -> new MatchDto(m.getId(), m.getDate(), m.getOpponent(), m.getVenue(), m.isFinished(), m.isTest())).toList();
     }
 
     private static Map<String, String> parseTwelfth(String stored) {

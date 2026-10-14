@@ -67,7 +67,7 @@ class LedgerApiTest {
                 // Payment account details stay null until the admin sets them.
                 .contains("\"payBank\":null,\"payTitle\":null,\"payAccount\":null")
                 .contains("\"desc\":\"Nets\"")
-                .contains("\"matches\":[{\"id\":\"m1\",\"date\":\"2026-10-24\",\"opponent\":\"Lahore Lions\",\"venue\":\"\",\"finished\":true},{\"id\":\"m2\",\"date\":\"\",\"opponent\":\"\",\"venue\":\"\",\"finished\":false}]");
+                .contains("\"matches\":[{\"id\":\"m1\",\"date\":\"2026-10-24\",\"opponent\":\"Lahore Lions\",\"venue\":\"\",\"finished\":true,\"test\":false},{\"id\":\"m2\",\"date\":\"\",\"opponent\":\"\",\"venue\":\"\",\"finished\":false,\"test\":false}]");
 
         // A version 2 file (amounts only) is read as one fund-paid expense per day.
         assertThat(loaded).contains("\"t1\":[{\"id\":\"legacy-t1\",\"item\":\"Amount spent\",\"amount\":\"1500\",\"paidBy\":\"\"}]");

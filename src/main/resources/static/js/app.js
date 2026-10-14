@@ -90,6 +90,7 @@
   let mgr = readStore(MGR_KEY);               // { token, name, status } once this browser asked to be a manager
   let mgrDraft = { phrase: '', edits: {} };   // the phrase being typed to ask, and phrases being edited by the admin
   let mgrList = null;                         // admin: manager requests and approved managers
+  let editedAt = 0;                           // when the admin last changed something on this screen
   let feed = null;                            // viewers and managers: what the admin has announced, newest first
   let inbox = null;                           // admin: { access, lineups } waiting for a decision
   let declineDraft = {};                      // admin: notes being written while declining, by 'kind:id'
@@ -416,7 +417,7 @@
     // (m1–m5); keep those that hold any attendance, expenses or 12th man.
     let matches;
     if (Array.isArray(d.matches)) {
-      matches = d.matches.filter(m => m && m.id).map(m => ({ id: m.id, date: m.date || '', opponent: m.opponent || '', venue: m.venue || '', finished: m.finished === true }));
+      matches = d.matches.filter(m => m && m.id).map(m => ({ id: m.id, date: m.date || '', opponent: m.opponent || '', venue: m.venue || '', test: m.test === true, finished: m.test !== true && m.finished === true }));
     } else {
       const used = id => players.some(p => p.att[id]) || (expenses[id] || []).length || (d.twelfth || {})[id];
       // These were charged as soon as they were marked, so they count as finished.
@@ -508,6 +509,7 @@
 
   // ---------- saving (admin) ----------
   function commit() {
+    editedAt = Date.now();
     render();
     if (!isAdmin()) return;
     setSaveStatus('pending');
@@ -871,7 +873,7 @@
     clearInterval(pollTimer);
     pollTimer = setInterval(async () => {
       if (archive || document.visibilityState !== 'visible') return;
-      if (isAdmin()) { loadInbox(); return; }
+      if (isAdmin()) { loadInbox(); syncProfiles(); return; }
       await refreshManager();
       if (isManager()) await loadMyLineups();
       await loadFeed();
@@ -1428,6 +1430,8 @@
     </section>`;
   }
 
+  const realMatchCount = () => state.matches.filter(m => !m.test).length;
+
   function viewSummary() {
     const t = C.totals(state, fmt);
     const stats = C.allStats(state);
@@ -1490,7 +1494,7 @@
       </section>` : '';
 
     return `
-      ${pageHead('Summary', `${state.players.length} player${state.players.length === 1 ? '' : 's'} · ${state.trainings.length} training${state.trainings.length === 1 ? '' : 's'} · ${state.matches.length} match${state.matches.length === 1 ? '' : 'es'}`,
+      ${pageHead('Summary', `${state.players.length} player${state.players.length === 1 ? '' : 's'} · ${state.trainings.length} training${state.trainings.length === 1 ? '' : 's'} · ${realMatchCount()} match${realMatchCount() === 1 ? '' : 'es'}`,
         admin && state.players.length ? `<div class="share-row">
           <button class="btn btn-gold" data-action="share-image">${IMAGE_ICON} Share as image</button>
           <button class="btn btn-whatsapp" data-action="share-team">${WA_ICON} Send as text</button>
@@ -1581,19 +1585,19 @@
       const share = s.n > 0 && s.amount > 0 ? `${fmt(s.share)} each` : '—';
       const tour = d.type === 'match' ? C.tournamentStats(state, stats) : null;
       const leagueEach = tour && tour.fee > 0 && s.n > 0 ? `<div class="amount league-each"><span>League share</span><strong>${fmt(C.round2(tour.perMatch / s.n))} each</strong></div>` : '';
-      const status = d.type === 'match' ? (d.finished
+      const status = d.test ? `<span class="match-status test">${icon('<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/>', 14)} Test match · never charged</span>` : d.type === 'match' ? (d.finished
         ? `<span class="match-status done">${icon('<path d="M20 6 9 17l-5-5"/>', 14)} Finished · charged</span>`
         : `<span class="match-status open">${icon('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', 14)} Not charged yet</span>`) : '';
-      const removable = admin && (d.type === 'match' || state.trainings.length > 1);
+      const removable = admin && !d.test && (d.type === 'match' || state.trainings.length > 1);
       return `<article class="day-card ${d.type}">
         <header>
-          <span class="day-kind">${d.type === 'match' ? 'Match' : 'Training'}</span>
+          <span class="day-kind">${d.test ? 'Test match' : d.type === 'match' ? 'Match' : 'Training'}</span>
           <h3>${d.label}</h3>
           ${removable ? `<button class="icon-btn danger" data-action="remove-${d.type}" data-id="${esc(d.id)}" aria-label="Remove ${d.label}">${X_ICON}</button>` : ''}
-          ${d.type === 'match' && !admin && matchInfo(d) ? `<p class="match-info">${esc(matchInfo(d))}</p>` : ''}
+          ${d.type === 'match' && (!admin || d.test) && matchInfo(d) ? `<p class="match-info">${esc(matchInfo(d))}</p>` : ''}
           ${status}
         </header>
-        ${d.type === 'match' && admin ? `<div class="match-fields">
+        ${d.type === 'match' && admin && !d.test ? `<div class="match-fields">
           <input class="field" type="date" value="${esc(d.date)}" data-input="match-date" data-id="${esc(d.id)}" aria-label="Match date">
           <input class="field" type="text" placeholder="Opponent" value="${esc(d.opponent)}" maxlength="80" data-input="match-opponent" data-id="${esc(d.id)}" data-focus="mopp-${esc(d.id)}" aria-label="Opponent">
           <input class="field" type="text" placeholder="Venue" value="${esc(d.venue)}" maxlength="80" data-input="match-venue" data-id="${esc(d.id)}" data-focus="mven-${esc(d.id)}" aria-label="Venue">
@@ -1613,7 +1617,8 @@
     const all = C.days(state);
     const folded = readStore(COLLAPSED_KEY) || {};
     const trainings = all.filter(d => d.type === 'training');
-    const matches = all.filter(d => d.type === 'match');
+    const matches = all.filter(d => d.type === 'match' && !d.test);
+    const tests = all.filter(d => d.test);
 
     return `
       ${pageHead('Days', 'Each day’s expenses are split among the players who attended. Whoever paid for an item gets it credited.',
@@ -1627,11 +1632,19 @@
       <section class="day-group ${folded.match ? 'folded' : ''}">
         <div class="group-row">
           ${groupHead('match', 'Matches', matches.length)}
-          ${admin ? `<button class="btn btn-gold" data-action="add-match">${icon('<path d="M12 5v14M5 12h14"/>', 18)} Add match</button>` : ''}
+          ${admin ? `<button class="btn btn-gold" data-action="add-match">${icon('<path d="M12 5v14M5 12h14"/>', 18)} Add match</button>
+          <button class="btn btn-ghost" data-action="add-test-matches" title="Adds 5 matches with a random playing XI and random stats, for trying the app out">${DICE_ICON} Add 5 test matches</button>` : ''}
         </div>
         ${folded.match ? '' : matches.length ? `<div class="day-grid matches">${matches.map(card).join('')}</div>`
           : `<p class="muted empty-matches">No matches yet.${admin ? ' Add one on match day.' : ''}</p>`}
-      </section>`;
+      </section>
+      ${tests.length ? `<section class="day-group ${folded.test ? 'folded' : ''}">
+        <div class="group-row">
+          ${groupHead('test', 'Test matches', tests.length)}
+          ${admin ? `<button class="btn btn-danger" data-action="remove-test-matches">${X_ICON} Delete test matches</button>` : ''}
+        </div>
+        ${folded.test ? '' : `<div class="day-grid matches">${tests.map(card).join('')}</div>`}
+      </section>` : ''}`;
   }
 
   // A Days section heading that folds its cards away (remembered on this device).
@@ -1771,7 +1784,9 @@
       ${rows.length ? `<div class="table-wrap"><table class="sheet-table"><thead><tr>${head.map((h, i) => `<th ${i === 0 ? 'class="st-name"' : ''}>${h}</th>`).join('')}</tr></thead>
         <tbody>${rows.join('')}</tbody></table></div>` : '<p class="muted">Nothing yet.</p>'}
     </section>`;
-    return `<div class="st-leaders">${leaders.map(l => `<div class="stat ${l.x ? 'pos' : ''}"><span>${l.label}</span>
+    const tests = state.matches.filter(m => m.test).length;
+    return `${tests ? `<p class="test-note">These totals include ${tests} generated test match${tests === 1 ? '' : 'es'}. Delete them from the Days tab when you are done trying things out.</p>` : ''}
+      <div class="st-leaders">${leaders.map(l => `<div class="stat ${l.x ? 'pos' : ''}"><span>${l.label}</span>
         <strong>${l.x ? l.x.v : '—'}</strong><small>${l.x ? esc(l.x.t.player.name) : (l.note || 'No one yet')}</small></div>`).join('')}</div>
       ${table('Batting', ['Player', 'M', 'Inns', 'Runs', 'Balls', 'SR', 'HS', 'Avg', '4s', '6s', '1s', '2s', '3s'], batting.map(t => `<tr>${name(t)}
         <td>${t.matches}</td><td>${t.innings}</td><td class="strong">${t.runs}</td><td>${t.balls}</td><td>${SR(t.runs, t.balls)}</td>
@@ -1820,7 +1835,51 @@
     } catch (e) { toast(e.message || 'Could not upload the photo.'); }
   }
 
+  // A player's own batting hand, bowling arm and bowling type save as soon as they are picked.
+  async function saveMyProfile(el) {
+    const me = myPlayer();
+    if (!me) return;
+    const key = { 'me-bat': 'battingHand', 'me-arm': 'bowlingArm', 'me-style': 'bowlingStyle' }[el.dataset.input];
+    if (!key) return;
+    const prev = me[key];
+    me[key] = el.value;
+    try {
+      const res = await fetch(`${API}/api/players/${encodeURIComponent(me.id)}/profile`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Viewer': me.id },
+        body: JSON.stringify({ battingHand: me.battingHand, bowlingArm: me.bowlingArm, bowlingStyle: me.bowlingStyle })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Could not save that.');
+      toast('Saved.');
+    } catch (e) {
+      me[key] = prev;
+      toast(e.message || 'Could not save that.');
+      render();
+    }
+  }
+
+  // Players change their own photo and cricket details; the admin's open screen picks those up
+  // without touching anything the admin is editing.
+  async function syncProfiles() {
+    if (!isAdmin() || saveTimer) return;
+    const started = Date.now();
+    let live;
+    try { live = await fetchLedger(); } catch { return; }
+    if (saveTimer || editedAt > started) return;
+    let changed = false;
+    live.players.forEach(lp => {
+      const p = findPlayer(lp.id);
+      if (!p) return;
+      ['battingHand', 'bowlingArm', 'bowlingStyle', 'photoAt'].forEach(k => { if (p[k] !== lp[k]) { p[k] = lp[k]; changed = true; } });
+    });
+    if (changed) render();
+  }
+
   // ---------- player profile ----------
+  const CAMERA_ICON = icon('<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>', 16);
+  const TROPHY_ICON = icon('<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/>', 14);
+  // The admin may change anyone's picture; everyone else only their own.
+  const canEditPhoto = p => !archive && (isAdmin() || (!!myPlayer() && myPlayer().id === p.id));
   const photoUrl = p => `${API}/api/players/${encodeURIComponent(p.id)}/photo?v=${encodeURIComponent(p.photoAt)}`;
   // A player's picture, or a red placeholder with a silhouette when none was uploaded.
   const avatar = (p, size = 44) => `<span class="avatar ${p.photoAt ? '' : 'ph'}" style="--s:${size}px">${p.photoAt
@@ -1830,12 +1889,12 @@
   const battingText = p => p.battingHand ? `${p.battingHand === 'left' ? 'Left' : 'Right'}-hand bat` : '—';
   const bowlingText = p => [p.bowlingArm ? `${p.bowlingArm === 'left' ? 'Left' : 'Right'}-arm` : '', p.bowlingStyle.toLowerCase()].filter(Boolean).join(' ') || '—';
 
-  function profileStats(p) {
+  function profileStats(p, played) {
     const t = C.leagueStats(state).find(x => x.player.id === p.id);
     if (!t || !t.matches) return '';
     const tile = (label, value) => `<div class="stat"><span>${label}</span><strong>${value}</strong></div>`;
     const bat = t.innings > 0 ? `<h3 class="sub">Batting</h3><div class="prof-tiles">
-        ${tile('Matches', t.matches)}${tile('Runs', t.runs)}${tile('Highest', t.high ? t.high.runs + (t.high.out ? '' : '*') : '—')}
+        ${tile('Matches', played)}${tile('Runs', t.runs)}${tile('Highest', t.high ? t.high.runs + (t.high.out ? '' : '*') : '—')}
         ${tile('Average', t.average == null ? '—' : t.average.toFixed(2))}${tile('Strike rate', SR(t.runs, t.balls))}
         ${tile('Fours', t.fours)}${tile('Sixes', t.sixes)}${tile('Innings', t.innings)}</div>` : '';
     const bowl = t.bowlBalls > 0 || t.conceded > 0 ? `<h3 class="sub">Bowling</h3><div class="prof-tiles">
@@ -1851,7 +1910,8 @@
     const p = state.players[idx];
     if (!p) return '';
     const admin = isAdmin();
-    const played = C.matches(state).filter(m => p.att[m.id]).length;
+    // A match only counts once the admin has finished it.
+    const played = C.matches(state).filter(m => m.finished && p.att[m.id]).length;
     const badges = [isCaptain(p) ? 'Captain' : '', p.viceCaptain ? 'Vice-captain' : '', isKeeper(p) ? 'Wicket-keeper' : '']
       .filter(Boolean).map(b => `<span class="prof-badge">${b}</span>`).join('');
     const editor = admin ? `<div class="prof-edit">
@@ -1878,22 +1938,25 @@
       </header>
       <div class="sheet-body">
         <div class="prof-card">
-          ${avatar(p, 112)}
+          ${canEditPhoto(p)
+            ? `<button class="avatar-btn" data-action="photo-pick" data-id="${esc(p.id)}" title="Change photo" aria-label="Change photo">${avatar(p, 112)}<span class="cam">${CAMERA_ICON}</span></button>`
+            : avatar(p, 112)}
           <div class="prof-main">
             <div class="prof-namerow"><h2 class="prof-name">${esc(p.name) || 'Unnamed'}</h2>
               <button class="icon-btn exp-btn" data-action="open-player" data-id="${esc(p.id)}" title="Expenses and payments" aria-label="Expense card for ${esc(p.name)}">${WALLET_ICON}</button></div>
             ${p.jersey ? `<span class="prof-jersey">#${esc(p.jersey)}</span>` : ''}
             <div class="prof-badges">${badges}</div>
             <span class="muted">${esc(p.role) || '—'}</span>
+            ${state.tournament.name ? `<span class="prof-tour">${TROPHY_ICON} ${esc(state.tournament.name)}${C.inTournament(p) ? '' : ' · not taking part'}</span>` : ''}
           </div>
         </div>
         <dl class="kv prof-kv">
           <dt>Batting</dt><dd>${battingText(p)}</dd>
           <dt>Bowling</dt><dd>${bowlingText(p)}</dd>
           <dt>Matches played</dt><dd>${played}</dd>
-          <dt>Tournament</dt><dd>${C.inTournament(p) ? 'Taking part' : 'Not taking part'}</dd>
+          <dt>Tournament</dt><dd>${state.tournament.name ? `${esc(state.tournament.name)} · ` : ''}${C.inTournament(p) ? 'Taking part' : 'Not taking part'}</dd>
         </dl>
-        ${profileStats(p)}
+        ${profileStats(p, played)}
         ${editor}
       </div>`;
   }
@@ -2042,12 +2105,19 @@
       </section>` : '';
 
     const me = !realAdmin() ? myPlayer() : null;
+    const pick = (input, label, prop, options) => `<label><span>${label}</span><select class="field select" data-input="${input}">
+      ${options.map(([v, l]) => `<option value="${esc(v)}" ${me[prop] === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`;
     const photoPanel = !realAdmin() ? `
       <section class="panel photo-panel">
-        <div class="panel-head"><h3>My photo</h3><p class="muted">Shown on your player profile for everyone in the team.</p></div>
+        <div class="panel-head"><h3>My profile</h3><p class="muted">Your photo and cricket details, shown on your player profile for everyone in the team.</p></div>
         ${me ? `<div class="photo-row">${avatar(me, 84)}<div class="photo-actions">
             <button class="btn btn-gold" data-action="photo-pick" data-id="${esc(me.id)}">${me.photoAt ? 'Change photo' : 'Upload photo'}</button>
-            ${me.photoAt ? `<button class="btn btn-ghost" data-action="photo-remove" data-id="${esc(me.id)}">Remove</button>` : ''}</div></div>`
+            ${me.photoAt ? `<button class="btn btn-ghost" data-action="photo-remove" data-id="${esc(me.id)}">Remove</button>` : ''}</div></div>
+          <div class="form-grid me-grid">
+            ${pick('me-bat', 'Batting hand', 'battingHand', [['', 'Not set'], ['right', 'Right-hand'], ['left', 'Left-hand']])}
+            ${pick('me-arm', 'Bowling arm', 'bowlingArm', [['', 'Not set'], ['right', 'Right-arm'], ['left', 'Left-arm']])}
+            ${pick('me-style', 'Bowling type', 'bowlingStyle', BOWL_STYLES.map(s => [s, s || 'Not set']))}
+          </div>`
           : '<p class="muted">Pick your name on the Summary page first, so the app knows which player you are.</p>'}
       </section>` : '';
 
@@ -2291,7 +2361,7 @@
     return `
       <header class="sheet-head ${d.type}">
         <div>
-          <span class="day-kind">${isMatch ? 'Match' : 'Training'}</span>
+          <span class="day-kind">${d.test ? 'Test match' : isMatch ? 'Match' : 'Training'}</span>
           <h2>${d.label}</h2>
           ${d.desc ? `<p class="muted">${esc(d.desc)}</p>` : ''}
           ${isMatch && matchInfo(d) ? `<p class="muted">${esc(matchInfo(d))}</p>` : ''}
@@ -2311,7 +2381,8 @@
           ${s.n > 0 ? `<button class="btn btn-gold" data-action="share-xi" data-id="${esc(d.id)}">${IMAGE_ICON} Share Playing XI</button>` : ''}
         </div>
         ${s.n > 0 ? '' : '<p class="muted xi-hint">Mark who’s playing below, or pick at random, to share the Playing XI picture.</p>'}` : ''}
-        ${isMatch ? finishBox(d, s) : ''}
+        ${isMatch && !d.test ? finishBox(d, s) : ''}
+        ${d.test ? '<p class="test-note">A generated test match: it never changes anyone’s balance or the league fee.</p>' : ''}
         ${isMatch ? leagueLine(d, s) : ''}
         ${twelfthId ? `<p class="twelfth-line">12th man: <strong>${esc(playerName(twelfthId))}</strong> · not charged for this match</p>` : ''}
         ${isMatch && s.n > 0 ? battingSection(d) : ''}
@@ -2615,6 +2686,20 @@
   // Matches that have an XI, 12th man or batting order; and how many stats entries exist.
   const xiCount = () => state.matches.filter(m => state.players.some(p => p.att[m.id]) || state.twelfth[m.id] || state.battingOrder[m.id]).length;
   const statCount = () => Object.values(state.stats).reduce((n, byPlayer) => n + Object.keys(byPlayer).length, 0);
+
+  // Takes matches out of the ledger along with everything recorded against them.
+  function dropMatches(ids) {
+    const gone = new Set(ids);
+    state.matches = state.matches.filter(m => !gone.has(m.id));
+    ids.forEach(id => {
+      delete state.expenses[id];
+      delete state.twelfth[id];
+      delete state.battingOrder[id];
+      delete state.stats[id];
+      state.players.forEach(p => { delete p.att[id]; });
+    });
+    if (sheet && gone.has(sheet.dayId)) sheet = null;
+  }
 
   function findMatch(id) { return C.matches(state).find(m => m.id === id); }
   function findPayment(el) {
@@ -3054,7 +3139,44 @@
       if (folded.match) { folded.match = false; writeStore(COLLAPSED_KEY, folded); }
       state.matches.push({ id: 'm' + rid(), date: today(), opponent: '', venue: '', finished: false });
       commit();
-      toast(`Match ${state.matches.length} added — set its date and opponent.`);
+      toast(`Match ${realMatchCount()} added — set its date and opponent.`);
+    },
+    // Five generated matches, each with a random playing XI, 12th man and stats, to try the app out.
+    // They are flagged as test matches: never charged, kept apart, and removed in one go.
+    async 'add-test-matches'() {
+      if (!isAdmin()) return;
+      const pool = state.players.filter(C.inTournament);
+      if (pool.length < 5) { toast('Add at least 5 players taking part in the league first.'); return; }
+      const old = state.matches.filter(m => m.test).length;
+      const ok = await confirmDialog('Add 5 test matches?',
+        `${old ? `The ${old} test matches already here are replaced. ` : ''}Each gets a random playing XI, 12th man and random stats. They never change anyone’s balance or the league fee, and you can delete them all with one button.`,
+        'Add test matches');
+      if (!ok) return;
+      dropMatches(state.matches.filter(m => m.test).map(m => m.id));
+      const folded = readStore(COLLAPSED_KEY) || {};
+      if (folded.test) { folded.test = false; writeStore(COLLAPSED_KEY, folded); }
+      for (let i = 0; i < 5; i++) {
+        const id = 'x' + rid();
+        const when = new Date(Date.now() - (5 - i) * 7 * 86400000).toLocaleDateString('en-CA');
+        state.matches.push({ id, date: when, opponent: `Test XI ${i + 1}`, venue: 'Test ground', finished: false, test: true });
+        const shuffled = shuffle(pool);
+        const xi = shuffled.slice(0, state.settings.maxPerMatch);
+        xi.forEach(p => { p.att[id] = true; });
+        if (shuffled[xi.length]) state.twelfth[id] = shuffled[xi.length].id;
+        state.stats[id] = randomStats(id);
+      }
+      commit();
+      toast('5 test matches added, with random XIs and stats.');
+    },
+    async 'remove-test-matches'() {
+      if (!isAdmin()) return;
+      const ids = state.matches.filter(m => m.test).map(m => m.id);
+      if (!ids.length) return;
+      const ok = await confirmDialog(`Delete all ${ids.length} test matches?`, 'Their playing XIs, 12th men, batting orders and stats are removed. Real matches and money are not touched.', 'Delete test matches', true);
+      if (!ok) return;
+      dropMatches(ids);
+      commit();
+      toast('Test matches deleted.');
     },
     async 'remove-match'(el) {
       const day = findMatch(el.dataset.id);
@@ -3285,6 +3407,7 @@
       const fn = el.dataset && inputs[el.dataset.input];
       if (el.id === 'add-names') { draftNames = el.value; return; }
       if (el.dataset && el.dataset.input === 'season-name') { seasonDraft = el.value; return; }
+      if (el.dataset && /^me-/.test(el.dataset.input || '')) { saveMyProfile(el); return; }
       if (el.dataset && el.dataset.input === 'decline-note') { declineDraft[el.dataset.key] = el.value; return; }
       if (el.dataset && el.dataset.input === 'mgr-phrase') { mgrDraft.phrase = el.value; return; }
       if (el.dataset && el.dataset.input === 'mgr-edit') { mgrDraft.edits[el.dataset.id] = el.value; render(); return; }

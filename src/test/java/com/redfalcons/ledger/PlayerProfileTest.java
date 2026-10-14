@@ -59,6 +59,17 @@ class PlayerProfileTest {
         send("PUT", "/api/ledger", saved.replace("\"left\"", "\"sideways\""), admin, null);
         assertThat(send("GET", "/api/ledger", null, null, null).body()).doesNotContain("sideways");
 
+        // A player sets their own batting hand, bowling arm and style; captain and keeper stay as the admin set them.
+        String mine = "{\"battingHand\":\"right\",\"bowlingArm\":\"left\",\"bowlingStyle\":\"Leg spin\"}";
+        assertThat(send("PUT", "/api/players/p1/profile", mine, null, null).statusCode()).isEqualTo(403);
+        assertThat(send("PUT", "/api/players/p1/profile", mine, null, "p2").statusCode()).isEqualTo(403);
+        assertThat(send("PUT", "/api/players/p1/profile", mine.replace("Leg spin", "Googly"), null, "p1").statusCode()).isEqualTo(400);
+        assertThat(send("PUT", "/api/players/p1/profile", mine, null, "p1").statusCode()).isEqualTo(200);
+        String after = send("GET", "/api/ledger", null, null, null).body();
+        assertThat(after).contains("\"battingHand\":\"right\"").contains("\"bowlingArm\":\"left\"").contains("\"bowlingStyle\":\"Leg spin\"")
+                .contains("\"captain\":true").contains("\"keeper\":true").contains("\"jersey\":\"56\"");
+        assertThat(send("PUT", "/api/players/p2/profile", mine, admin, null).statusCode()).isEqualTo(200);
+
         // Photos: only the admin, or a viewer for their own player; real image bytes only.
         byte[] jpeg = new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 1, 2, 3, 4};
         assertThat(sendBytes("PUT", "/api/players/p1/photo", jpeg, null, null).statusCode()).isEqualTo(403);

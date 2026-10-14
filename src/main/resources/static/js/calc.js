@@ -16,17 +16,23 @@
   const DEFAULT_MATCH_COUNT = 5;
 
   // Matches are added as they come ({ id, date, opponent, venue }), numbered in order.
+  // Generated test matches are numbered on their own ("Test 1") so they never shift the real match numbers.
   function matches(state) {
-    return (state.matches || []).map((m, i) => ({
-      id: m.id, label: 'Match ' + (i + 1), short: 'M' + (i + 1), type: 'match',
-      date: m.date || '', opponent: m.opponent || '', venue: m.venue || '', finished: m.finished === true
-    }));
+    let real = 0, test = 0;
+    return (state.matches || []).map(m => {
+      const isTest = m.test === true;
+      const n = isTest ? ++test : ++real;
+      return {
+        id: m.id, label: (isTest ? 'Test ' : 'Match ') + n, short: (isTest ? 'TM' : 'M') + n, type: 'match', test: isTest,
+        date: m.date || '', opponent: m.opponent || '', venue: m.venue || '', finished: !isTest && m.finished === true
+      };
+    });
   }
 
   // How many matches the league fee covers: the setting, or more if more were added.
   function leagueMatchCount(state) {
     const set = parseInt(state.tournament && state.tournament.matchCount, 10);
-    return Math.max(set > 0 ? set : DEFAULT_MATCH_COUNT, (state.matches || []).length);
+    return Math.max(set > 0 ? set : DEFAULT_MATCH_COUNT, (state.matches || []).filter(m => m.test !== true).length);
   }
 
   function days(state) {

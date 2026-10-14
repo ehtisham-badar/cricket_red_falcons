@@ -101,8 +101,11 @@ public class LineupService {
 
     /** "Match 2": matches are numbered by their order. */
     private String labelOf(String matchId) {
-        List<MatchDay> all = matches.findAll(org.springframework.data.domain.Sort.by("position"));
-        for (int i = 0; i < all.size(); i++) if (all.get(i).getId().equals(matchId)) return "Match " + (i + 1);
+        int real = 0, test = 0;
+        for (MatchDay m : matches.findAll(org.springframework.data.domain.Sort.by("position"))) {
+            if (m.isTest()) test++; else real++;
+            if (m.getId().equals(matchId)) return m.isTest() ? "Test " + test : "Match " + real;
+        }
         return "a match";
     }
 

@@ -74,4 +74,19 @@ class NotificationFeedTest {
         send("PUT", "/api/ledger", ledger(many.toString()), admin);
         assertThat(send("GET", "/api/notifications", null, null).body()).doesNotContain("Item0");
     }
+
+    @Test
+    void testMatchesAreFlaggedAndNeverFinished() throws Exception {
+        String admin = send("POST", "/api/login", "{\"name\":\"test-key\"}", null).body()
+                .replaceAll(".*\"token\":\"([0-9a-f]+)\".*", "$1");
+        String body = "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{\"x1\":true}}],\"trainings\":[{\"id\":\"t1\"}],"
+                + "\"matches\":[{\"id\":\"x1\",\"test\":true,\"finished\":true},{\"id\":\"m1\",\"finished\":true}]}";
+        assertThat(send("PUT", "/api/ledger", body, admin).statusCode()).isEqualTo(200);
+        String loaded = send("GET", "/api/ledger", null, null).body();
+        assertThat(loaded).contains("{\"id\":\"x1\",\"date\":\"\",\"opponent\":\"\",\"venue\":\"\",\"finished\":false,\"test\":true}")
+                .contains("\"id\":\"m1\",\"date\":\"\",\"opponent\":\"\",\"venue\":\"\",\"finished\":true,\"test\":false");
+        // A save that doesn't mention the flag keeps it.
+        send("PUT", "/api/ledger", body.replace("\"test\":true,", ""), admin);
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"finished\":false,\"test\":true");
+    }
 }

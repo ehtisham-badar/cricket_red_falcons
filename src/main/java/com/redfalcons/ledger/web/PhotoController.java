@@ -3,6 +3,7 @@ package com.redfalcons.ledger.web;
 import com.redfalcons.ledger.model.PlayerPhoto;
 import com.redfalcons.ledger.repo.PlayerPhotoRepository;
 import com.redfalcons.ledger.repo.PlayerRepository;
+import com.redfalcons.ledger.service.LedgerService;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -14,12 +15,12 @@ import java.time.Instant;
 import java.util.Map;
 
 /**
- * Player pictures. Anyone can see them; the admin may change any, and a viewer (or manager) only their own,
+ * Player pictures and each player's own cricket details. Anyone can see them; the admin may change any, and a viewer (or manager) only their own,
  * as the player they said they are. The app shrinks pictures before sending, and the server checks the bytes
  * really are a small JPEG, PNG or WebP.
  */
 @RestController
-@RequestMapping("/api/players/{id}/photo")
+@RequestMapping("/api/players/{id}")
 public class PhotoController {
 
     static final int MAX_BYTES = 300_000;
@@ -27,14 +28,16 @@ public class PhotoController {
     private final PlayerPhotoRepository photos;
     private final PlayerRepository players;
     private final AdminAuth auth;
+    private final LedgerService ledger;
 
-    public PhotoController(PlayerPhotoRepository photos, PlayerRepository players, AdminAuth auth) {
+    public PhotoController(PlayerPhotoRepository photos, PlayerRepository players, AdminAuth auth, LedgerService ledger) {
+        this.ledger = ledger;
         this.photos = photos;
         this.players = players;
         this.auth = auth;
     }
 
-    @GetMapping
+    @GetMapping("/photo")
     public ResponseEntity<byte[]> get(@PathVariable String id) {
         return photos.findById(id)
                 .map(p -> ResponseEntity.ok()
@@ -45,7 +48,7 @@ public class PhotoController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-    @PutMapping(consumes = MediaType.ALL_VALUE)
+    @PutMapping(value = "/photo", consumes = MediaType.ALL_VALUE)
     public ResponseEntity<?> put(@PathVariable String id,
                                  @RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token,
                                  @RequestHeader(value = LedgerController.VIEWER_HEADER, required = false) String viewer,
@@ -60,13 +63,32 @@ public class PhotoController {
         return ResponseEntity.ok(Map.of("photoAt", at));
     }
 
-    @DeleteMapping
+    @DeleteMapping("/photo")
     public ResponseEntity<?> delete(@PathVariable String id,
                                     @RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token,
                                     @RequestHeader(value = LedgerController.VIEWER_HEADER, required = false) String viewer) {
         if (!allowed(id, token, viewer)) return forbidden();
         if (photos.existsById(id)) photos.deleteById(id);
         return ResponseEntity.ok(Map.of("photoAt", ""));
+    }
+
+    public record ProfileBody(String battingHand, String bowlingArm, String bowlingStyle) {
+    }
+
+    /** A player's own batting hand, bowling arm and style. The admin may set them for anyone. */
+    @PutMapping("/profile")
+    public ResponseEntity<?> profile(@PathVariable String id,
+                                     @RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token,
+                                     @RequestHeader(value = LedgerController.VIEWER_HEADER, required = false) String viewer,
+                                     @RequestBody ProfileBody body) {
+        if (!allowed(id, token, viewer)) return forbidden();
+        try {
+            ledger.updateProfile(id, body == null ? null : body.battingHand(), body == null ? null : body.bowlingArm(),
+                    body == null ? null : body.bowlingStyle());
+        } catch (IllegalArgumentException e) {
+            return bad(e.getMessage());
+        }
+        return ResponseEntity.ok(Map.of("ok", true));
     }
 
     private boolean allowed(String id, String token, String viewer) {
