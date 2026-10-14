@@ -80,15 +80,15 @@ public class ManagerController {
         return Map.of("ok", true);
     }
 
-    public record LineupBody(String matchId, List<String> playing, String twelfth) {
+    public record LineupBody(String matchId, List<String> playing, String twelfth, List<String> batting) {
     }
 
     public record LineupRow(String id, String managerName, String matchId, List<String> playing, String twelfth,
-                            String status, String note, String createdAt, String decidedAt) {
+                            List<String> batting, String status, String note, String createdAt, String decidedAt) {
         static LineupRow of(LineupRequest r) {
             return new LineupRow(r.getId(), r.getManagerName(), r.getMatchId(),
                     r.getPlaying().isEmpty() ? List.of() : List.of(r.getPlaying().split(",")), r.getTwelfth(),
-                    r.getStatus(), r.getNote() == null ? "" : r.getNote(), r.getCreatedAt(), r.getDecidedAt());
+                    r.getBatting().isEmpty() ? List.of() : List.of(r.getBatting().split(",")), r.getStatus(), r.getNote() == null ? "" : r.getNote(), r.getCreatedAt(), r.getDecidedAt());
         }
     }
 
@@ -102,7 +102,8 @@ public class ManagerController {
         }
         try {
             return ResponseEntity.ok(LineupRow.of(lineups.submit(manager.get(), body == null ? null : body.matchId(),
-                    body == null ? null : body.playing(), body == null ? null : body.twelfth())));
+                    body == null ? null : body.playing(), body == null ? null : body.twelfth(),
+                    body == null ? null : body.batting())));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }

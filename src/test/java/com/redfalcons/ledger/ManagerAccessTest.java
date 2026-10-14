@@ -53,12 +53,21 @@ class ManagerAccessTest {
         String admin = field(send("POST", "/api/login", "{\"name\":\"test-key\"}", null, null).body(), "token");
         assertThat(send("PUT", "/api/ledger", STATE, admin, null).statusCode()).isEqualTo(200);
 
+        // Admin devices get a push for each request; other devices don't.
+        String adminDevice = "https://push.example/admin1", viewerDevice = "https://push.example/viewer1";
+        assertThat(send("POST", "/api/push/subscribe", "{\"endpoint\":\"" + adminDevice + "\"}", admin, null).statusCode()).isEqualTo(200);
+        assertThat(send("POST", "/api/push/subscribe", "{\"endpoint\":\"" + viewerDevice + "\"}", null, null).statusCode()).isEqualTo(200);
+
         // A phrase must be long enough, and can't be the admin key.
         assertThat(send("POST", "/api/manager/request", "{\"name\":\"Ali\",\"phrase\":\"short\"}", null, null).statusCode()).isEqualTo(400);
         assertThat(send("POST", "/api/manager/request", "{\"name\":\"Ali\",\"phrase\":\"test-key\"}", null, null).statusCode()).isEqualTo(400);
         String ask = send("POST", "/api/manager/request", "{\"name\":\"Ali\",\"phrase\":\"blue falcon rises\",\"label\":\"Phone\"}", null, null).body();
         String secret = field(ask, "token");
         assertThat(send("POST", "/api/manager/request", "{\"name\":\"Sam\",\"phrase\":\"Blue Falcon Rises\"}", null, null).statusCode()).isEqualTo(400);
+
+        String pendingUrl = "/api/push/pending?endpoint=";
+        assertThat(send("GET", pendingUrl + adminDevice, null, null, null).body()).contains("Manager access request").contains("Ali wants");
+        assertThat(send("GET", pendingUrl + viewerDevice, null, null, null).body()).isEqualTo("[]");
 
         // Pending: the phrase signs in as an ordinary viewer, and the admin sees the phrase.
         assertThat(send("GET", "/api/manager/status", null, null, null, secret).body()).contains("\"pending\"");
@@ -82,6 +91,8 @@ class ManagerAccessTest {
         assertThat(send("POST", "/api/manager/lineups", xi, null, null).statusCode()).isEqualTo(403);
         String sent = send("POST", "/api/manager/lineups", xi, null, mgr).body();
         assertThat(sent).contains("\"status\":\"pending\"");
+        assertThat(send("GET", pendingUrl + adminDevice, null, null, null).body()).contains("Lineup proposal").contains("Ali proposed the XI for Match 1 (1 playing)");
+        assertThat(send("GET", pendingUrl + viewerDevice, null, null, null).body()).isEqualTo("[]");
         String lineupId = field(sent, "id");
         assertThat(send("PUT", "/api/ledger", STATE, null, mgr).statusCode()).isEqualTo(403);
         assertThat(send("GET", "/api/ledger", null, null, null).body()).doesNotContain("\"m1\":true").contains("\"twelfth\":{}");
@@ -98,7 +109,16 @@ class ManagerAccessTest {
         assertThat(send("GET", "/api/manager/lineups", null, null, mgr).body()).contains("\"status\":\"declined\"").contains("Babar is injured");
         assertThat(send("GET", "/api/ledger", null, null, null).body()).doesNotContain("\"m1\":true");
 
-        // Approving applies it to the ledger.
+        // Approving applies it to the ledger, batting order included (players outside the XI are dropped).
+        String withOrder = "{\"matchId\":\"m1\",\"playing\":[\"p1\",\"p2\"],\"batting\":[\"p2\",\"ghost\",\"p1\"]}";
+        assertThat(send("PUT", "/api/ledger", STATE.replace("\"maxPerMatch\":1", "\"maxPerMatch\":11"), admin, null).statusCode()).isEqualTo(200);
+        String third = send("POST", "/api/manager/lineups", withOrder, null, mgr).body();
+        assertThat(third).contains("\"batting\":[\"p2\",\"p1\"]");
+        assertThat(send("POST", "/api/manager/lineups/" + field(third, "id") + "/approve", null, admin, null).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/ledger", null, null, null).body()).contains("\"battingOrder\":{\"m1\":[\"p2\",\"p1\"]}");
+        assertThat(send("PUT", "/api/ledger", STATE, admin, null).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/ledger", null, null, null).body()).contains("\"battingOrder\":{}");
+
         String second = send("POST", "/api/manager/lineups", xi, null, mgr).body();
         assertThat(send("POST", "/api/manager/lineups/" + field(second, "id") + "/approve", null, admin, null).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/ledger", null, null, null).body()).contains("\"att\":{\"m1\":true}").contains("\"twelfth\":{\"m1\":\"p2\"}");

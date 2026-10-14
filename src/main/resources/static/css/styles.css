@@ -1308,3 +1308,11 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
 .lineup-note.dirty { border-color: rgba(var(--red-rgb), .5); }
 .lineup-note.declined { border-color: rgba(var(--neg-rgb), .5); }
 .lineup-btns { display: flex; gap: 8px; }
+
+.bat-hint { margin: 0 0 8px; font-size: 13px; }
+.bat-grip { display: inline-grid; place-items: center; width: 28px; height: 38px; margin-left: -4px; color: var(--muted); cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.bat-grip:active { cursor: grabbing; }
+.bat-list li { position: relative; }
+.bat-list li.shifting { transition: transform .15s ease; }
+.bat-list li.dragging { z-index: 3; box-shadow: 0 10px 28px rgba(0,0,0,.35); opacity: .96; transition: none; }
+.bat-list li:has(.bat-grip) { grid-template-columns: 28px 34px minmax(0, 1fr) auto; gap: 8px; }

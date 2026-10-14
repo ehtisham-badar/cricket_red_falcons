@@ -35,6 +35,10 @@ public class LineupRequest {
     @Column(nullable = false, length = 64)
     private String twelfth;
 
+    /** Batting order (player ids, comma separated); empty or null means the default order. */
+    @Column(length = 2000)
+    private String batting;
+
     @Column(nullable = false, length = 16)
     private String status;
 
@@ -50,13 +54,15 @@ public class LineupRequest {
     protected LineupRequest() {
     }
 
-    public LineupRequest(String id, String managerId, String managerName, String matchId, String playing, String twelfth, String createdAt) {
+    public LineupRequest(String id, String managerId, String managerName, String matchId, String playing, String twelfth,
+                         String batting, String createdAt) {
         this.id = id;
         this.managerId = managerId;
         this.managerName = managerName;
         this.matchId = matchId;
         this.playing = playing;
         this.twelfth = twelfth;
+        this.batting = batting;
         this.status = PENDING;
         this.createdAt = createdAt;
     }
@@ -73,6 +79,7 @@ public class LineupRequest {
     public String getMatchId() { return matchId; }
     public String getPlaying() { return playing; }
     public String getTwelfth() { return twelfth; }
+    public String getBatting() { return batting == null ? "" : batting; }
     public String getStatus() { return status; }
     public String getNote() { return note; }
     public String getCreatedAt() { return createdAt; }

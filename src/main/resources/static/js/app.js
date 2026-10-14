@@ -540,6 +540,7 @@
       if (lp && lp.att[matchId]) p.att[matchId] = true; else delete p.att[matchId];
     });
     if (live.twelfth[matchId]) state.twelfth[matchId] = live.twelfth[matchId]; else delete state.twelfth[matchId];
+    if (live.battingOrder[matchId]) state.battingOrder[matchId] = live.battingOrder[matchId]; else delete state.battingOrder[matchId];
     render();
   }
 
@@ -765,10 +766,11 @@
         const now = state.players.filter(p => p.att[l.matchId]).map(p => p.id);
         const add = l.playing.filter(x => !now.includes(x)).map(playerName);
         const drop = now.filter(x => !l.playing.includes(x)).map(playerName);
-        title = `${esc(l.managerName)} proposes the XI for ${esc(match ? match.label : 'a match')}`;
+        title = `${esc(l.managerName)} proposes the lineup for ${esc(match ? match.label : 'a match')}`;
         sub = ago(it.at);
         detail = `<p class="note-detail"><strong>Playing (${l.playing.length}):</strong> ${l.playing.map(x => esc(playerName(x))).join(', ') || '—'}</p>
           <p class="note-detail"><strong>12th man:</strong> ${l.twelfth ? esc(playerName(l.twelfth)) : '—'}</p>
+          ${l.batting && l.batting.length ? `<p class="note-detail"><strong>Batting order:</strong> ${l.batting.map((x, i) => `${i + 1}. ${esc(playerName(x))}`).join(' · ')}</p>` : ''}
           <p class="note-detail muted">${add.length || drop.length ? [...add.map(n => `+ ${esc(n)}`), ...drop.map(n => `− ${esc(n)}`)].join(' · ') : 'Same XI as now.'}</p>`;
       }
       const declining = key in declineDraft;
@@ -1980,23 +1982,69 @@
 
   function battingSection(d) {
     const order = battingOrderOf(d.id);
-    const admin = isAdmin();
+    const edit = canPickXi(d);
     const UP = icon('<path d="m18 15-6-6-6 6"/>', 18);
     const DOWN = icon('<path d="m6 9 6 6 6-6"/>', 18);
+    const GRIP = icon('<circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/>', 18);
     return `<section class="bat">
       <h3 class="sub first">Batting order
-        ${admin && state.battingOrder[d.id] ? `<button class="chip small-chip" data-action="bat-reset" data-day="${esc(d.id)}">Reset</button>` : ''}</h3>
-      <ol class="bat-list">
-        ${order.map((p, i) => `<li class="${i < 2 ? 'opener' : ''}">
+        ${edit && state.battingOrder[d.id] ? `<button class="chip small-chip" data-action="bat-reset" data-day="${esc(d.id)}">Reset</button>` : ''}</h3>
+      ${edit ? '<p class="muted bat-hint">Drag a player by the handle to any position, or use the arrows.</p>' : ''}
+      <ol class="bat-list" data-day="${esc(d.id)}">
+        ${order.map((p, i) => `<li class="${i < 2 ? 'opener' : ''}" data-id="${esc(p.id)}">
+          ${edit ? `<span class="bat-grip" title="Drag to reorder" aria-hidden="true">${GRIP}</span>` : ''}
           <span class="bat-pos">${i + 1}</span>
           <span class="pname"><strong>${esc(p.name)}</strong><small>${i < 2 ? 'Opener' : esc(p.role) || '—'}</small></span>
-          ${admin ? `<span class="bat-moves">
+          ${edit ? `<span class="bat-moves">
             <button class="icon-btn" data-action="bat-move" data-day="${esc(d.id)}" data-id="${esc(p.id)}" data-dir="up" ${i === 0 ? 'disabled' : ''} aria-label="Move ${esc(p.name)} up">${UP}</button>
             <button class="icon-btn" data-action="bat-move" data-day="${esc(d.id)}" data-id="${esc(p.id)}" data-dir="down" ${i === order.length - 1 ? 'disabled' : ''} aria-label="Move ${esc(p.name)} down">${DOWN}</button>
           </span>` : ''}
         </li>`).join('')}
       </ol>
     </section>`;
+  }
+
+  // Drag a batter by the handle to any position (mouse or touch). Nothing re-renders until the drop.
+  function startBatDrag(e) {
+    const grip = e.target.closest('.bat-grip');
+    if (!grip || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    const li = grip.closest('li'), ol = li.parentElement, day = ol.dataset.day;
+    if (!canPickXi(findMatch(day))) return;
+    e.preventDefault();
+    const items = [...ol.children];
+    const from = items.indexOf(li);
+    const rects = items.map(x => x.getBoundingClientRect());
+    const step = rects[from].height + 6;
+    const startY = e.clientY;
+    let to = from;
+    grip.setPointerCapture(e.pointerId);
+    li.classList.add('dragging');
+    items.forEach(x => { if (x !== li) x.classList.add('shifting'); });
+    const move = ev => {
+      const dy = ev.clientY - startY;
+      li.style.transform = `translateY(${dy}px)`;
+      const centre = rects[from].top + rects[from].height / 2 + dy;
+      to = items.filter((x, i) => i !== from && rects[i].top + rects[i].height / 2 < centre).length;
+      items.forEach((x, i) => {
+        if (i === from) return;
+        const shift = from < to && i > from && i <= to ? -step : from > to && i >= to && i < from ? step : 0;
+        x.style.transform = shift ? `translateY(${shift}px)` : '';
+      });
+    };
+    const end = ev => {
+      grip.removeEventListener('pointermove', move);
+      grip.removeEventListener('pointerup', end);
+      grip.removeEventListener('pointercancel', end);
+      items.forEach(x => { x.style.transform = ''; x.classList.remove('dragging', 'shifting'); });
+      if (ev.type === 'pointercancel' || to === from) return;
+      const ids = battingOrderOf(day).map(p => p.id);
+      ids.splice(to, 0, ids.splice(from, 1)[0]);
+      state.battingOrder[day] = ids;
+      touchXi(day);
+    };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', end);
+    grip.addEventListener('pointercancel', end);
   }
 
   function leagueLine(d, s) {
@@ -2515,7 +2563,8 @@
       const matchId = el.dataset.id;
       const playing = state.players.filter(p => p.att[matchId]).map(p => p.id);
       try {
-        await api('POST', '/api/manager/lineups', { matchId, playing, twelfth: state.twelfth[matchId] || '' });
+        await api('POST', '/api/manager/lineups', { matchId, playing, twelfth: state.twelfth[matchId] || '',
+          batting: state.battingOrder[matchId] ? battingOrderOf(matchId).map(p => p.id) : [] });
         delete xiDirty[matchId];
         await revertMatch(matchId);
         await loadMyLineups();
@@ -2530,20 +2579,20 @@
       try { await revertMatch(el.dataset.id); } catch { render(); }
     },
     'bat-move'(el) {
-      if (!isAdmin()) return;
       const day = el.dataset.day;
+      if (!canPickXi(findMatch(day))) return;
       const order = battingOrderOf(day).map(p => p.id);
       const i = order.indexOf(el.dataset.id);
       const j = i + (el.dataset.dir === 'up' ? -1 : 1);
       if (i < 0 || j < 0 || j >= order.length) return;
       [order[i], order[j]] = [order[j], order[i]];
       state.battingOrder[day] = order;
-      commit();
+      touchXi(day);
     },
     'bat-reset'(el) {
-      if (!isAdmin()) return;
+      if (!canPickXi(findMatch(el.dataset.day))) return;
       delete state.battingOrder[el.dataset.day];
-      commit();
+      touchXi(el.dataset.day);
     },
     async 'finish-match'(el) {
       if (!isAdmin()) return;
@@ -3021,6 +3070,7 @@
   };
 
   function wireEvents() {
+    document.addEventListener('pointerdown', startBatDrag);
     document.addEventListener('click', e => {
       const el = e.target.closest('[data-action]');
       if (!el || el.disabled) return;

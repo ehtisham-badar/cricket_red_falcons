@@ -89,9 +89,18 @@ public class PushService {
      */
     @Transactional
     public int send(String title, String body, Collection<String> playerIds) {
+        return queue(subscriptions.findAll().stream()
+                .filter(s -> playerIds == null || playerIds.contains(s.getPlayerId())).toList(), title, body);
+    }
+
+    /** Like {@link #send} but only to devices signed in as the admin (manager requests and the like). */
+    @Transactional
+    public int sendToAdmins(String title, String body) {
+        return queue(subscriptions.findAll().stream().filter(PushSubscription::isAdmin).toList(), title, body);
+    }
+
+    private int queue(List<PushSubscription> targets, String title, String body) {
         String now = Instant.now().toString();
-        List<PushSubscription> targets = subscriptions.findAll().stream()
-                .filter(s -> playerIds == null || playerIds.contains(s.getPlayerId())).toList();
         for (PushSubscription s : targets) {
             messages.save(new PushMessage(UUID.randomUUID().toString(), s.getId(), clip(title, 80), clip(body, 300), now));
         }

@@ -38,13 +38,15 @@ public class ManagerAccessService {
     private final ManagerSessionRepository sessions;
     private final LineupRequestRepository lineups;
     private final AdminAuth adminAuth;
+    private final PushService push;
 
     public ManagerAccessService(ManagerAccessRepository repo, ManagerSessionRepository sessions,
-                                LineupRequestRepository lineups, AdminAuth adminAuth) {
+                                LineupRequestRepository lineups, AdminAuth adminAuth, PushService push) {
         this.repo = repo;
         this.sessions = sessions;
         this.lineups = lineups;
         this.adminAuth = adminAuth;
+        this.push = push;
     }
 
     /** A new pending request; returns the secret the browser keeps to check on it. */
@@ -57,6 +59,7 @@ public class ManagerAccessService {
         String secret = AdminAuth.randomToken();
         repo.save(new ManagerAccess(AdminAuth.randomToken().substring(0, 16), clip(name, "Guest"), clip(label, "Browser"),
                 clean, AdminAuth.hash(secret), Instant.now().toString()));
+        push.sendToAdmins("Manager access request", clip(name, "Someone") + " wants to be an app manager. Open the app to approve or decline.");
         return secret;
     }
 

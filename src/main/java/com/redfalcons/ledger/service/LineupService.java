@@ -29,18 +29,20 @@ public class LineupService {
     private final PlayerRepository players;
     private final SettingRepository settings;
     private final LedgerService ledger;
+    private final PushService push;
 
     public LineupService(LineupRequestRepository requests, MatchDayRepository matches, PlayerRepository players,
-                         SettingRepository settings, LedgerService ledger) {
+                         SettingRepository settings, LedgerService ledger, PushService push) {
         this.requests = requests;
         this.matches = matches;
         this.players = players;
         this.settings = settings;
         this.ledger = ledger;
+        this.push = push;
     }
 
     @Transactional
-    public LineupRequest submit(ManagerAccess manager, String matchId, List<String> playing, String twelfth) {
+    public LineupRequest submit(ManagerAccess manager, String matchId, List<String> playing, String twelfth, List<String> batting) {
         MatchDay match = matches.findById(matchId == null ? "" : matchId).orElse(null);
         if (match == null) throw new IllegalArgumentException("No such match.");
         if (match.isFinished()) throw new IllegalArgumentException("That match is finished, so its lineup is locked.");
@@ -51,10 +53,14 @@ public class LineupService {
         int max = intOr(settings.findById("maxPerMatch").map(Setting::getValue).orElse(null), 11);
         if (xi.size() > max) throw new IllegalArgumentException("A match can have at most " + max + " players.");
         String t = twelfth != null && known.contains(twelfth) && !xi.contains(twelfth) ? twelfth : "";
+        String bat = String.join(",", (batting == null ? List.<String>of() : batting).stream().distinct().filter(xi::contains).toList());
         requests.deleteAll(requests.findByManagerIdAndMatchIdAndStatus(manager.getId(), match.getId(), LineupRequest.PENDING));
         requests.flush();
-        return requests.save(new LineupRequest(AdminAuth.randomToken().substring(0, 16), manager.getId(), manager.getName(),
-                match.getId(), String.join(",", xi), t, Instant.now().toString()));
+        LineupRequest saved = requests.save(new LineupRequest(AdminAuth.randomToken().substring(0, 16), manager.getId(), manager.getName(),
+                match.getId(), String.join(",", xi), t, bat, Instant.now().toString()));
+        push.sendToAdmins("Lineup proposal", manager.getName() + " proposed the XI for " + labelOf(match.getId())
+                + " (" + xi.size() + " playing). Open the app to approve or decline.");
+        return saved;
     }
 
     /** A manager's own recent requests, newest first. */
@@ -78,7 +84,9 @@ public class LineupService {
             throw new IllegalArgumentException("That match is finished or gone. Reopen it first, or decline this request.");
         }
         List<String> xi = r.getPlaying().isEmpty() ? List.of() : Arrays.asList(r.getPlaying().split(","));
-        ledger.saveXi(Map.of(r.getMatchId(), xi), r.getTwelfth().isEmpty() ? Map.of() : Map.of(r.getMatchId(), r.getTwelfth()), true);
+        List<String> bat = r.getBatting().isEmpty() ? List.of() : Arrays.asList(r.getBatting().split(","));
+        ledger.saveXi(Map.of(r.getMatchId(), xi), r.getTwelfth().isEmpty() ? Map.of() : Map.of(r.getMatchId(), r.getTwelfth()),
+                Map.of(r.getMatchId(), bat), true);
         r.decide(LineupRequest.APPROVED, null, Instant.now().toString());
         return true;
     }
@@ -89,6 +97,13 @@ public class LineupService {
         if (r == null) return false;
         r.decide(LineupRequest.DECLINED, ManagerAccessService.clipNote(note), Instant.now().toString());
         return true;
+    }
+
+    /** "Match 2": matches are numbered by their order. */
+    private String labelOf(String matchId) {
+        List<MatchDay> all = matches.findAll(org.springframework.data.domain.Sort.by("position"));
+        for (int i = 0; i < all.size(); i++) if (all.get(i).getId().equals(matchId)) return "Match " + (i + 1);
+        return "a match";
     }
 
     private static int intOr(String v, int fallback) {

@@ -176,11 +176,13 @@ public class LedgerService {
     /** Replaces the whole ledger with the given state (admin only). */
     /**
      * Sets who plays (and the 12th man) for the matches named in {@code playing}; nothing else changes.
-     * A match missing from {@code twelfth} has its 12th man cleared. Finished matches already charged their
+     * A match missing from {@code twelfth} has its 12th man cleared, and one missing from {@code batting}
+     * goes back to the default batting order. Finished matches already charged their
      * XI, so only the admin may change those.
      */
     @Transactional
-    public void saveXi(Map<String, List<String>> playing, Map<String, String> twelfth, boolean admin) {
+    public void saveXi(Map<String, List<String>> playing, Map<String, String> twelfth,
+                       Map<String, List<String>> batting, boolean admin) {
         if (playing == null || playing.isEmpty()) return;
         Map<String, MatchDay> known = new HashMap<>();
         matches.findAll().forEach(m -> known.put(m.getId(), m));
@@ -191,6 +193,7 @@ public class LedgerService {
 
         Map<String, String> twelfthNow = parseTwelfth(settings.findById(TWELFTH).map(Setting::getValue).orElse(null));
         Map<String, String> sent = twelfth == null ? Map.of() : twelfth;
+        Map<String, List<String>> order = batting == null ? Map.of() : batting;
         for (Map.Entry<String, List<String>> e : playing.entrySet()) {
             MatchDay m = known.get(e.getKey());
             if (m == null || (m.isFinished() && !admin)) continue;
@@ -201,6 +204,10 @@ public class LedgerService {
                 if (xi.contains(p.getId())) p.getAttended().add(m.getId());
                 else p.getAttended().remove(m.getId());
             });
+            // A batting order lists only players in the XI, each once; none means the default order.
+            String batOrder = String.join(",", order.getOrDefault(m.getId(), List.of()).stream().distinct().filter(xi::contains).toList());
+            if (!batOrder.isEmpty() && batOrder.length() <= SETTING_MAX) settings.save(new Setting(BATTING + m.getId(), batOrder));
+            else settings.deleteById(BATTING + m.getId());
             String t = sent.get(m.getId());
             if (t != null && playerIds.contains(t) && !xi.contains(t)) twelfthNow.put(m.getId(), t);
             else twelfthNow.remove(m.getId());
