@@ -1602,7 +1602,8 @@
       return `<p class="nm-msg">${-ms < 4 * 3600000 ? 'It’s match time' : 'Awaiting the result'}</p>`;
     }
     const s = Math.floor(ms / 1000);
-    return `<div class="nm-blocks">${block(Math.floor(s / 86400), 'days')}${block(Math.floor(s / 3600) % 24, 'hours', true)}${block(Math.floor(s / 60) % 60, 'mins', true)}${block(s % 60, 'secs', true)}</div>
+    const sep = '<i class="nm-sep" aria-hidden="true">:</i>';
+    return `<div class="nm-blocks">${block(Math.floor(s / 86400), 'days')}${sep}${block(Math.floor(s / 3600) % 24, 'hours', true)}${sep}${block(Math.floor(s / 60) % 60, 'mins', true)}${sep}${block(s % 60, 'secs', true).replace('nm-block', 'nm-block secs')}</div>
       ${confirmed ? '' : '<p class="nm-sub">until match day · time to be confirmed</p>'}`;
   }
 
@@ -1667,25 +1668,47 @@
       </div>`;
   }
 
+  // The Summary's match-day poster: crest vs opponent, a scoreboard countdown, details and the XI if announced.
   function nextMatchCard() {
     if (!cardShown('showNextMatch')) return '';
     const m = upcomingFixtures()[0];
     if (!m) return '';
-    const when = m.date ? `${formatMatchDate(m.date)}` : 'Date to be confirmed';
-    const time = m.time ? fmtClock(m.time) : '';
-    const icon2 = d => icon(d, 16);
-    return `<section class="panel nm-card" data-nm="${esc(m.id)}">
-      <div class="nm-main">
-        <span class="day-kind">Next match ${hiddenNote('showNextMatch')}</span>
-        <h3>${m.label}${m.opponent ? ` · vs ${esc(m.opponent)}` : ''}</h3>
-        <ul class="nm-meta">
-          <li>${icon2('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>')} ${esc(when)}</li>
-          <li>${icon2('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>')} ${time ? esc(time) : '<span class="nm-tbc">Time to be confirmed</span>'}</li>
-          ${m.venue ? `<li>${icon2('<path d="M12 22s7-6.5 7-12a7 7 0 0 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/>')} ${esc(m.venue)}</li>` : ''}
-        </ul>
-        <button class="btn btn-gold nm-details" data-action="open-scorecard" data-id="${esc(m.id)}">See details</button>
+    const ic = (d, n = 16) => icon(d, n);
+    const days = m.date ? dayDiff(m.date) : null;
+    const status = days == null ? 'Date to be confirmed' : days === 0 ? 'Match day!' : days === 1 ? 'Tomorrow' : `In ${days} days`;
+    const opp = (m.opponent || '').trim();
+    const initials = opp ? opp.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() : '?';
+    const xi = state.players.filter(p => p.att[m.id]);
+    const chips = [
+      `<span class="nm-chip">${ic('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>')} ${esc(m.date ? formatMatchDate(m.date) : 'Date to be confirmed')}</span>`,
+      `<span class="nm-chip ${m.time ? '' : 'tbc'}">${ic('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>')} ${m.time ? esc(fmtClock(m.time)) : 'Time to be confirmed'}</span>`,
+      m.venue ? `<span class="nm-chip">${ic('<path d="M12 22s7-6.5 7-12a7 7 0 0 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/>')} ${esc(m.venue)}</span>` : ''
+    ].join('');
+    const squad = xi.length
+      ? `<div class="nm-xi"><span class="nm-xi-faces">${xi.slice(0, 11).map(p => `<span title="${esc(p.name)}">${avatar(p, 34)}</span>`).join('')}</span>
+          <span class="nm-xi-text"><strong>Playing XI announced</strong><small>${xi.length} player${xi.length === 1 ? '' : 's'}${state.twelfth[m.id] ? ' + 12th man' : ''}</small></span></div>`
+      : `<div class="nm-xi none">${ic('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>', 18)}<span class="nm-xi-text"><strong>XI not announced yet</strong><small>Watch this space before match day</small></span></div>`;
+    return `<section class="panel nm-card ${days === 0 ? 'today' : ''}" data-nm="${esc(m.id)}">
+      <span class="nm-sweep" aria-hidden="true"></span>
+      <div class="nm-top">
+        <span class="nm-kicker">${ic('<path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 14.4 7.2 16.9l.9-5.4L4.2 7.7l5.4-.8z"/>', 14)} Next match · ${m.label} ${hiddenNote('showNextMatch')}</span>
+        <span class="nm-status">${esc(status)}</span>
+      </div>
+      <p class="nm-league">${esc(leagueName())}</p>
+      <div class="nm-face">
+        <div class="nm-team us"><span class="nm-badge crest"><img src="img/logo.jpeg" alt=""></span><strong>Red Falcons</strong></div>
+        <div class="nm-vs"><span>VS</span></div>
+        <div class="nm-team them"><span class="nm-badge opp">${esc(initials)}</span><strong>${opp ? esc(opp) : 'Opponent TBC'}</strong></div>
       </div>
       <div class="nm-count" data-id="${esc(m.id)}">${countdownHtml(m)}</div>
+      <div class="nm-chips">${chips}</div>
+      <div class="nm-foot">
+        ${squad}
+        <div class="nm-actions">
+          ${m.venue ? `<a class="btn btn-ghost" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(m.venue)}" target="_blank" rel="noopener">${ic('<path d="m3 11 19-9-9 19-2-8-8-2z"/>', 18)} Directions</a>` : ''}
+          <button class="btn btn-gold nm-details" data-action="open-scorecard" data-id="${esc(m.id)}">See details</button>
+        </div>
+      </div>
     </section>`;
   }
 
