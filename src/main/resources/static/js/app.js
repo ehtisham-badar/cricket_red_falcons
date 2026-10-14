@@ -1467,8 +1467,7 @@
         <span class="pname"><strong>${esc(p.name) || '<em>Unnamed</em>'}</strong><small>${esc(p.role) || '—'}${C.inTournament(p) ? '' : ' · not in tournament'}${adv > 0 ? ` · <span class="adv-due">advance ${fmt(adv)}</span>` : ''}</small></span>
         ${shown ? `<span class="pnet ${netClass(c.net)}"><strong>${fmtNet(c.net)}</strong><small>${netText(c.net)}</small></span>` : '<span class="pnet zero"><small>Private</small></span>'}
       </button>`;
-      const exp = `<button class="icon-btn exp-btn" data-action="open-player" data-id="${esc(p.id)}" aria-label="Expense card for ${esc(p.name)}" title="Expenses and payments">${WALLET_ICON}</button>`;
-      return `<div class="prow-wrap">${row}${exp}</div>`;
+      return row;
     }).join('');
 
     // Matches the admin hasn't finished yet stay off the sheet.
