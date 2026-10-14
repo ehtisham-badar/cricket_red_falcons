@@ -482,7 +482,9 @@
         payAccount: s.payAccount != null ? s.payAccount : DEFAULT_PAY_TO.payAccount,
         viewerAccess: s.viewerAccess === 'own' ? 'own' : 'all',
         statsVisibility: s.statsVisibility === 'all' ? 'all' : 'admin',
-        daysVisibility: s.daysVisibility === 'all' ? 'all' : 'admin'
+        daysVisibility: s.daysVisibility === 'all' ? 'all' : 'admin',
+        showNextMatch: s.showNextMatch !== false,
+        showFixtures: s.showFixtures === true
       }
     };
   }
@@ -1551,23 +1553,83 @@
       .filter(m => !m.date || dayDiff(m.date) >= 0);
   }
 
-  // How long to go. Without a confirmed time it counts days; with one it counts down live.
+  // How long to go, live to the second. Without a confirmed time it counts down to the start of match day.
   function countdownHtml(m) {
-    const block = (n, label) => `<div class="nm-block"><strong>${n}</strong><span>${label}</span></div>`;
+    const block = (n, label, pad) => `<div class="nm-block"><strong>${pad ? String(n).padStart(2, '0') : n}</strong><span>${label}</span></div>`;
     if (!m.date) return '<p class="nm-msg">Date to be confirmed</p>';
-    if (m.time) {
-      const ms = new Date(`${m.date}T${m.time}:00`) - new Date();
-      if (ms <= 0) return `<p class="nm-msg">${-ms < 4 * 3600000 ? 'It’s match time' : 'Awaiting the result'}</p>`;
-      const mins = Math.floor(ms / 60000);
-      return `<div class="nm-blocks">${block(Math.floor(mins / 1440), 'days')}${block(Math.floor(mins / 60) % 24, 'hours')}${block(mins % 60, 'mins')}</div>`;
+    const confirmed = !!m.time;
+    const ms = new Date(`${m.date}T${m.time || '00:00'}:00`) - new Date();
+    if (ms <= 0) {
+      if (!confirmed) return '<div class="nm-blocks"><div class="nm-block wide"><strong>Today</strong><span>match day</span></div></div>';
+      return `<p class="nm-msg">${-ms < 4 * 3600000 ? 'It’s match time' : 'Awaiting the result'}</p>`;
     }
-    const d = dayDiff(m.date);
-    if (d <= 0) return '<div class="nm-blocks"><div class="nm-block wide"><strong>Today</strong><span>match day</span></div></div>';
-    if (d === 1) return '<div class="nm-blocks"><div class="nm-block wide"><strong>Tomorrow</strong><span>match day</span></div></div>';
-    return `<div class="nm-blocks">${block(d, d === 1 ? 'day to go' : 'days to go')}</div>`;
+    const s = Math.floor(ms / 1000);
+    return `<div class="nm-blocks">${block(Math.floor(s / 86400), 'days')}${block(Math.floor(s / 3600) % 24, 'hours', true)}${block(Math.floor(s / 60) % 60, 'mins', true)}${block(s % 60, 'secs', true)}</div>
+      ${confirmed ? '' : '<p class="nm-sub">until match day · time to be confirmed</p>'}`;
+  }
+
+  // The admin decides in Settings whether players see these two cards; the admin always sees them.
+  const cardShown = key => state.settings[key] || realAdmin();
+  const hiddenNote = key => !state.settings[key] ? '<span class="card-hidden">Hidden from players</span>' : '';
+
+  // Which stats to show for a match: its own, or (until real ones are added) the first test match's, as a sample.
+  function scorecardSource(m) {
+    const has = id => state.stats[id] && Object.keys(state.stats[id]).length > 0;
+    if (has(m.id)) return { id: m.id, sample: null };
+    const test = C.matches(state).find(x => x.test && has(x.id));
+    return test ? { id: test.id, sample: test } : null;
+  }
+
+  // A scorecard in the usual cricket layout: batting, bowling and fielding for the Red Falcons.
+  function sheetScorecard() {
+    const m = C.matches(state).find(x => x.id === sheet.id);
+    if (!m) return '';
+    const src = scorecardSource(m);
+    const name = p => `${esc(p.name)}${isCaptain(p) ? ' (c)' : ''}${isKeeper(p) ? ' †' : ''}`;
+    const head = `<header class="sheet-head">
+        <div><span class="day-kind">Scorecard</span><h2>Red Falcons v ${m.opponent ? esc(m.opponent) : 'TBC'}</h2>
+          <p class="muted">${esc(matchInfo(m)) || m.label}</p></div>
+        <button class="icon-btn" data-action="close-sheet" aria-label="Close">${X_ICON}</button>
+      </header>`;
+    if (!src) {
+      return `${head}<div class="sheet-body"><p class="muted center">${statsVisible() ? 'No scorecard yet — it appears once the match stats are added.' : 'The scorecard hasn’t been shared with players yet.'}</p></div>`;
+    }
+    const order = battingOrderOf(src.id);
+    const rows = order.map(p => ({ p, e: C.statOf(state, src.id, p.id) }));
+    const batters = rows.filter(r => C.batted(r.e));
+    const dnb = order.filter(p => !batters.some(r => r.p.id === p.id));
+    const runs = batters.reduce((s, r) => s + C.runsOf(r.e), 0);
+    const balls = batters.reduce((s, r) => s + r.e.balls, 0);
+    const outs = batters.filter(r => r.e.out).length;
+    const bowlers = rows.filter(r => C.bowled(r.e));
+    const catchers = rows.filter(r => r.e.catches > 0);
+    const batRows = batters.map(r => `<tr><td class="sc-name"><strong>${name(r.p)}</strong><small>${r.e.out ? 'out' : 'not out'}</small></td>
+      <td class="sc-main">${C.runsOf(r.e)}</td><td>${r.e.balls}</td><td>${r.e.fours}</td><td>${r.e.sixes}</td><td>${SR(C.runsOf(r.e), r.e.balls)}</td></tr>`).join('');
+    const bowlRows = bowlers.map(r => `<tr><td class="sc-name"><strong>${name(r.p)}</strong></td>
+      <td>${C.oversOf(r.e.bowlBalls)}</td><td>${C.concededOf(r.e)}</td><td class="sc-main">${r.e.wickets}</td><td>${ECON(C.concededOf(r.e), r.e.bowlBalls)}</td><td>${r.e.wides}</td><td>${r.e.noBalls}</td></tr>`).join('');
+    return `${head}
+      <div class="sheet-body sc">
+        ${src.sample ? `<p class="sc-sample">Sample scorecard, taken from ${src.sample.label}. It is replaced by ${m.label}’s own stats once they are added.</p>` : ''}
+        <div class="sc-title"><h3>Red Falcons innings</h3><strong>${runs}/${outs} <small>(${C.oversOf(balls)} ov)</small></strong></div>
+        <div class="table-wrap"><table class="sc-table">
+          <thead><tr><th class="sc-name">Batter</th><th>R</th><th>B</th><th>4s</th><th>6s</th><th>SR</th></tr></thead>
+          <tbody>${batRows || '<tr><td colspan="6" class="muted">Nobody batted.</td></tr>'}
+            <tr class="sc-extras"><td class="sc-name">Extras</td><td colspan="5">not recorded</td></tr>
+            <tr class="sc-total"><td class="sc-name">Total</td><td class="sc-main">${runs}</td><td colspan="4">${outs} wkts · ${C.oversOf(balls)} overs</td></tr></tbody>
+        </table></div>
+        ${dnb.length ? `<p class="sc-dnb"><strong>Did not bat:</strong> ${dnb.map(name).join(', ')}</p>` : ''}
+        <div class="sc-title"><h3>Red Falcons bowling</h3></div>
+        <div class="table-wrap"><table class="sc-table">
+          <thead><tr><th class="sc-name">Bowler</th><th>O</th><th>R</th><th>W</th><th>Econ</th><th>Wd</th><th>NB</th></tr></thead>
+          <tbody>${bowlRows || '<tr><td colspan="7" class="muted">No bowling recorded.</td></tr>'}</tbody>
+        </table></div>
+        ${catchers.length ? `<p class="sc-dnb"><strong>Catches:</strong> ${catchers.map(r => `${name(r.p)} (${r.e.catches})`).join(', ')}</p>` : ''}
+        <p class="muted sc-note">Totals are the batters’ runs. The opposition’s innings, extras and fall of wickets aren’t recorded.</p>
+      </div>`;
   }
 
   function nextMatchCard() {
+    if (!cardShown('showNextMatch')) return '';
     const m = upcomingFixtures()[0];
     if (!m) return '';
     const when = m.date ? `${formatMatchDate(m.date)}` : 'Date to be confirmed';
@@ -1575,13 +1637,14 @@
     const icon2 = d => icon(d, 16);
     return `<section class="panel nm-card" data-nm="${esc(m.id)}">
       <div class="nm-main">
-        <span class="day-kind">Next match</span>
+        <span class="day-kind">Next match ${hiddenNote('showNextMatch')}</span>
         <h3>${m.label}${m.opponent ? ` · vs ${esc(m.opponent)}` : ''}</h3>
         <ul class="nm-meta">
           <li>${icon2('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>')} ${esc(when)}</li>
           <li>${icon2('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>')} ${time ? esc(time) : '<span class="nm-tbc">Time to be confirmed</span>'}</li>
           ${m.venue ? `<li>${icon2('<path d="M12 22s7-6.5 7-12a7 7 0 0 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/>')} ${esc(m.venue)}</li>` : ''}
         </ul>
+        <button class="btn btn-gold nm-details" data-action="open-scorecard" data-id="${esc(m.id)}">See details</button>
       </div>
       <div class="nm-count" data-id="${esc(m.id)}">${countdownHtml(m)}</div>
     </section>`;
@@ -1589,6 +1652,7 @@
 
   // A month grid with every match marked, and the upcoming ones listed underneath.
   function fixturesPanel() {
+    if (!cardShown('showFixtures')) return '';
     const real = C.matches(state).filter(m => !m.test && m.date);
     const upcoming = upcomingFixtures();
     if (!real.length && !upcoming.length) return '';
@@ -1615,7 +1679,7 @@
     const list = upcoming.length > 1 ? `<ul class="fx-list">${upcoming.map(x => `<li><span class="fx-date">${x.date ? esc(formatDate(x.date).replace(/ \d{4}$/, '')) : 'TBC'}</span>
         <span class="fx-what"><strong>${x.label}${x.opponent ? ` · vs ${esc(x.opponent)}` : ''}</strong><small>${x.time ? esc(fmtClock(x.time)) : 'Time to be confirmed'}${x.venue ? ` · ${esc(x.venue)}` : ''}</small></span></li>`).join('')}</ul>` : '';
     return `<section class="panel fx-panel">
-      <div class="fx-head"><h3>Fixtures</h3>
+      <div class="fx-head"><h3>Fixtures ${hiddenNote('showFixtures')}</h3>
         <span class="fx-nav"><button class="icon-btn" data-action="cal-prev" aria-label="Previous month">${icon('<path d="m15 18-6-6 6-6"/>', 18)}</button>
           <button class="chip" data-action="cal-today">${esc(monthName)}</button>
           <button class="icon-btn" data-action="cal-next" aria-label="Next month">${icon('<path d="m9 18 6-6-6-6"/>', 18)}</button></span></div>
@@ -1631,7 +1695,7 @@
       const m = C.matches(state || { matches: [], trainings: [] }).find(x => x.id === el.dataset.id);
       if (m) el.innerHTML = countdownHtml(m);
     });
-  }, 30000);
+  }, 1000);
 
   const realMatchCount = () => state.matches.filter(m => !m.test && matchVisible(m)).length;
 
@@ -2321,6 +2385,23 @@
       { key: 'daysVisibility', label: 'Days', path: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' },
       { key: 'statsVisibility', label: 'Stats', path: '<path d="M18 20V10M12 20V4M6 20v-6"/>' }
     ];
+    const cardRows = [
+      { key: 'showNextMatch', label: 'Next match card', note: 'The countdown and “See details” on the Summary screen', path: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>' },
+      { key: 'showFixtures', label: 'Fixtures calendar', note: 'The month calendar of matches on the Summary screen', path: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' }
+    ];
+    const cardsPanel = admin ? `
+      <section class="panel">
+        <div class="panel-head"><h3>Summary cards</h3><p class="muted">Show or hide these for all players. You always see them, marked “Hidden from players”.</p></div>
+        ${cardRows.map(r => {
+          const on = !!s[r.key];
+          return `<div class="pref switch-row">
+            <span class="sw-ico">${icon(r.path, 18)}</span>
+            <span class="sw-text">${r.label}<small class="muted">${on ? 'Shown to players' : 'Hidden from players'}</small></span>
+            <button class="switch ${on ? 'on' : ''}" role="switch" aria-checked="${on}" data-action="set-summary-card" data-key="${r.key}" aria-label="Show ${r.label} to players"><span></span></button>
+          </div>`;
+        }).join('')}
+      </section>` : '';
+
     const statsPanel = admin ? `
       <section class="panel">
         <div class="panel-head"><h3>Tabs for players</h3><p class="muted">Choose which tabs view-only players can open. You always see all of them.</p></div>
@@ -2392,7 +2473,7 @@ ${tabRows.map(r => {
       { id: 'team', icon: SI.team, title: 'Team & payments', note: admin ? 'Where players pay and how shares are worked out.' : 'Where to send your payments.',
         cells: cell(payPanel, 6) + cell(prefs, 6) },
       admin && { id: 'access', icon: SI.access, title: 'Who can see what', note: 'What players see when they sign in with their name.',
-        cells: cell(accessPanel, 6) + cell(statsPanel, 6) + cell(managerPanel(), 12) },
+        cells: cell(accessPanel, 6) + cell(statsPanel, 6) + cell(cardsPanel, 12) + cell(managerPanel(), 12) },
       !realAdmin() && !archive && { id: 'manager', icon: SI.manager, title: 'App manager', note: 'Help the admin pick the playing XI.', top: true,
         cells: cell(managerRequestPanel(), 12) },
       { id: 'notify', icon: SI.notify, title: 'Notifications', note: realAdmin() ? 'Turn them on for this device, and message the team.' : 'Turn them on for this device.', top: true,
@@ -2429,6 +2510,7 @@ ${tabRows.map(r => {
     if (sheet.type === 'player') body = sheetPlayer();
     if (sheet.type === 'profile') body = sheetProfile();
     if (sheet.type === 'inbox') body = sheetInbox();
+    if (sheet.type === 'scorecard') body = sheetScorecard();
     if (sheet.type === 'feed') body = sheetFeed();
     if (!body) { sheet = null; return ''; }
     return `<div class="sheet-backdrop" data-action="close-sheet"></div>
@@ -3024,6 +3106,7 @@ ${tabRows.map(r => {
       try { await api('DELETE', '/api/announcements/' + encodeURIComponent(a.id)); } catch (e) { toast(e.message || 'Could not delete it.'); }
       await loadAnnouncements();
     },
+    'open-scorecard'(el) { sheet = { type: 'scorecard', id: el.dataset.id }; render(); },
     'cal-prev'() { calMonth = calMonth.m === 0 ? { y: calMonth.y - 1, m: 11 } : { y: calMonth.y, m: calMonth.m - 1 }; render(); },
     'cal-next'() { calMonth = calMonth.m === 11 ? { y: calMonth.y + 1, m: 0 } : { y: calMonth.y, m: calMonth.m + 1 }; render(); },
     'cal-today'() { calMonth = null; render(); },
@@ -3385,6 +3468,13 @@ ${tabRows.map(r => {
       // On phones the section menu sticks under the header, so leave room for both.
       const offset = window.innerWidth <= 960 ? 140 : 90;
       if (target) window.scrollTo({ top: target.getBoundingClientRect().top + window.scrollY - offset, behavior: 'smooth' });
+    },
+    'set-summary-card'(el) {
+      const key = el.dataset.key;
+      if (!isAdmin() || !['showNextMatch', 'showFixtures'].includes(key)) return;
+      state.settings[key] = !state.settings[key];
+      commit();
+      toast(`${key === 'showNextMatch' ? 'Next match card' : 'Fixtures calendar'} is now ${state.settings[key] ? 'shown to players' : 'hidden from players'}.`);
     },
     'set-tab-visibility'(el) {
       if (!isAdmin()) return;
