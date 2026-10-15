@@ -43,6 +43,15 @@
     'Everyone in the squad': 'اسکواڈ میں سب', 'The squad': 'اسکواڈ',
     'Pick your name from the squad and you can edit your details.': 'اسکواڈ سے اپنا نام چنیں تاکہ آپ اپنی تفصیل بدل سکیں۔',
 
+    'Profiles': 'پروفائلز', 'Not updated yet': 'ابھی اپ ڈیٹ نہیں ہوئی', 'Updated': 'اپ ڈیٹ شدہ', 'Not updated': 'اپ ڈیٹ نہیں', 'Update profile': 'پروفائل اپ ڈیٹ کریں',
+    'Ask everyone to update': 'سب سے اپ ڈیٹ کرنے کو کہیں', 'Predictions': 'پیشگوئیاں', 'No prediction yet': 'ابھی پیشگوئی نہیں', 'Nobody': 'کوئی نہیں',
+    'Red Falcons win': 'ریڈ فالکنز جیتیں گے', '✓ Right': '✓ درست', '✗ Wrong': '✗ غلط',
+    'Tap a name to see it.': 'دیکھنے کے لیے نام پر ٹیپ کریں۔',
+
+    'Send squad list to management': 'انتظامیہ کو اسکواڈ کی فہرست بھیجیں', 'Squad list for management': 'انتظامیہ کے لیے اسکواڈ کی فہرست',
+    'Crop your photo': 'اپنی تصویر کاٹیں', 'Use photo': 'تصویر استعمال کریں', 'Zoom': 'زوم',
+    'Drag to move the picture, and zoom so your face fills the circle.': 'تصویر کو کھسکائیں اور زوم کریں تاکہ آپ کا چہرہ دائرے میں بھر جائے۔',
+
     // weather
     'Clear sky': 'صاف آسمان', 'Mostly clear': 'زیادہ تر صاف', 'Partly cloudy': 'جزوی ابر آلود', 'Overcast': 'ابر آلود', 'Foggy': 'دھند',
     'Drizzle': 'ہلکی بوندا باندی', 'Rain': 'بارش', 'Snow': 'برف باری', 'Rain showers': 'بارش کی بوچھاڑ', 'Thunderstorm': 'آندھی طوفان',
@@ -184,6 +193,8 @@
     [/^(\d+) photos? from the matches\. Tap one to open it\.$/, (m) => `میچوں کی ${m[1]} تصاویر۔ کھولنے کے لیے ٹیپ کریں۔`],
     [/^(.+) updated their profile(.*)$/, (m) => `${m[1]} نے اپنی پروفائل اپ ڈیٹ کی${m[2]}`],
     [/^Profile request · (\d+) of (\d+) done$/, (m) => `پروفائل کی درخواست · ${m[2]} میں سے ${m[1]} مکمل`],
+    [/^(\d+) of (\d+) players have updated their profile\. Tap a name to see it\.$/, (m) => `${m[2]} میں سے ${m[1]} کھلاڑیوں نے پروفائل اپ ڈیٹ کی ہے۔ دیکھنے کے لیے نام پر ٹیپ کریں۔`],
+    [/^Updated (.+) ago$/, (m) => `اپ ڈیٹ: ${tr(m[1] + ' ago')}`],
     [/^Match (\d+)$/, (m) => `میچ ${m[1]}`],
     [/^Training (\d+)$/, (m) => `ٹریننگ ${m[1]}`],
     [/^Test (\d+)$/, (m) => `ٹیسٹ ${m[1]}`],

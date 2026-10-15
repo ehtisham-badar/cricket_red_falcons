@@ -1420,6 +1420,16 @@
 
   const BALANCES_IMAGE = { title: 'Balances picture', alt: 'Team balances', shareTitle: 'Red Falcons balances', fileName: () => `red-falcons-balances-${today()}.png` };
 
+  // ---------- Squad list for management ----------
+  // Name, role and jersey number of the players taking part in the league, in squad order.
+  function squadImage() {
+    return window.RFBalanceImage.renderSquad({
+      players: state.players.filter(C.inTournament).map(p => ({ name: p.name, role: p.role, jersey: p.jersey })),
+      dateText: 'Updated ' + new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
+      logoSrc: 'img/logo.jpeg'
+    });
+  }
+
   // ---------- Playing XI picture ----------
   const XI_FIELDS = [
     { key: 'opponent', label: 'Opponent', placeholder: 'e.g. Lahore Lions' },
@@ -2424,9 +2434,35 @@
     const tally = total && (row.locked || isStaff()) ? `<div class="mom-tally">
         <div class="tally-row"><span>Red Falcons</span>${pctBar(row.counts.win || 0, total)}<b>${row.counts.win || 0}</b></div>
         <div class="tally-row"><span>${esc(opp)}</span>${pctBar(row.counts.loss || 0, total)}<b>${row.counts.loss || 0}</b></div></div>` : '';
+    // The admin sees who guessed what.
+    const names = pick => (row.picks || []).filter(x => x.pick === pick).map(x => findPlayer(x.playerId)).filter(Boolean);
+    const chips = list => list.length ? list.map(p => `<span class="pick-chip">${avatar(p, 22)}${esc(p.name)}</span>`).join('') : '<small class="muted">Nobody</small>';
+    const waiting = isAdmin() && !compact ? state.players.filter(p => C.inTournament(p) && !(row.picks || []).some(x => x.playerId === p.id)) : [];
+    const who = isAdmin() ? `<div class="pick-list">
+        <div class="pick-group"><b>Red Falcons win · ${names('win').length}</b><div>${chips(names('win'))}</div></div>
+        <div class="pick-group"><b>${esc(opp)} win · ${names('loss').length}</b><div>${chips(names('loss'))}</div></div>
+        ${waiting.length ? `<div class="pick-group dim"><b>No prediction yet · ${waiting.length}</b><div>${waiting.map(p => `<span class="pick-chip off">${esc(p.name)}</span>`).join('')}</div></div>` : ''}
+      </div>` : '';
     return `<div class="pred ${compact ? 'compact' : ''}">
       <div class="pred-head"><strong>Who will win?</strong><small class="muted">${note}</small></div>
-      <div class="pred-btns">${btn('win', 'Red Falcons')}${btn('loss', esc(opp))}</div>${tally}</div>`;
+      <div class="pred-btns">${btn('win', 'Red Falcons')}${btn('loss', esc(opp))}</div>${tally}${who}</div>`;
+  }
+
+  // Admin only, on a finished match: who guessed what, and who was right.
+  function predictResults(m) {
+    if (!isAdmin() || !m.finished || m.test || !engage) return '';
+    const row = predRow(m.id);
+    if (!row || !row.finished || !(row.picks || []).length) return '';
+    const opp = m.opponent || 'Opponent';
+    const label = pick => pick === 'win' ? 'Red Falcons win' : `${opp} win`;
+    return `<h3 class="sub gal-title">Predictions <span class="muted">${row.picks.length}</span></h3>
+      <ul class="pick-results">${row.picks.map(x => {
+        const p = findPlayer(x.playerId);
+        if (!p) return '';
+        const right = row.result === 'win' || row.result === 'loss' ? x.pick === row.result : null;
+        return `<li>${avatar(p, 28)}<span class="pr-name">${esc(p.name)}</span><span class="muted">${label(x.pick)}</span>${right == null ? '' : `<b class="pr-mark ${right ? 'ok' : 'no'}">${right ? '✓ Right' : '✗ Wrong'}</b>`}</li>`;
+      }).join('')}</ul>
+      ${m.result ? '' : '<p class="muted eg-note">Set the match result (Won, Lost or Tie) to score these.</p>'}`;
   }
   const predictSection = m => (m.finished || m.test || !engage) ? '' : `<h3 class="sub gal-title">Prediction</h3>${predictBlock(m, false)}`;
 
@@ -2449,7 +2485,7 @@
         ${n.updatedAt ? `<small class="muted">Last saved by ${esc(n.updatedBy)} · ${ago(n.updatedAt)}</small>` : ''}</div>`;
   }
 
-  const matchExtras = m => `${momSection(m)}${predictSection(m)}${notesSection(m)}${matchGallery(m)}`;
+  const matchExtras = m => `${momSection(m)}${predictResults(m)}${predictSection(m)}${notesSection(m)}${matchGallery(m)}`;
 
   // Quick polls on Summary: answer once, see results after.
   function pollCard(p) {
@@ -2703,11 +2739,90 @@
     return new Promise((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error('Could not read that picture.')), 'image/jpeg', 0.85));
   }
 
+  // A square crop box over the picture: drag to move, slide or pinch to zoom. Resolves with a 320 px JPEG, or null if cancelled.
+  async function cropPhoto(file) {
+    let bmp;
+    try { bmp = await createImageBitmap(file); } catch { return shrinkPhoto(file); }
+    const BOX = 280, OUT = 320;
+    const min = Math.max(BOX / bmp.width, BOX / bmp.height);
+    const st = { zoom: 1, x: 0, y: 0 };       // x, y: image centre relative to the box centre, in box pixels
+    return new Promise(resolve => {
+      const root = $('#dialog-root');
+      root.innerHTML = `<div class="dialog-backdrop"></div>
+        <div class="dialog crop-dialog" role="dialog" aria-modal="true" aria-labelledby="crop-title">
+          <h3 id="crop-title">Crop your photo</h3>
+          <p class="muted">Drag to move the picture, and zoom so your face fills the circle.</p>
+          <div class="crop-box" id="crop-box"><canvas width="${BOX}" height="${BOX}"></canvas><span class="crop-guide"></span></div>
+          <label class="crop-zoom"><span>Zoom</span><input type="range" min="1" max="4" step="0.01" value="1" id="crop-zoom" aria-label="Zoom"></label>
+          <div class="dialog-actions"><button class="btn btn-ghost" data-crop="0">Cancel</button><button class="btn btn-primary" data-crop="1">Use photo</button></div>
+        </div>`;
+      const box = $('#crop-box');
+      const cv = box.querySelector('canvas');
+      const ctx = cv.getContext('2d');
+      const clamp = () => {
+        const sc = min * st.zoom;
+        const lx = Math.max(0, (bmp.width * sc - BOX) / 2), ly = Math.max(0, (bmp.height * sc - BOX) / 2);
+        st.x = Math.max(-lx, Math.min(lx, st.x));
+        st.y = Math.max(-ly, Math.min(ly, st.y));
+      };
+      const draw = (c, size) => {
+        const k = size / BOX, sc = min * st.zoom;
+        c.fillStyle = '#111';
+        c.fillRect(0, 0, size, size);
+        c.drawImage(bmp, (BOX / 2 + st.x - bmp.width * sc / 2) * k, (BOX / 2 + st.y - bmp.height * sc / 2) * k, bmp.width * sc * k, bmp.height * sc * k);
+      };
+      const paint = () => { clamp(); draw(ctx, BOX); };
+      paint();
+      const pts = new Map();
+      let pinch = 0;
+      box.addEventListener('pointerdown', e => { box.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); pinch = 0; });
+      box.addEventListener('pointermove', e => {
+        const prev = pts.get(e.pointerId);
+        if (!prev) return;
+        pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (pts.size === 2) {
+          const [a, b] = [...pts.values()];
+          const d = Math.hypot(a.x - b.x, a.y - b.y);
+          if (pinch) { st.zoom = Math.max(1, Math.min(4, st.zoom * d / pinch)); $('#crop-zoom').value = st.zoom; }
+          pinch = d;
+        } else {
+          st.x += e.clientX - prev.x;
+          st.y += e.clientY - prev.y;
+        }
+        paint();
+      });
+      const up = e => { pts.delete(e.pointerId); pinch = 0; };
+      box.addEventListener('pointerup', up);
+      box.addEventListener('pointercancel', up);
+      box.addEventListener('wheel', e => { e.preventDefault(); st.zoom = Math.max(1, Math.min(4, st.zoom * (e.deltaY < 0 ? 1.08 : 0.92))); $('#crop-zoom').value = st.zoom; paint(); }, { passive: false });
+      $('#crop-zoom').addEventListener('input', e => { st.zoom = Number(e.target.value); paint(); });
+      const done = async ok => {
+        document.removeEventListener('keydown', onKey);
+        let out = null;
+        if (ok) {
+          const c = document.createElement('canvas');
+          c.width = c.height = OUT;
+          draw(c.getContext('2d'), OUT);
+          out = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.85));
+        }
+        root.innerHTML = '';
+        bmp.close && bmp.close();
+        resolve(out);
+      };
+      const onKey = e => { if (e.key === 'Escape') done(false); };
+      document.addEventListener('keydown', onKey);
+      root.querySelectorAll('[data-crop]').forEach(b => b.addEventListener('click', () => done(b.dataset.crop === '1')));
+      root.querySelector('.dialog-backdrop').addEventListener('click', () => done(false));
+    });
+  }
+
   async function uploadPhoto(file) {
     const p = findPlayer(photoTarget);
     if (!p || !file) return;
     try {
-      const r = await photoApi('PUT', p.id, await shrinkPhoto(file));
+      const cropped = await cropPhoto(file);
+      if (!cropped) return;
+      const r = await photoApi('PUT', p.id, cropped);
       p.photoAt = r.photoAt;
       render();
       toast('Photo updated.');
@@ -2749,7 +2864,7 @@
     live.players.forEach(lp => {
       const p = findPlayer(lp.id);
       if (!p) return;
-      ['battingHand', 'bowlingArm', 'bowlingStyle', 'photoAt', 'jersey', 'jerseyName', 'profileAt'].forEach(k => { if (p[k] !== lp[k]) { p[k] = lp[k]; changed = true; } });
+      ['name', 'battingHand', 'bowlingArm', 'bowlingStyle', 'photoAt', 'jersey', 'jerseyName', 'profileAt'].forEach(k => { if (p[k] !== lp[k]) { p[k] = lp[k]; changed = true; } });
     });
     if (changed) render();
   }
@@ -2865,12 +2980,37 @@
       </div>`;
   }
 
+  // Who has saved their own profile yet. Players press "Update profile" here; the admin sees who is still missing.
+  function profilesPanel() {
+    if (archive || !state.players.length) return '';
+    const done = state.players.filter(p => p.profileAt);
+    const todo = state.players.filter(p => !p.profileAt);
+    const me = realAdmin() ? null : myPlayer();
+    const pct = Math.round(done.length * 100 / state.players.length);
+    const row = p => `<li class="pu-row">${avatar(p, 34)}
+        <button class="pl-name" data-action="open-profile" data-id="${esc(p.id)}">${esc(p.name)}</button>
+        ${me && me.id === p.id ? `<button class="btn btn-gold small" data-action="open-profile-form">Update profile</button>` : '<span class="prof-tag todo">Not updated</span>'}</li>`;
+    const mine = !realAdmin() && !(me && me.profileAt)
+      ? `<div class="pu-mine"><span>${me ? `<strong>${esc(me.name)}</strong>, your profile hasn’t been updated yet.` : 'Tell us which player you are and fill in your profile.'}</span>
+          <button class="btn btn-gold" data-action="open-profile-form">${icon(PERSON_PATH, 18)} Update profile</button></div>` : '';
+    return `<section class="panel pu-panel">
+      <div class="panel-head"><h3>Profiles</h3>
+        <p class="muted">${done.length} of ${state.players.length} players have updated their profile. Tap a name to see it.</p></div>
+      <span class="eg-bar pu-bar"><i style="width:${pct}%"></i></span>
+      ${mine}
+      ${todo.length ? `<h4 class="pu-sub">Not updated yet <span>${todo.length}</span></h4><ul class="pu-list">${todo.map(row).join('')}</ul>` : '<p class="muted pu-all">Everyone has updated their profile. 🎉</p>'}
+      ${realAdmin() && todo.length ? `<div class="eg-actions"><button class="btn btn-ghost small" data-action="ask-profile">${icon('<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/>', 16)} Ask everyone to update</button></div>` : ''}
+      ${done.length ? `<h4 class="pu-sub">Updated <span>${done.length}</span></h4><ul class="pu-list done">${done.map(p => `<li class="pu-row">${avatar(p, 34)}<button class="pl-name" data-action="open-profile" data-id="${esc(p.id)}">${esc(p.name)}</button><span class="prof-tag ok">${icon('<path d="M20 6 9 17l-5-5"/>', 13)} Updated ${ago(p.profileAt)}</span></li>`).join('')}</ul>` : ''}
+    </section>`;
+  }
+
   function viewPlayers() {
     const admin = isAdmin();
+    const tag = p => p.profileAt ? `<span class="pl-dot ok" title="Profile updated" aria-label="Profile updated">${icon('<path d="M20 6 9 17l-5-5"/>', 11)}</span>` : `<span class="pl-dot todo" title="Profile not updated yet" aria-label="Profile not updated yet"></span>`;
     const list = state.players.map((p, i) => `
       <div class="player-line">
         <span class="sr">${i + 1}</span>
-        <span class="pl-namecell">${avatar(p, 30)}<button class="pl-name" data-action="open-profile" data-id="${esc(p.id)}">${esc(p.name) || '<em>Unnamed</em>'}</button><button class="icon-btn exp-btn mini" data-action="open-player" data-id="${esc(p.id)}" aria-label="Expense card for ${esc(p.name)}" title="Expenses and payments">${WALLET_ICON}</button></span>
+        <span class="pl-namecell">${avatar(p, 30)}<button class="pl-name" data-action="open-profile" data-id="${esc(p.id)}">${esc(p.name) || '<em>Unnamed</em>'}</button>${tag(p)}<button class="icon-btn exp-btn mini" data-action="open-player" data-id="${esc(p.id)}" aria-label="Expense card for ${esc(p.name)}" title="Expenses and payments">${WALLET_ICON}</button></span>
         ${admin
           ? `<select class="field select" data-input="role" data-id="${esc(p.id)}" aria-label="Role for ${esc(p.name)}">${ROLES.map(r => `<option value="${esc(r)}" ${r === p.role ? 'selected' : ''}>${r || 'No role'}</option>`).join('')}</select>
              ${tourToggle(p)}
@@ -2879,7 +3019,9 @@
       </div>`).join('');
 
     return `
-      ${pageHead('Players', `${state.players.length} in the squad`)}
+      ${pageHead('Players', `${state.players.length} in the squad`, admin && state.players.length ? `<div class="share-row">
+          <button class="btn btn-gold" data-action="share-squad">${IMAGE_ICON} Send squad list to management</button></div>` : '')}
+      ${profilesPanel()}
       <div class="players-layout">
         <section class="panel">
           <div class="player-head"><span>Sr.</span><span>Name</span><span>Role</span><span>Tournament</span></div>
@@ -3782,6 +3924,13 @@ ${tabRows.map(r => {
       } catch (e) { toast(e.message || 'Could not save the notes.'); }
     },
     'open-profile-form'() { openProfileForm(); },
+    'ask-profile'() {
+      const x = ANN_TEMPLATES.find(y => y.id === 'profile');
+      annDraft = { title: x.title, body: x.make(), matchId: '', later: false, at: '', action: 'profile' };
+      tab = 'announce';
+      render();
+      toast('Review the message, then press Send.');
+    },
     async 'profile-form-save'() {
       const me = pForm && findPlayer(pForm.id);
       if (!me) return;
@@ -4452,6 +4601,24 @@ ${tabRows.map(r => {
       el.textContent = 'Creating…';
       try {
         showImageDialog(await balanceImage());
+      } catch (e) {
+        toast('Could not create the picture.');
+      } finally {
+        el.disabled = false;
+        el.innerHTML = label;
+      }
+    },
+    async 'share-squad'(el) {
+      if (!isAdmin()) return;
+      if (!state.players.filter(C.inTournament).length) { toast('There are no players in the squad yet.'); return; }
+      const label = el.innerHTML;
+      el.disabled = true;
+      el.textContent = 'Creating…';
+      try {
+        showImageDialog(await squadImage(), {
+          title: 'Squad list for management', alt: 'Red Falcons squad list', shareTitle: 'Red Falcons squad list',
+          fileName: () => `red-falcons-squad-${today()}.png`
+        });
       } catch (e) {
         toast('Could not create the picture.');
       } finally {

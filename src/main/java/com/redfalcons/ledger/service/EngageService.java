@@ -43,7 +43,12 @@ public class EngageService {
                           String authorId, String matchId, String createdAt, int total, List<Voter> voters) {
     }
 
-    public record PredRow(String matchId, boolean locked, String mine, Map<String, Integer> counts) {
+    public record Guessed(String playerId, String pick) {
+    }
+
+    /** {@code picks} (who guessed what) is only sent to the admin; {@code result} is set once a match is finished. */
+    public record PredRow(String matchId, boolean locked, String mine, Map<String, Integer> counts, List<Guessed> picks,
+                          boolean finished, String result) {
     }
 
     public record Standing(String playerId, int points, int correct, int played) {
@@ -127,6 +132,7 @@ public class EngageService {
         Map<String, int[]> table = new LinkedHashMap<>();   // player -> {correct, played}
         for (MatchDay m : real) {
             List<Prediction> ps = predictions.findByMatchId(m.getId());
+            List<Guessed> picks = who.admin() ? ps.stream().map(p -> new Guessed(p.getPlayerId(), p.getPick())).toList() : List.of();
             if (m.isFinished()) {
                 String r = m.getResult();
                 if (r.equals("win") || r.equals("loss")) {
@@ -136,6 +142,7 @@ public class EngageService {
                         if (p.getPick().equals(r)) t[0]++;
                     }
                 }
+                if (who.admin() && !ps.isEmpty()) predRows.add(new PredRow(m.getId(), true, "", Map.of(), picks, true, r));
                 continue;
             }
             boolean locked = locked(m);
@@ -143,7 +150,7 @@ public class EngageService {
                     .map(Prediction::getPick).findFirst().orElse("");
             Map<String, Integer> counts = new LinkedHashMap<>();
             ps.forEach(p -> counts.merge(p.getPick(), 1, Integer::sum));
-            predRows.add(new PredRow(m.getId(), locked, mine, locked || who.staff() ? counts : Map.of()));
+            predRows.add(new PredRow(m.getId(), locked, mine, locked || who.staff() ? counts : Map.of(), picks, false, ""));
         }
         table.forEach((id, t) -> board.add(new Standing(id, t[0], t[0], t[1])));
         board.sort(Comparator.comparingInt(Standing::points).reversed().thenComparingInt(Standing::played));

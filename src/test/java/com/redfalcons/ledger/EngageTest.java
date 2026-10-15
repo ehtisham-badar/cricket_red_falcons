@@ -58,7 +58,10 @@ class EngageTest {
         assertThat(send("PUT", "/api/engage/predict/m2", "{\"pick\":\"win\"}", null, "p2").statusCode()).isEqualTo(200);
         String viewerView = send("GET", "/api/engage", null, null, "p1").body();
         assertThat(viewerView).contains("\"mine\":\"win\"").contains("\"locked\":false").doesNotContain("\"counts\":{\"win\"");
-        assertThat(send("GET", "/api/engage", null, admin, null).body()).contains("\"counts\":{\"win\":2}");
+        assertThat(send("GET", "/api/engage", null, admin, null).body()).contains("\"counts\":{\"win\":2}")
+                .contains("\"picks\":[{\"playerId\":\"p1\",\"pick\":\"win\"}");
+        // Only the admin learns who guessed what.
+        assertThat(viewerView).contains("\"picks\":[]");
         // Predictions on a finished match can't be changed.
         assertThat(send("PUT", "/api/engage/predict/m1", "{\"pick\":\"win\"}", null, "p1").statusCode()).isEqualTo(200);
 
@@ -67,6 +70,9 @@ class EngageTest {
         assertThat(send("PUT", "/api/engage/predict/m1", "{\"pick\":\"loss\"}", null, "p1").statusCode()).isEqualTo(400);
         assertThat(send("GET", "/api/engage", null, null, null).body()).contains("\"leaderboard\":[{\"playerId\":\"p1\",\"points\":1,\"correct\":1,\"played\":1}]");
         assertThat(send("GET", "/api/ledger", null, null, null).body()).contains("\"result\":\"win\"");
+        // The admin still sees who guessed a finished match, with its result; players don't get that row.
+        assertThat(send("GET", "/api/engage", null, admin, null).body()).contains("\"finished\":true,\"result\":\"win\"");
+        assertThat(send("GET", "/api/engage", null, null, "p1").body()).doesNotContain("\"finished\":true");
 
         // Man of the match: only players who played, not yourself, only once finished; closing announces it.
         assertThat(send("PUT", "/api/engage/mom/m2", "{\"candidateId\":\"p2\"}", null, "p1").statusCode()).isEqualTo(400);

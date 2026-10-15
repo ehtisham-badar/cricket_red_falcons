@@ -1763,3 +1763,43 @@ a.btn { text-decoration: none; }
 .pf-who.inline { gap: 8px; padding: 12px 14px; }
 .pf-notyou { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
 .pf-wide { grid-column: 1 / -1; }
+
+/* ---- Prediction lists, profile status on the Players tab ---- */
+.pick-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); text-align: left; }
+.pick-group > b { display: block; margin-bottom: 6px; font-size: 12px; letter-spacing: .04em; color: var(--gold-light); }
+.pick-group > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.pick-group.dim > b { color: var(--muted); }
+.pick-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 4px; border-radius: var(--pill); background: rgba(var(--hi-rgb), .07); font-size: 13px; }
+.pick-chip.off { padding-left: 10px; color: var(--muted); background: rgba(var(--hi-rgb), .04); }
+.pick-results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.pick-results li { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 12px; border: 1px solid var(--line); background: rgba(var(--hi-rgb), .03); font-size: 14px; }
+.pr-name { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.pr-mark { font-size: 12px; white-space: nowrap; }
+.pr-mark.ok { color: #7be3a0; }
+.pr-mark.no { color: var(--neg); }
+.pu-panel { margin-bottom: 16px; }
+.pu-bar { display: block; width: 100%; height: 10px; margin: 4px 0 14px; }
+.pu-mine { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; padding: 12px 14px; border-radius: 14px; border: 1px solid rgba(var(--gold-rgb), .45); background: rgba(var(--gold-rgb), .08); }
+.pu-mine span { flex: 1 1 200px; }
+.pu-sub { display: flex; align-items: center; gap: 8px; margin: 14px 0 8px; font-size: 12px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.pu-sub span { padding: 1px 8px; border-radius: var(--pill); background: rgba(var(--hi-rgb), .08); color: var(--text); letter-spacing: 0; }
+.pu-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.pu-row { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 12px; border: 1px solid var(--line); background: rgba(var(--hi-rgb), .03); }
+.pu-row .pl-name { flex: 1; min-width: 0; text-align: left; }
+.pu-all { margin: 6px 0 0; }
+.prof-tag { flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: var(--pill); font-size: 11px; font-weight: 800; white-space: nowrap; }
+.prof-tag.todo { background: rgba(var(--gold-rgb), .16); color: var(--gold-light); }
+.prof-tag.ok { background: rgba(80, 200, 120, .16); color: #7be3a0; }
+.pl-dot { flex: none; display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; margin-left: 4px; }
+.pl-dot.ok { background: rgba(80, 200, 120, .25); color: #7be3a0; }
+.pl-dot.todo { background: rgba(var(--gold-rgb), .25); box-shadow: inset 0 0 0 2px rgba(var(--gold-rgb), .7); }
+
+/* ---- Photo cropper ---- */
+.crop-dialog { max-width: 360px; }
+.crop-box { position: relative; width: 280px; height: 280px; margin: 14px auto; border-radius: 16px; overflow: hidden; touch-action: none; cursor: grab; background: #111; user-select: none; }
+.crop-box:active { cursor: grabbing; }
+.crop-box canvas { display: block; width: 280px; height: 280px; }
+.crop-guide { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at center, transparent 138px, rgba(0, 0, 0, .6) 139px); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .15); }
+.crop-guide::after { content: ''; position: absolute; inset: 0; border-radius: 50%; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .75); }
+.crop-zoom { display: flex; align-items: center; gap: 12px; margin: 0 auto 6px; max-width: 280px; }
+.crop-zoom input { flex: 1; accent-color: var(--gold); }

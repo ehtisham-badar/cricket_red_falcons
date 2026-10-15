@@ -92,13 +92,17 @@
     nameGrad.addColorStop(1, C.goldDeep);
     ctx.fillStyle = nameGrad;
     ctx.font = `76px ${HEAD}`;
-    ctx.fillText('RED FALCONS', tx, 122);
-    ctx.fillStyle = C.text;
-    ctx.font = `700 24px ${BODY}`;
-    spaced(ctx, subtitle, tx + 4, 182, 5);
-    ctx.fillStyle = C.muted;
-    ctx.font = `500 24px ${BODY}`;
-    ctx.fillText(dateText, tx + 4, 226);
+    ctx.fillText('RED FALCONS', tx, subtitle || dateText ? 122 : 150);
+    if (subtitle) {
+      ctx.fillStyle = C.text;
+      ctx.font = `700 24px ${BODY}`;
+      spaced(ctx, subtitle, tx + 4, 182, 5);
+    }
+    if (dateText) {
+      ctx.fillStyle = C.muted;
+      ctx.font = `500 24px ${BODY}`;
+      ctx.fillText(dateText, tx + 4, 226);
+    }
 
     // Red–gold rule under the header.
     const rule = ctx.createLinearGradient(PAD, 0, W - PAD, 0);
@@ -467,5 +471,100 @@
     return new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
   }
 
-  root.RFBalanceImage = { render, renderXI };
+  /**
+   * The squad list for management: the club name and crest on top, then each player's name, role and jersey number.
+   * @param {{name: string, role: string, jersey: string}[]} o.players
+   * @param {string} o.dateText, o.logoSrc
+   * @returns {Promise<Blob>}
+   */
+  async function renderSquad(o) {
+    await ensureFonts();
+    const logo = await loadImage(o.logoSrc);
+    const n = o.players.length;
+    const ROW_H = 72;
+    const GAP = 10;
+    const headerH = 290;
+    const titleY = headerH + 20;
+    const colHeadY = headerH + 84;
+    const listTop = headerH + 112;
+    const H = listTop + Math.max(n, 1) * (ROW_H + GAP) + 120;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    ctx.textBaseline = 'middle';
+    drawHeader(ctx, H, logo, '', '', headerH);
+
+    ctx.fillStyle = C.gold;
+    ctx.font = `800 24px ${BODY}`;
+    spaced(ctx, 'SQUAD LIST', PAD + 4, titleY, 4);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = C.muted;
+    ctx.font = `700 22px ${BODY}`;
+    ctx.fillText(`${n} player${n === 1 ? '' : 's'}`, W - PAD - 4, titleY);
+    ctx.textAlign = 'left';
+
+    const colW = W - PAD * 2;
+    const nameX = PAD + 92;
+    const roleX = PAD + 520;
+    const right = PAD + colW - 28;
+    ctx.fillStyle = C.muted;
+    ctx.font = `800 17px ${BODY}`;
+    spaced(ctx, 'NAME', nameX, colHeadY, 3);
+    spaced(ctx, 'ROLE', roleX, colHeadY, 3);
+    spaced(ctx, 'JERSEY', right, colHeadY, 3, 'right');
+
+    o.players.forEach((p, i) => {
+      const y = listTop + i * (ROW_H + GAP);
+      const cy = y + ROW_H / 2;
+      roundRect(ctx, PAD, y, colW, ROW_H, 18);
+      ctx.fillStyle = C.card;
+      ctx.fill();
+      ctx.fillStyle = C.red;
+      roundRect(ctx, PAD, y, 6, ROW_H, 3);
+      ctx.fill();
+
+      const bx = PAD + 46;
+      ctx.beginPath();
+      ctx.arc(bx, cy, 21, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(208,34,44,0.18)';
+      ctx.fill();
+      ctx.fillStyle = C.due;
+      ctx.font = `800 19px ${BODY}`;
+      ctx.textAlign = 'center';
+      ctx.fillText(String(i + 1), bx, cy + 1);
+      ctx.textAlign = 'left';
+
+      ctx.fillStyle = C.text;
+      ctx.font = `700 28px ${BODY}`;
+      ctx.fillText(fit(ctx, p.name || 'Unnamed', roleX - nameX - 16), nameX, cy + 1);
+      ctx.fillStyle = C.muted;
+      ctx.font = `600 22px ${BODY}`;
+      ctx.fillText(fit(ctx, p.role || '—', right - 110 - roleX), roleX, cy + 1);
+
+      const label = p.jersey ? '#' + p.jersey : '—';
+      ctx.font = `800 26px ${BODY}`;
+      const w = Math.max(70, ctx.measureText(label).width + 36);
+      roundRect(ctx, right - w, cy - 22, w, 44, 22);
+      ctx.fillStyle = p.jersey ? 'rgba(226,182,92,0.16)' : 'rgba(255,255,255,0.05)';
+      ctx.fill();
+      ctx.fillStyle = p.jersey ? C.gold : C.muted;
+      ctx.textAlign = 'center';
+      ctx.fillText(label, right - w / 2, cy + 1);
+      ctx.textAlign = 'left';
+    });
+
+    const fy = listTop + Math.max(n, 1) * (ROW_H + GAP) + 18;
+    ctx.fillStyle = C.line;
+    ctx.fillRect(PAD, fy, W - PAD * 2, 2);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = C.muted;
+    ctx.font = `600 24px ${BODY}`;
+    ctx.fillText(o.dateText, W / 2, fy + 50);
+    ctx.textAlign = 'left';
+    return new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+  }
+
+  root.RFBalanceImage = { render, renderXI, renderSquad };
 })(this);
