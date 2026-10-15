@@ -1818,45 +1818,42 @@
     </section>`;
   }
 
-  // A month grid with every match marked, and the upcoming ones listed underneath.
+  // Every league fixture with its date: upcoming first, then the ones already played.
   function fixturesPanel() {
     if (!cardShown('showFixtures')) return '';
-    const real = C.matches(state).filter(m => !m.test && m.date);
-    const upcoming = upcomingFixtures();
-    if (!real.length && !upcoming.length) return '';
-    if (!calMonth) {
-      const base = upcoming.find(m => m.date) ? new Date(`${upcoming.find(m => m.date).date}T00:00:00`) : new Date();
-      calMonth = { y: base.getFullYear(), m: base.getMonth() };
-    }
-    const { y, m } = calMonth;
-    const first = new Date(y, m, 1);
-    const lead = (first.getDay() + 6) % 7;             // Monday first
-    const days = new Date(y, m + 1, 0).getDate();
-    const key = d => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    const byDay = {};
-    real.forEach(x => { (byDay[x.date] = byDay[x.date] || []).push(x); });
-    const monthName = first.toLocaleDateString('en-GB', { month: 'long' });
-    const cells = [];
-    for (let d = 1; d <= days; d++) {
-      const k = key(d), here = byDay[k] || [];
-      const cls = here.length ? (here.some(x => !x.finished) ? 'match' : 'played') : '';
-      const st = d === 1 ? ` style="grid-column-start:${lead + 1}"` : '';
-      const opp = here[0] && here[0].opponent ? ` vs ${here[0].opponent}` : '';
-      cells.push(here.length
-        ? `<button type="button" class="cal-cell ${k === today() ? 'today' : ''} ${cls}"${st} data-action="open-scorecard" data-id="${esc(here[0].id)}" aria-label="${esc(here[0].label + opp)}, ${d} ${esc(monthName)}"><b>${d}</b></button>`
-        : `<span class="cal-cell ${k === today() ? 'today' : ''}"${st}><b>${d}</b></span>`);
-    }
-    const mk = key(1).slice(0, 8);
-    const nUp = real.filter(x => x.date.startsWith(mk) && !x.finished).length;
-    const nPl = real.filter(x => x.date.startsWith(mk) && x.finished).length;
+    const real = C.matches(state).filter(m => !m.test);
+    if (!real.length) return '';
+    const byDate = (a, b) => (a.date || '9999').localeCompare(b.date || '9999');
+    const open = real.filter(m => !m.finished).sort(byDate);
+    const done = real.filter(m => m.finished).sort(byDate).reverse();
+    const badge = x => {
+      const lg = teamLogo(x.opponent);
+      const ini = x.opponent ? x.opponent.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() : '?';
+      return lg ? `<span class="fx-badge"><img src="${lg}" alt=""></span>` : `<span class="fx-badge ini">${esc(ini)}</span>`;
+    };
+    const tag = x => {
+      if (x.finished) return '<em class="fx-tag done">Played</em>';
+      if (!x.date) return '<em class="fx-tag">Date TBC</em>';
+      const n = dayDiff(x.date);
+      return `<em class="fx-tag ${n === 0 ? 'now' : ''}">${n === 0 ? 'Today' : n === 1 ? 'Tomorrow' : n > 1 ? `In ${n} days` : 'Awaiting result'}</em>`;
+    };
+    const row = x => {
+      const dt = x.date ? new Date(`${x.date}T00:00:00`) : null;
+      return `<li><button type="button" class="fx-row ${x.finished ? 'played' : ''}" data-action="open-scorecard" data-id="${esc(x.id)}">
+        <span class="fx-day">${dt ? `<b>${dt.getDate()}</b><small>${dt.toLocaleDateString('en-GB', { month: 'short' })}</small>` : '<b>—</b><small>TBC</small>'}</span>
+        ${badge(x)}
+        <span class="fx-what"><strong>${x.opponent ? `vs ${esc(x.opponent)}` : 'Opponent TBC'}</strong>
+          <small>${esc(x.label)}${dt ? ` · ${dt.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}` : ''}</small></span>
+        ${tag(x)}
+      </button></li>`;
+    };
+    const group = (title, list) => list.length ? `<h4 class="fx-group">${title} <span>${list.length}</span></h4><ul class="fx-list">${list.map(row).join('')}</ul>` : '';
     return `<section class="panel fx-panel">
       <div class="fx-top">
-        <button class="fx-month-name" data-action="cal-today" title="Back to this month"><span class="fx-kicker">${icon('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>', 14)} Fixtures ${hiddenNote('showFixtures')}</span><strong>${esc(monthName)}</strong><span class="fx-year">${y}</span></button>
-        <span class="fx-nav"><button class="icon-btn" data-action="cal-prev" aria-label="Previous month">${icon('<path d="m15 18-6-6 6-6"/>', 18)}</button>
-          <button class="icon-btn" data-action="cal-next" aria-label="Next month">${icon('<path d="m9 18 6-6-6-6"/>', 18)}</button></span>
+        <span class="fx-kicker">${icon('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>', 14)} Fixtures ${hiddenNote('showFixtures')}</span>
+        <strong class="fx-heading">${esc(leagueName())}</strong>
       </div>
-      <div class="cal-grid">${['M', 'T', 'W', 'T', 'F', 'S', 'S'].map(w => `<span class="cal-dow">${w}</span>`).join('')}${cells.join('')}</div>
-      <p class="fx-legend"><span><i class="dot-open"></i> Upcoming${nUp ? ` · ${nUp}` : ''}</span><span><i class="dot-played"></i> Played${nPl ? ` · ${nPl}` : ''}</span><span><i class="dot-today"></i> Today</span></p>
+      ${group('Upcoming', open)}${group('Played', done)}
     </section>`;
   }
 
