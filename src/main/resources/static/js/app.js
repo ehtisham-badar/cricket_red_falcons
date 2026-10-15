@@ -1819,13 +1819,17 @@
     const key = d => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     const byDay = {};
     real.forEach(x => { (byDay[x.date] = byDay[x.date] || []).push(x); });
+    const monthName = first.toLocaleDateString('en-GB', { month: 'long' });
     const cells = [];
     for (let d = 1; d <= days; d++) {
       const k = key(d), here = byDay[k] || [];
       const cls = here.length ? (here.some(x => !x.finished) ? 'match' : 'played') : '';
-      cells.push(`<span class="cal-cell ${k === today() ? 'today' : ''} ${cls}" ${d === 1 ? `style="grid-column-start:${lead + 1}"` : ''}><b>${d}</b></span>`);
+      const st = d === 1 ? ` style="grid-column-start:${lead + 1}"` : '';
+      const opp = here[0] && here[0].opponent ? ` vs ${here[0].opponent}` : '';
+      cells.push(here.length
+        ? `<button type="button" class="cal-cell ${k === today() ? 'today' : ''} ${cls}"${st} data-action="open-scorecard" data-id="${esc(here[0].id)}" aria-label="${esc(here[0].label + opp)}, ${d} ${esc(monthName)}"><b>${d}</b></button>`
+        : `<span class="cal-cell ${k === today() ? 'today' : ''}"${st}><b>${d}</b></span>`);
     }
-    const monthName = first.toLocaleDateString('en-GB', { month: 'long' });
     const mk = key(1).slice(0, 8);
     const nUp = real.filter(x => x.date.startsWith(mk) && !x.finished).length;
     const nPl = real.filter(x => x.date.startsWith(mk) && x.finished).length;
