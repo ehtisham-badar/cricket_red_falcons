@@ -2599,31 +2599,63 @@
   }
 
   // ---------- profile form (opened from the "Update your profile" announcement) ----------
-  let pForm = null;   // the draft: { id, jerseyName, jersey, bat, arm, style }
+  let pForm = null;   // the draft: { id, name, jerseyName, jersey, bat, arm, style }; id '' until they say who they are
+  const formFor = p => ({ id: p ? p.id : '', name: p ? p.name : '', jerseyName: p ? p.jerseyName || '' : '', jersey: p ? p.jersey || '' : '',
+    bat: p ? p.battingHand || '' : '', arm: p ? p.bowlingArm || '' : '', style: p ? p.bowlingStyle || '' : '' });
   function openProfileForm() {
-    const me = myPlayer();
-    if (!me) { toast('Pick your name on Summary first, so the app knows which player you are.'); return; }
-    pForm = { id: me.id, jerseyName: me.jerseyName || '', jersey: me.jersey || '', bat: me.battingHand || '', arm: me.bowlingArm || '', style: me.bowlingStyle || '' };
+    pForm = formFor(myPlayer());
     sheet = { type: 'profile-form' };
     render();
   }
 
+  // They tell the app which squad player they are (also remembered for votes, photos and notifications).
+  function chooseWho(id) {
+    const p = findPlayer(id);
+    if (!p) return;
+    writeStore(ME_KEY, p.id);
+    pForm = formFor(p);
+    refetchForViewer();
+    refreshPush();
+    loadEngage();
+    render();
+  }
+
   function sheetProfileForm() {
-    const me = pForm && findPlayer(pForm.id);
-    if (!me) return '';
-    const sel = (key, label, options) => `<label><span>${label}</span><select class="field select" data-input="pf-${key}">
-      ${options.map(([v, l]) => `<option value="${esc(v)}" ${pForm[key] === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`;
-    return `<header class="sheet-head">
+    if (!pForm) return '';
+    const me = findPlayer(pForm.id);
+    const typed = norm(session && session.name);
+    const words = typed.split(' ').filter(Boolean);
+    const near = state.players.filter(p => words.some(w => norm(p.name).split(/[\s()]+/).includes(w)) || (typed && norm(p.name).includes(typed)));
+    const opt = p => `<option value="${esc(p.id)}" ${me && me.id === p.id ? 'selected' : ''}>${esc(p.name)}</option>`;
+    const rest = state.players.filter(p => !near.includes(p));
+    const chooser = `<select class="field select" data-input="pf-who" aria-label="Choose your name">
+      ${me ? '' : '<option value="">Choose your name…</option>'}
+      ${near.length ? `<optgroup label="Matching “${esc(session.name)}”">${near.map(opt).join('')}</optgroup>` : ''}
+      <optgroup label="${near.length ? 'Everyone in the squad' : 'The squad'}">${rest.map(opt).join('')}</optgroup></select>`;
+    const head = `<header class="sheet-head">
         <div><span class="day-kind">Your profile</span><h2>Update your profile</h2>
           <p class="muted">Your teammates see this on your player card. Press Save when you’re done and the admin is told.</p></div>
         <button class="icon-btn" data-action="close-sheet" aria-label="Close">${X_ICON}</button>
-      </header>
+      </header>`;
+    if (!me) {
+      return `${head}<div class="sheet-body pf"><div class="pf-who">
+        <strong>Which player are you?</strong>
+        <p class="muted">${typed ? `We couldn’t tell which squad player “${esc(session.name)}” is. ` : ''}Pick your name from the squad and you can edit your details.</p>
+        ${chooser}</div></div>`;
+    }
+    const sel = (key, label, options) => `<label><span>${label}</span><select class="field select" data-input="pf-${key}">
+      ${options.map(([v, l]) => `<option value="${esc(v)}" ${pForm[key] === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`;
+    return `${head}
       <div class="sheet-body pf">
+        <div class="pf-who inline"><span>Updating <strong>${esc(me.name)}</strong></span>
+          <label class="pf-notyou">Not you? Choose from the squad ${chooser}</label></div>
         <div class="pf-photo">
           <button class="avatar-btn" data-action="photo-pick" data-id="${esc(me.id)}" title="Change photo" aria-label="Change photo">${avatar(me, 112)}<span class="cam">${CAMERA_ICON}</span></button>
           <div><strong>${esc(me.name)}</strong><small class="muted">${me.photoAt ? 'Tap the photo to change it.' : 'Tap the camera to add a photo.'}</small></div>
         </div>
         <div class="form-grid">
+          <label class="pf-wide"><span>Full name <small class="muted">(as shown in the squad, e.g. Ehtisham Badar (Roxy))</small></span>
+            <input class="field" type="text" maxlength="60" value="${esc(pForm.name)}" placeholder="e.g. Ehtisham Badar (Roxy)" data-input="pf-name" data-focus="pf-name" autocomplete="off"></label>
           <label><span>Name on your jersey</span><input class="field" type="text" maxlength="24" value="${esc(pForm.jerseyName)}" placeholder="e.g. BABAR" data-input="pf-jerseyName" data-focus="pf-jname" autocomplete="off"></label>
           <label><span>Jersey number</span><input class="field" type="text" inputmode="numeric" maxlength="3" value="${esc(pForm.jersey)}" placeholder="e.g. 56" data-input="pf-jersey" data-focus="pf-jnum" autocomplete="off"></label>
           ${sel('bat', 'Batting hand', [['', 'Not set'], ['right', 'Right-hand'], ['left', 'Left-hand']])}
@@ -2638,9 +2670,8 @@
   function profileBanner() {
     if (realAdmin() || archive || !feed) return '';
     const me = myPlayer();
-    if (!me) return '';
     const req = feed.find(n => n.action === 'profile');
-    if (!req || (me.profileAt && me.profileAt >= req.createdAt)) return '';
+    if (!req || (me && me.profileAt && me.profileAt >= req.createdAt)) return '';
     return `<section class="panel push-prompt profile-banner">
       <span class="pp-ico">${icon(PERSON_PATH, 22)}</span>
       <div class="pp-text"><strong>Update your profile</strong><small>The admin asked everyone to add a photo, jersey name and number, and batting and bowling details.</small></div>
@@ -3756,9 +3787,9 @@ ${tabRows.map(r => {
       if (!me) return;
       try {
         await api('PUT', `/api/players/${encodeURIComponent(me.id)}/profile`, {
-          battingHand: pForm.bat, bowlingArm: pForm.arm, bowlingStyle: pForm.style, jersey: pForm.jersey, jerseyName: pForm.jerseyName, submit: true
+          battingHand: pForm.bat, bowlingArm: pForm.arm, bowlingStyle: pForm.style, jersey: pForm.jersey, jerseyName: pForm.jerseyName, name: pForm.name, submit: true
         });
-        Object.assign(me, { battingHand: pForm.bat, bowlingArm: pForm.arm, bowlingStyle: pForm.style, jersey: pForm.jersey.replace(/\D/g, '').slice(0, 3),
+        Object.assign(me, { name: pForm.name.trim().replace(/\s+/g, ' '), battingHand: pForm.bat, bowlingArm: pForm.arm, bowlingStyle: pForm.style, jersey: pForm.jersey.replace(/\D/g, '').slice(0, 3),
           jerseyName: pForm.jerseyName.trim().slice(0, 24), profileAt: new Date().toISOString() });
         pForm = null;
         sheet = null;
@@ -4536,6 +4567,7 @@ ${tabRows.map(r => {
       }
       if (el.dataset && /^pf-/.test(el.dataset.input || '')) {
         const k = el.dataset.input.slice(3);
+        if (k === 'who') { chooseWho(el.value); return; }
         if (k === 'jersey') el.value = el.value.replace(/\D/g, '').slice(0, 3);
         if (pForm) pForm[k] = el.value;
         return;

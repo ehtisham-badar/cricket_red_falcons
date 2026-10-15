@@ -200,7 +200,7 @@ public class LedgerService {
     /** A player's own cricket details (batting hand, bowling arm and style); the rest of the profile is untouched. */
     @Transactional
     public boolean updateProfile(String playerId, String battingHand, String bowlingArm, String bowlingStyle,
-                                 String jerseyNumber, String jerseyName, boolean submit) {
+                                 String jerseyNumber, String jerseyName, String fullName, boolean submit) {
         Player p = players.findById(playerId).orElse(null);
         if (p == null) return false;
         // A field left out keeps what is stored.
@@ -215,6 +215,18 @@ public class LedgerService {
         p.setProfile(nz(battingHand), nz(bowlingArm), nz(bowlingStyle), p.isKeeper(), p.isCaptain(), p.isViceCaptain(),
                 jerseyNumber != null ? jersey(jerseyNumber) : p.getJersey());
         if (jerseyName != null) p.setJerseyName(clip(jerseyName, 24).trim());
+        String oldName = p.getName();
+        if (fullName != null) {
+            String n = fullName.trim().replaceAll("\\s+", " ");
+            if (n.isEmpty()) throw new IllegalArgumentException("Your name can't be empty.");
+            if (n.length() > 60) throw new IllegalArgumentException("Keep your name under 60 characters.");
+            for (Player other : players.findAll()) {
+                if (!other.getId().equals(playerId) && other.getName().trim().equalsIgnoreCase(n)) {
+                    throw new IllegalArgumentException("Another player in the squad already has that name.");
+                }
+            }
+            p.setName(n);
+        }
         if (submit) {
             p.setProfileSavedAt(Instant.now().toString());
             List<String> bits = new ArrayList<>();
@@ -226,6 +238,7 @@ public class LedgerService {
             if (!p.getBowlingStyle().isEmpty() || !p.getBowlingArm().isEmpty()) {
                 bits.add(("bowls " + p.getBowlingArm() + " " + p.getBowlingStyle()).replaceAll("\\s+", " ").trim());
             }
+            if (!oldName.equals(p.getName())) bits.add(0, "name changed from " + oldName);
             notifications.adminNotice("Profile updated", p.getName() + " updated their profile" + (bits.isEmpty() ? "." : ": " + String.join(", ", bits) + "."));
         }
         return true;

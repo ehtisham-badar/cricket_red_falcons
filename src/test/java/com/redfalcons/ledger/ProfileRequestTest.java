@@ -72,6 +72,13 @@ class ProfileRequestTest {
         send("PUT", "/api/players/p1/profile", "{\"submit\":true}", admin, null);
         assertThat(send("GET", "/api/notifications/admin", null, admin, null).body().split("Profile updated", -1).length - 1).isEqualTo(1);
         assertThat(send("PUT", "/api/ledger", ledger, admin, null).statusCode()).isEqualTo(200);
+
+        // A player may correct their squad name (e.g. add a nickname); two players can't share one, and it can't be empty.
+        assertThat(send("PUT", "/api/players/p1/profile", "{\"name\":\"rizwan\"}", null, "p1").statusCode()).isEqualTo(400);
+        assertThat(send("PUT", "/api/players/p1/profile", "{\"name\":\"  \"}", null, "p1").statusCode()).isEqualTo(400);
+        assertThat(send("PUT", "/api/players/p1/profile", "{\"name\":\"Babar  Azam (Roxy)\",\"submit\":true}", null, "p1").statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/ledger", null, null, null).body()).contains("\"name\":\"Babar Azam (Roxy)\"");
+        assertThat(send("GET", "/api/notifications/admin", null, admin, null).body()).contains("Babar Azam (Roxy) updated their profile").contains("name changed from Babar");
         String after = send("GET", "/api/ledger", null, null, null).body();
         assertThat(after).contains("\"jerseyName\":\"BABAR\"").contains("\"jersey\":\"56\"");
     }

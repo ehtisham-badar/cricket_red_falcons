@@ -83,6 +83,7 @@ public class Player {
     public String getId() { return id; }
     public int getPosition() { return position; }
     public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
     public String getRole() { return role; }
     public String getPaid() { return paid; }
     public boolean isInTournament() { return !Boolean.FALSE.equals(inTournament); }

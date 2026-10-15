@@ -39,6 +39,10 @@
     'The admin asked everyone to add a photo, jersey name and number, and batting and bowling details.': 'ایڈمن نے سب سے تصویر، جرسی کا نام اور نمبر، اور بیٹنگ و باؤلنگ کی تفصیل شامل کرنے کو کہا ہے۔',
     'Tap the camera to add a photo.': 'تصویر لگانے کے لیے کیمرے پر ٹیپ کریں۔', 'Tap the photo to change it.': 'تصویر بدلنے کے لیے اس پر ٹیپ کریں۔',
 
+    'Which player are you?': 'آپ کون سے کھلاڑی ہیں؟', 'Full name': 'پورا نام', 'Choose your name…': 'اپنا نام چنیں…',
+    'Everyone in the squad': 'اسکواڈ میں سب', 'The squad': 'اسکواڈ',
+    'Pick your name from the squad and you can edit your details.': 'اسکواڈ سے اپنا نام چنیں تاکہ آپ اپنی تفصیل بدل سکیں۔',
+
     // weather
     'Clear sky': 'صاف آسمان', 'Mostly clear': 'زیادہ تر صاف', 'Partly cloudy': 'جزوی ابر آلود', 'Overcast': 'ابر آلود', 'Foggy': 'دھند',
     'Drizzle': 'ہلکی بوندا باندی', 'Rain': 'بارش', 'Snow': 'برف باری', 'Rain showers': 'بارش کی بوچھاڑ', 'Thunderstorm': 'آندھی طوفان',
