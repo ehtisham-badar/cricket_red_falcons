@@ -473,7 +473,7 @@
 
   /**
    * The squad list for management: the club name and crest on top, then each player's name, role and jersey number.
-   * @param {{name: string, role: string, jersey: string}[]} o.players
+   * @param {{name: string, role: string, jersey: string, captain?: boolean, viceCaptain?: boolean, keeper?: boolean}[]} o.players
    * @param {string} o.dateText, o.logoSrc
    * @returns {Promise<Blob>}
    */
@@ -536,9 +536,30 @@
       ctx.fillText(String(i + 1), bx, cy + 1);
       ctx.textAlign = 'left';
 
+      // C, VC and WK badges follow the name.
+      const badges = [p.captain && { text: 'C', bg: C.gold, color: '#1c1c21' },
+        p.viceCaptain && { text: 'VC', bg: 'rgba(226,182,92,0.22)', color: C.gold, ring: C.gold },
+        p.keeper && { text: 'WK', bg: 'rgba(208,34,44,0.85)', color: C.text }].filter(Boolean);
+      ctx.font = `800 18px ${BODY}`;
+      const badgesW = badges.reduce((w, b) => w + ctx.measureText(b.text).width + 22 + 8, 0);
       ctx.fillStyle = C.text;
       ctx.font = `700 28px ${BODY}`;
-      ctx.fillText(fit(ctx, p.name || 'Unnamed', roleX - nameX - 16), nameX, cy + 1);
+      const nm = fit(ctx, p.name || 'Unnamed', roleX - nameX - 16 - badgesW);
+      ctx.fillText(nm, nameX, cy + 1);
+      let bxx = nameX + ctx.measureText(nm).width + 14;
+      ctx.font = `800 18px ${BODY}`;
+      badges.forEach(b => {
+        const w = ctx.measureText(b.text).width + 22;
+        roundRect(ctx, bxx, cy - 16, w, 32, 16);
+        ctx.fillStyle = b.bg;
+        ctx.fill();
+        if (b.ring) { ctx.strokeStyle = b.ring; ctx.lineWidth = 2; ctx.stroke(); }
+        ctx.fillStyle = b.color;
+        ctx.textAlign = 'center';
+        ctx.fillText(b.text, bxx + w / 2, cy + 1);
+        ctx.textAlign = 'left';
+        bxx += w + 8;
+      });
       ctx.fillStyle = C.muted;
       ctx.font = `600 22px ${BODY}`;
       ctx.fillText(fit(ctx, p.role || '—', right - 110 - roleX), roleX, cy + 1);

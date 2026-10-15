@@ -1424,7 +1424,12 @@
   // Name, role and jersey number of the players taking part in the league, in squad order.
   function squadImage() {
     return window.RFBalanceImage.renderSquad({
-      players: state.players.filter(C.inTournament).map(p => ({ name: p.name, role: p.role, jersey: p.jersey })),
+      players: state.players.filter(C.inTournament).map(p => ({
+        name: p.name, jersey: p.jersey,
+        // The C, VC and WK badges say it, so a "Captain" in the role text isn't repeated.
+        role: (p.role || '').replace(/\s*\+?\s*captain\s*/i, '').trim(),
+        captain: isCaptain(p), viceCaptain: !!p.viceCaptain, keeper: isKeeper(p)
+      })),
       dateText: 'Updated ' + new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
       logoSrc: 'img/logo.jpeg'
     });
