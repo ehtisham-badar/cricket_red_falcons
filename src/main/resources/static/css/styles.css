@@ -1795,11 +1795,12 @@ a.btn { text-decoration: none; }
 .pl-dot.todo { background: rgba(var(--gold-rgb), .25); box-shadow: inset 0 0 0 2px rgba(var(--gold-rgb), .7); }
 
 /* ---- Photo cropper ---- */
-.crop-dialog { max-width: 360px; }
+.crop-dialog { max-width: 360px; max-height: 92vh; overflow-y: auto; }
 .crop-box { position: relative; width: 280px; height: 280px; margin: 14px auto; border-radius: 16px; overflow: hidden; touch-action: none; cursor: grab; background: #111; user-select: none; }
 .crop-box:active { cursor: grabbing; }
 .crop-box canvas { display: block; width: 280px; height: 280px; }
 .crop-guide { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at center, transparent 138px, rgba(0, 0, 0, .6) 139px); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .15); }
 .crop-guide::after { content: ''; position: absolute; inset: 0; border-radius: 50%; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .75); }
-.crop-zoom { display: flex; align-items: center; gap: 12px; margin: 0 auto 6px; max-width: 280px; }
-.crop-zoom input { flex: 1; accent-color: var(--gold); }
+.crop-tools { display: flex; align-items: center; gap: 8px; margin: 0 auto 10px; max-width: 300px; }
+.crop-tools input { flex: 1; min-width: 0; accent-color: var(--gold); }
+.crop-tools .icon-btn { flex: none; width: 38px; height: 38px; font-size: 20px; line-height: 1; }

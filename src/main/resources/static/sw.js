@@ -1,6 +1,6 @@
 // Makes the app installable. Always tries the network first so a new deploy shows up straight away;
 // the cached copy of the app's own files is only used when offline. Ledger data (another origin) isn't cached.
-const CACHE = 'rf-shell-v1';
+const CACHE = 'rf-shell-v2';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => {

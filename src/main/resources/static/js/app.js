@@ -2739,13 +2739,44 @@
     return new Promise((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error('Could not read that picture.')), 'image/jpeg', 0.85));
   }
 
-  // A square crop box over the picture: drag to move, slide or pinch to zoom. Resolves with a 320 px JPEG, or null if cancelled.
+  // Reads the chosen picture into a canvas no bigger than 1600 px (phone cameras give huge files), upright as the camera meant.
+  async function loadPicture(file) {
+    let source;
+    try {
+      source = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    } catch {
+      const url = URL.createObjectURL(file);
+      try {
+        source = await new Promise((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = () => reject(new Error('decode'));
+          img.src = url;
+        });
+      } finally { URL.revokeObjectURL(url); }
+    }
+    const w = source.width || source.naturalWidth, h = source.height || source.naturalHeight;
+    if (!w || !h) throw new Error('decode');
+    const k = Math.min(1, 1600 / Math.max(w, h));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(w * k));
+    c.height = Math.max(1, Math.round(h * k));
+    c.getContext('2d').drawImage(source, 0, 0, c.width, c.height);
+    if (source.close) source.close();
+    return c;
+  }
+
+  // A crop box over the picture: drag to move, use the slider, wheel or a pinch to zoom, rotate if it is sideways.
+  // Resolves with a 320 px square JPEG, or null if cancelled.
   async function cropPhoto(file) {
-    let bmp;
-    try { bmp = await createImageBitmap(file); } catch { return shrinkPhoto(file); }
+    let pic;
+    try { pic = await loadPicture(file); } catch {
+      toast('Could not open that picture. Try another one (JPEG or PNG).');
+      return null;
+    }
     const BOX = 280, OUT = 320;
-    const min = Math.max(BOX / bmp.width, BOX / bmp.height);
     const st = { zoom: 1, x: 0, y: 0 };       // x, y: image centre relative to the box centre, in box pixels
+    const minScale = () => Math.max(BOX / pic.width, BOX / pic.height);
     return new Promise(resolve => {
       const root = $('#dialog-root');
       root.innerHTML = `<div class="dialog-backdrop"></div>
@@ -2753,37 +2784,43 @@
           <h3 id="crop-title">Crop your photo</h3>
           <p class="muted">Drag to move the picture, and zoom so your face fills the circle.</p>
           <div class="crop-box" id="crop-box"><canvas width="${BOX}" height="${BOX}"></canvas><span class="crop-guide"></span></div>
-          <label class="crop-zoom"><span>Zoom</span><input type="range" min="1" max="4" step="0.01" value="1" id="crop-zoom" aria-label="Zoom"></label>
+          <div class="crop-tools">
+            <button class="icon-btn" type="button" data-crop-zoom="-0.25" aria-label="Zoom out">−</button>
+            <input type="range" min="1" max="4" step="0.01" value="1" id="crop-zoom" aria-label="Zoom">
+            <button class="icon-btn" type="button" data-crop-zoom="0.25" aria-label="Zoom in">+</button>
+            <button class="icon-btn" type="button" id="crop-rotate" aria-label="Rotate" title="Rotate">${icon('<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>', 18)}</button>
+          </div>
           <div class="dialog-actions"><button class="btn btn-ghost" data-crop="0">Cancel</button><button class="btn btn-primary" data-crop="1">Use photo</button></div>
         </div>`;
       const box = $('#crop-box');
-      const cv = box.querySelector('canvas');
-      const ctx = cv.getContext('2d');
+      const ctx = box.querySelector('canvas').getContext('2d');
+      const setZoom = z => { st.zoom = Math.max(1, Math.min(4, z)); $('#crop-zoom').value = st.zoom; };
       const clamp = () => {
-        const sc = min * st.zoom;
-        const lx = Math.max(0, (bmp.width * sc - BOX) / 2), ly = Math.max(0, (bmp.height * sc - BOX) / 2);
+        const sc = minScale() * st.zoom;
+        const lx = Math.max(0, (pic.width * sc - BOX) / 2), ly = Math.max(0, (pic.height * sc - BOX) / 2);
         st.x = Math.max(-lx, Math.min(lx, st.x));
         st.y = Math.max(-ly, Math.min(ly, st.y));
       };
       const draw = (c, size) => {
-        const k = size / BOX, sc = min * st.zoom;
+        const k = size / BOX, sc = minScale() * st.zoom;
         c.fillStyle = '#111';
         c.fillRect(0, 0, size, size);
-        c.drawImage(bmp, (BOX / 2 + st.x - bmp.width * sc / 2) * k, (BOX / 2 + st.y - bmp.height * sc / 2) * k, bmp.width * sc * k, bmp.height * sc * k);
+        c.drawImage(pic, (BOX / 2 + st.x - pic.width * sc / 2) * k, (BOX / 2 + st.y - pic.height * sc / 2) * k, pic.width * sc * k, pic.height * sc * k);
       };
       const paint = () => { clamp(); draw(ctx, BOX); };
       paint();
       const pts = new Map();
       let pinch = 0;
-      box.addEventListener('pointerdown', e => { box.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); pinch = 0; });
+      box.addEventListener('pointerdown', e => { e.preventDefault(); try { box.setPointerCapture(e.pointerId); } catch { /* ignore */ } pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); pinch = 0; });
       box.addEventListener('pointermove', e => {
         const prev = pts.get(e.pointerId);
         if (!prev) return;
+        e.preventDefault();
         pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
         if (pts.size === 2) {
           const [a, b] = [...pts.values()];
           const d = Math.hypot(a.x - b.x, a.y - b.y);
-          if (pinch) { st.zoom = Math.max(1, Math.min(4, st.zoom * d / pinch)); $('#crop-zoom').value = st.zoom; }
+          if (pinch) setZoom(st.zoom * d / pinch);
           pinch = d;
         } else {
           st.x += e.clientX - prev.x;
@@ -2794,8 +2831,22 @@
       const up = e => { pts.delete(e.pointerId); pinch = 0; };
       box.addEventListener('pointerup', up);
       box.addEventListener('pointercancel', up);
-      box.addEventListener('wheel', e => { e.preventDefault(); st.zoom = Math.max(1, Math.min(4, st.zoom * (e.deltaY < 0 ? 1.08 : 0.92))); $('#crop-zoom').value = st.zoom; paint(); }, { passive: false });
-      $('#crop-zoom').addEventListener('input', e => { st.zoom = Number(e.target.value); paint(); });
+      box.addEventListener('wheel', e => { e.preventDefault(); setZoom(st.zoom * (e.deltaY < 0 ? 1.08 : 0.92)); paint(); }, { passive: false });
+      $('#crop-zoom').addEventListener('input', e => { setZoom(Number(e.target.value)); paint(); });
+      root.querySelectorAll('[data-crop-zoom]').forEach(b => b.addEventListener('click', () => { setZoom(st.zoom + Number(b.dataset.cropZoom)); paint(); }));
+      $('#crop-rotate').addEventListener('click', () => {
+        const c = document.createElement('canvas');
+        c.width = pic.height;
+        c.height = pic.width;
+        const x = c.getContext('2d');
+        x.translate(c.width, 0);
+        x.rotate(Math.PI / 2);
+        x.drawImage(pic, 0, 0);
+        pic = c;
+        st.x = st.y = 0;
+        setZoom(1);
+        paint();
+      });
       const done = async ok => {
         document.removeEventListener('keydown', onKey);
         let out = null;
@@ -2806,7 +2857,6 @@
           out = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.85));
         }
         root.innerHTML = '';
-        bmp.close && bmp.close();
         resolve(out);
       };
       const onKey = e => { if (e.key === 'Escape') done(false); };
