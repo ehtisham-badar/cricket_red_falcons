@@ -25,9 +25,11 @@ public class NotificationService {
     private static final java.time.Duration MAX_AHEAD = java.time.Duration.ofDays(366);
 
     private final AppNotificationRepository repo;
+    private final PushService push;
 
-    public NotificationService(AppNotificationRepository repo) {
+    public NotificationService(AppNotificationRepository repo, PushService push) {
         this.repo = repo;
+        this.push = push;
     }
 
     /** What everyone sees: the newest 30 that are due (scheduled ones wait for their time), newest first. */
@@ -72,7 +74,33 @@ public class NotificationService {
         AppNotification n = repo.save(AppNotification.announcement(AdminAuth.randomToken().substring(0, 16), authorId, author, t, b,
                 match.isEmpty() ? null : match, publish, now.toString()));
         prune();
+        // Straight away: phones with notifications on hear it now. A scheduled one is pushed when its time comes.
+        if (publish == null) push.send(t, b, null);
         return n;
+    }
+
+    /** Pushes scheduled announcements whose time has come (run every half minute). */
+    @org.springframework.scheduling.annotation.Scheduled(fixedDelay = 30_000, initialDelay = 20_000)
+    @Transactional
+    public void pushDue() {
+        Instant now = Instant.now();
+        repo.findAll().stream().filter(AppNotification::awaitingPush)
+                .filter(n -> !Instant.parse(n.getVisibleAt()).isAfter(now))
+                .forEach(n -> {
+                    n.markPushed();
+                    push.send(n.getTitle(), n.getBody(), null);
+                });
+    }
+
+    /** The admin announced a match's Playing XI: a bell notice for everyone, and a push to phones. */
+    @Transactional
+    public void xiAnnounced(String matchId, String title, String body) {
+        repo.findByRefKey("xi:" + matchId).ifPresent(repo::delete);
+        repo.flush();
+        repo.save(AppNotification.notice(AdminAuth.randomToken().substring(0, 16), "xi:" + matchId, title, body, matchId,
+                Instant.now().toString()));
+        prune();
+        push.send(title, body, null);
     }
 
     /** The admin may delete any announcement; a manager only their own. */

@@ -212,7 +212,20 @@
     renderIfSettings();
   }
 
-  function renderIfSettings() { if (state && tab === 'settings') render(); }
+  function renderIfSettings() { if (state && (tab === 'settings' || tab === 'summary')) render(); }
+
+  const PUSH_PROMPT_KEY = 'rf.pushPromptOff';
+  // A nudge on Summary until this device has notifications on (or the person says no thanks).
+  function pushPrompt() {
+    if (!push.ready || !push.supported || !push.enabled || push.subscribed || push.permission === 'denied') return '';
+    if (isIOS() && !isInstalled()) return '';
+    if (readStore(PUSH_PROMPT_KEY)) return '';
+    return `<section class="panel push-prompt">
+      <span class="pp-ico">${BELL_ICON}</span>
+      <div class="pp-text"><strong>Never miss the team news</strong><small>Get a notification when the Playing XI is announced or the team posts an update.</small></div>
+      <div class="pp-actions"><button class="btn btn-gold" data-action="push-on">Turn on</button><button class="btn btn-ghost" data-action="push-dismiss">Not now</button></div>
+    </section>`;
+  }
 
   async function enablePush() {
     try {
@@ -709,10 +722,11 @@
   }
 
   // Manager: is the session still valid? Requester: was the request approved or declined?
+  let myManagerId = '';
   async function refreshManager() {
     if (session && session.managerToken) {
       let ok = true;
-      try { ok = (await api('GET', '/api/manager/session')).manager; } catch { return; }
+      try { const r = await api('GET', '/api/manager/session'); ok = r.manager; myManagerId = r.id || ''; } catch { return; }
       if (!ok) dropManager();
       return;
     }
@@ -818,7 +832,7 @@
         </div></article>`;
     };
     return `
-      ${pageHead('Announcements', 'Write a message for the team. It shows up in everyone’s notifications inside the app — it is not a push.')}
+      ${pageHead('Announcements', 'Write a message for the team. It shows in everyone’s notifications, and goes to the phones that have notifications on.')}
       <section class="panel ann-composer" id="ann-composer">
         <div class="panel-head"><h3>New announcement</h3><p class="muted">Start from a template, or write your own. Pick a match to fill in its details.</p></div>
         <label class="ann-field"><span>About match <small class="muted">(optional)</small></span>
@@ -879,13 +893,13 @@
     const items = feed || [];
     return `<header class="sheet-head">
         <div><span class="day-kind">Updates</span><h2>Notifications</h2>
-          <p class="muted">Announcements from the team, and expenses the admin records.</p></div>
+          <p class="muted">Announcements from the team, the Playing XI, and expenses the admin records.</p></div>
         <button class="icon-btn" data-action="close-sheet" aria-label="Close">${X_ICON}</button>
       </header>
       <div class="sheet-body">${feed === null ? '<p class="muted center">Loading…</p>' : items.length
         ? items.map(n => {
           const m = n.matchId ? C.matches(state).find(x => x.id === n.matchId) : null;
-          return `<article class="note-card ${n.kind === 'announcement' ? 'is-ann' : ''}"><div class="note-head"><strong>${esc(n.title)}</strong>
+          return `<article class="note-card ${n.kind === 'announcement' || n.kind === 'notice' ? 'is-ann' : ''}"><div class="note-head"><strong>${esc(n.title)}</strong>
             <small>${n.kind === 'announcement' && n.author ? `${esc(n.author)} · ` : ''}${ago(n.createdAt)}</small></div>
             <p class="note-detail">${esc(n.body)}</p>
             ${m && matchVisible(m) ? `<span class="ann-chip">${m.label}${m.opponent ? ` · vs ${esc(m.opponent)}` : ''}</span>` : ''}</article>`;
@@ -979,6 +993,7 @@
     clearInterval(pollTimer);
     pollTimer = setInterval(async () => {
       if (archive || document.visibilityState !== 'visible') return;
+      loadGallery();
       if (isStaff() && tab === 'announce') loadAnnouncements();
       if (isAdmin()) { loadInbox(); syncProfiles(); return; }
       await refreshManager();
@@ -1158,6 +1173,7 @@
     loadTfa();
     loadInbox();
     loadFeed();
+    loadGallery();
     loadAnnouncements();
     refreshManager().then(loadMyLineups);
     startPolling();
@@ -1658,9 +1674,9 @@
   function sheetMatchInfo() {
     const m = C.matches(state).find(x => x.id === sheet.id);
     if (!m) return '';
-    if (m.finished) return sheetScorecard();
     const preview = !m.announced && isAdmin() && xiOf(m).length > 0;
-    return xiPublic(m) || preview ? sheetLineup(m, preview) : sheetSquad(m);
+    const html = m.finished ? sheetScorecard() : xiPublic(m) || preview ? sheetLineup(m, preview) : sheetSquad(m);
+    return html.replace(/<\/div>\s*$/, `${matchGallery(m)}</div>`);
   }
 
   function lineupHead(m, kind) {
@@ -1916,8 +1932,10 @@
       ${pageHead('Summary', `${state.players.length} player${state.players.length === 1 ? '' : 's'} · ${state.trainings.length} training${state.trainings.length === 1 ? '' : 's'} · ${realMatchCount()} match${realMatchCount() === 1 ? '' : 'es'}`,
         admin && state.players.length ? `<div class="share-row">
           <button class="btn btn-gold" data-action="share-image">${IMAGE_ICON} Share as image</button></div>` : '')}
+      ${pushPrompt()}
       ${nextMatchCard()}
       ${fixturesPanel()}
+      ${galleryStrip()}
       ${myBalance()}
       ${leagueBlock()}
       <div class="stats" ${ownOnly() ? 'hidden' : ''}>${cards.map(c => `<div class="stat ${c.cls}"><span>${c.label}</span><strong>${c.value}</strong><small>${esc(c.note)}</small></div>`).join('')}</div>
@@ -2218,6 +2236,104 @@
         <td>${t.best ? `${t.best.wickets}/${t.best.runs}` : '—'}</td></tr>`))}
       ${table('Fielding', ['Player', 'Catches', 'Drops', 'Misfields', 'Good fielding'], fielding.map(t => `<tr>${name(t)}
         <td class="strong">${t.catches}</td><td>${t.drops}</td><td>${t.misfields}</td><td>${t.goodFielding}</td></tr>`))}`;
+  }
+
+  // ---------- match photos ----------
+  let gallery = null;               // [{ id, matchId, byId, by, createdAt }], newest first
+  let galleryTarget = '';
+  const matchPhotoSrc = id => `${API}/api/match-photos/${encodeURIComponent(id)}`;
+  const photosOf = matchId => (gallery || []).filter(p => p.matchId === matchId);
+  const canAddPhotos = () => isAdmin() || isManager() || !!myPlayer();
+  const canRemovePhoto = p => isAdmin() || (isManager() ? p.byId === myManagerId : (myPlayer() || {}).id === p.byId);
+
+  async function loadGallery() {
+    let next;
+    try { next = await api('GET', '/api/match-photos?limit=500'); } catch { return; }
+    if (JSON.stringify(next) === JSON.stringify(gallery)) return;
+    gallery = next;
+    render();
+  }
+
+  // Shrinks to at most 1280 px on the long side, lowering the quality until it is small enough to send.
+  async function shrinkMatchPhoto(file) {
+    const bmp = await createImageBitmap(file);
+    const k = Math.min(1, 1280 / Math.max(bmp.width, bmp.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(bmp.width * k));
+    canvas.height = Math.max(1, Math.round(bmp.height * k));
+    canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    for (const q of [0.82, 0.7, 0.55, 0.4]) {
+      const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', q));
+      if (blob && blob.size <= 480000) return blob;
+    }
+    throw new Error('That picture is too big.');
+  }
+
+  async function uploadMatchPhotos(files) {
+    const matchId = galleryTarget;
+    if (!matchId || !files.length) return;
+    let done = 0;
+    for (const f of files) {
+      try {
+        toast(files.length > 1 ? `Uploading photo ${done + 1} of ${files.length}…` : 'Uploading photo…');
+        const headers = { 'Content-Type': 'image/jpeg' };
+        if (session && session.token) headers['X-Admin-Token'] = session.token;
+        if (session && session.managerToken) headers['X-Manager-Token'] = session.managerToken;
+        const me = myPlayer();
+        if (me) headers['X-Viewer'] = me.id;
+        const res = await fetch(`${API}/api/matches/${encodeURIComponent(matchId)}/photos`, { method: 'POST', headers, body: await shrinkMatchPhoto(f) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+        gallery = [data, ...(gallery || [])];
+        done++;
+        render();
+      } catch (e) { toast(e.message || 'Could not upload that photo.'); }
+    }
+    if (done) toast(done === 1 ? 'Photo added.' : `${done} photos added.`);
+  }
+
+  // The photos of one match, shown at the foot of its details sheet.
+  function matchGallery(m) {
+    const list = photosOf(m.id);
+    if (!list.length && !canAddPhotos()) return '';
+    return `<h3 class="sub gal-title">Photos <span class="muted">${list.length || ''}</span></h3>
+      ${list.length ? `<div class="gal-grid">${list.map(p => `<button type="button" class="gal-thumb" data-action="open-photo" data-id="${esc(p.id)}" aria-label="Photo by ${esc(p.by)}">
+          <img src="${matchPhotoSrc(p.id)}" alt="" loading="lazy"></button>`).join('')}</div>` : '<p class="muted gal-empty">No photos yet. Be the first to add one.</p>'}
+      ${canAddPhotos() ? `<button class="btn btn-ghost gal-add" data-action="gallery-add" data-match="${esc(m.id)}">${icon('<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>', 18)} Add photos</button>`
+        : '<p class="muted gal-empty">Pick your name on Summary to add photos.</p>'}`;
+  }
+
+  // Latest photos across matches, on Summary.
+  function galleryStrip() {
+    const list = (gallery || []).slice(0, 10);
+    if (!list.length) return '';
+    return `<section class="panel gal-panel">
+      <div class="panel-head"><h3>Match photos</h3><p class="muted">${gallery.length} photo${gallery.length === 1 ? '' : 's'} from the matches. Tap one to open it.</p></div>
+      <div class="gal-strip" data-keep-scroll>${list.map(p => `<button type="button" class="gal-thumb" data-action="open-photo" data-id="${esc(p.id)}" aria-label="Photo by ${esc(p.by)}">
+        <img src="${matchPhotoSrc(p.id)}" alt="" loading="lazy"></button>`).join('')}</div>
+    </section>`;
+  }
+
+  function sheetPhoto() {
+    const p = (gallery || []).find(x => x.id === sheet.id);
+    if (!p) return '';
+    const m = C.matches(state).find(x => x.id === p.matchId);
+    const sibs = photosOf(p.matchId);
+    const i = sibs.findIndex(x => x.id === p.id);
+    return `<header class="sheet-head">
+        <div><span class="day-kind">Photo${sibs.length > 1 ? ` · ${i + 1} of ${sibs.length}` : ''}</span>
+          <h2>${m ? `${esc(m.label)}${m.opponent ? ` · vs ${esc(m.opponent)}` : ''}` : 'Match photo'}</h2>
+          <p class="muted">Added by ${esc(p.by)} · ${ago(p.createdAt)}</p></div>
+        <button class="icon-btn" data-action="photo-back" aria-label="Close">${X_ICON}</button>
+      </header>
+      <div class="sheet-body gal-view">
+        <img class="gal-big" src="${matchPhotoSrc(p.id)}" alt="Match photo">
+        <div class="gal-actions">
+          ${sibs.length > 1 ? `<button class="btn btn-ghost" data-action="photo-nav" data-dir="-1">${icon('<path d="m15 18-6-6 6-6"/>', 18)} Previous</button>
+            <button class="btn btn-ghost" data-action="photo-nav" data-dir="1">Next ${icon('<path d="m9 18 6-6-6-6"/>', 18)}</button>` : ''}
+          ${canRemovePhoto(p) ? `<button class="btn btn-danger" data-action="photo-delete" data-id="${esc(p.id)}">Remove</button>` : ''}
+        </div>
+      </div>`;
   }
 
   // ---------- player photos ----------
@@ -2676,6 +2792,7 @@ ${tabRows.map(r => {
     if (sheet.type === 'inbox') body = sheetInbox();
     if (sheet.type === 'scorecard') body = sheetMatchInfo();
     if (sheet.type === 'feed') body = sheetFeed();
+    if (sheet.type === 'photo') body = sheetPhoto();
     if (!body) { sheet = null; return ''; }
     return `<div class="sheet-backdrop" data-action="close-sheet"></div>
       <div class="sheet" role="dialog" aria-modal="true">${body}</div>`;
@@ -3271,6 +3388,27 @@ ${tabRows.map(r => {
       try { await api('DELETE', '/api/announcements/' + encodeURIComponent(a.id)); } catch (e) { toast(e.message || 'Could not delete it.'); }
       await loadAnnouncements();
     },
+    'gallery-add'(el) { galleryTarget = el.dataset.match; $('#gallery-file').click(); },
+    'open-photo'(el) { sheet = { type: 'photo', id: el.dataset.id, back: sheet && sheet.type !== 'photo' ? sheet : (sheet && sheet.back) || null }; render(); },
+    'photo-back'() { sheet = sheet.back || null; render(); },
+    'photo-nav'(el) {
+      const p = (gallery || []).find(x => x.id === sheet.id);
+      const sibs = p ? photosOf(p.matchId) : [];
+      if (sibs.length < 2) return;
+      const i = sibs.findIndex(x => x.id === sheet.id);
+      sheet = { ...sheet, id: sibs[(i + Number(el.dataset.dir) + sibs.length) % sibs.length].id };
+      render();
+    },
+    async 'photo-delete'(el) {
+      if (!await confirmDialog('Remove this photo?', 'It will be taken down for everyone.', 'Remove', true)) return;
+      try {
+        await api('DELETE', `/api/match-photos/${encodeURIComponent(el.dataset.id)}`);
+        gallery = (gallery || []).filter(x => x.id !== el.dataset.id);
+        sheet = sheet.back || null;
+        render();
+        toast('Photo removed.');
+      } catch (e) { toast(e.message || 'Could not remove it.'); }
+    },
     'open-scorecard'(el) { sheet = { type: 'scorecard', id: el.dataset.id }; render(); },
     'cal-prev'() { calMonth = calMonth.m === 0 ? { y: calMonth.y - 1, m: 11 } : { y: calMonth.y, m: calMonth.m - 1 }; render(); },
     'cal-next'() { calMonth = calMonth.m === 11 ? { y: calMonth.y + 1, m: 0 } : { y: calMonth.y, m: calMonth.m + 1 }; render(); },
@@ -3612,6 +3750,7 @@ ${tabRows.map(r => {
       loadTfa();
     },
     'push-on'() { enablePush(); },
+    'push-dismiss'() { writeStore(PUSH_PROMPT_KEY, 1); render(); },
     'push-off'() { disablePush(); },
     'push-template'(el) { pushDraft.title = el.dataset.title; pushDraft.body = el.dataset.body; render(); },
     async 'push-send'(el) {
@@ -4036,6 +4175,12 @@ ${tabRows.map(r => {
 
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape' && sheet && !$('#dialog-root').innerHTML) { sheet = null; render(); }
+    });
+
+    $('#gallery-file').addEventListener('change', e => {
+      const files = [...e.target.files];
+      e.target.value = '';
+      uploadMatchPhotos(files);
     });
 
     $('#photo-file').addEventListener('change', e => {

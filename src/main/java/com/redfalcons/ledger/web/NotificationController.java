@@ -24,7 +24,7 @@ public class NotificationController {
     @GetMapping
     public List<Item> feed() {
         return notifications.latest().stream()
-                .map(n -> new Item(n.getId(), n.getTitle(), n.getBody(), n.getVisibleAt(), n.isAnnouncement() ? "announcement" : "expense",
+                .map(n -> new Item(n.getId(), n.getTitle(), n.getBody(), n.getVisibleAt(), n.isAnnouncement() ? "announcement" : n.isNotice() ? "notice" : "expense",
                         n.getAuthor(), n.getMatchId())).toList();
     }
 }

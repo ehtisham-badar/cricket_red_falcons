@@ -44,6 +44,10 @@ public class AppNotification {
     @Column(name = "publish_at", length = 40)
     private String publishAt;
 
+    /** False while a scheduled announcement still has to be pushed to phones; null (older rows) means nothing to push. */
+    @Column(name = "push_done")
+    private Boolean pushDone;
+
     protected AppNotification() {
     }
 
@@ -55,6 +59,15 @@ public class AppNotification {
         n.author = author;
         n.matchId = matchId;
         n.publishAt = publishAt;
+        n.pushDone = publishAt == null;
+        return n;
+    }
+
+    /** A notice the app raises by itself, e.g. the Playing XI being announced. */
+    public static AppNotification notice(String id, String refKey, String title, String body, String matchId, String createdAt) {
+        AppNotification n = new AppNotification(id, refKey, title, body, createdAt);
+        n.kind = "notice";
+        n.matchId = matchId;
         return n;
     }
 
@@ -76,6 +89,9 @@ public class AppNotification {
     public String getTitle() { return title; }
     public String getBody() { return body; }
     public String getCreatedAt() { return createdAt; }
+    public boolean isNotice() { return "notice".equals(kind); }
+    public boolean awaitingPush() { return Boolean.FALSE.equals(pushDone); }
+    public void markPushed() { this.pushDone = true; }
     public boolean isAnnouncement() { return "announcement".equals(kind); }
     public String getAuthorId() { return authorId == null ? "" : authorId; }
     public String getAuthor() { return author == null ? "" : author; }

@@ -12,6 +12,7 @@ import com.redfalcons.ledger.model.TournamentPayment;
 import com.redfalcons.ledger.repo.DayAmountRepository;
 import com.redfalcons.ledger.repo.ExpenseRepository;
 import com.redfalcons.ledger.repo.MatchDayRepository;
+import com.redfalcons.ledger.repo.MatchPhotoRepository;
 import com.redfalcons.ledger.repo.PlayerPhotoRepository;
 import com.redfalcons.ledger.repo.MatchStatRepository;
 import com.redfalcons.ledger.repo.PaymentRepository;
@@ -79,6 +80,7 @@ public class LedgerService {
     private final MatchStatRepository stats;
     private final NotificationService notifications;
     private final PlayerPhotoRepository photos;
+    private final MatchPhotoRepository matchPhotos;
     /** Largest count a single stat can hold. */
     private static final int STAT_MAX = 999;
 
@@ -86,7 +88,8 @@ public class LedgerService {
                          ExpenseRepository expenses, PaymentRepository payments,
                          TournamentPaymentRepository tournamentPayments, SettingRepository settings,
                          MatchDayRepository matches, MatchStatRepository stats, NotificationService notifications,
-                         PlayerPhotoRepository photos) {
+                         PlayerPhotoRepository photos, MatchPhotoRepository matchPhotos) {
+        this.matchPhotos = matchPhotos;
         this.notifications = notifications;
         this.photos = photos;
         this.matches = matches;
@@ -479,6 +482,23 @@ public class LedgerService {
         for (int i = 0; i < newMatches.size(); i++) dayLabels.put(newMatches.get(i).getId(), "Match " + (i + 1));
         Map<String, String> playerNames = new HashMap<>();
         newPlayers.forEach(p -> playerNames.put(p.getId(), p.getName()));
+        // Photos of matches that no longer exist go too.
+        matchPhotos.matchIds().stream().filter(id -> !matchIds.contains(id)).forEach(matchPhotos::deleteByMatchId);
+        // A Playing XI announced just now is news for the team (a restore that announces many stays quiet).
+        List<String[]> freshXi = new ArrayList<>();
+        int real = 0;
+        for (MatchDay m : newMatches) {
+            if (m.isTest()) continue;
+            real++;
+            if (m.isAnnounced() && !storedAnnounced.getOrDefault(m.getId(), false)) {
+                String when = m.getDate().isEmpty() ? "" : " · " + java.time.LocalDate.parse(m.getDate())
+                        .format(java.time.format.DateTimeFormatter.ofPattern("EEE d MMM", Locale.ENGLISH));
+                String opp = m.getOpponent().isBlank() ? "" : " v " + m.getOpponent();
+                freshXi.add(new String[]{m.getId(), "Playing XI announced", "Match " + real + ": Red Falcons" + (opp.isEmpty() ? "" : opp) + when
+                        + ". Open the app to see the team."});
+            }
+        }
+        if (freshXi.size() <= 2) freshXi.forEach(x -> notifications.xiAnnounced(x[0], x[1], x[2]));
         notifications.expensesSaved(oldExpenseAmounts, newExpenses, dayLabels, playerNames,
                 settings.findById("currency").map(Setting::getValue).orElse("Rs "));
         return load();

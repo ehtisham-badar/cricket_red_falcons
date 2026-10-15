@@ -1662,3 +1662,25 @@ a.btn { text-decoration: none; }
   box-shadow: 0 0 0 3px rgba(var(--hi-rgb), .3), 0 0 30px rgba(0,0,0,.45); }
 .nm-badge.logo img { position: absolute; inset: 4%; width: 92%; height: 92%; object-fit: contain; border-radius: 50%; }
 .sheet-opp-logo { display: block; width: 64px; height: 64px; object-fit: contain; margin-bottom: 8px; border-radius: 50%; background: radial-gradient(circle at 50% 35%, #1f232c, #08090c); padding: 8px; box-shadow: 0 0 0 2px rgba(var(--hi-rgb), .3); }
+
+/* ---- Match photos ---- */
+.gal-title { margin-top: 24px; }
+.gal-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.gal-thumb { position: relative; display: block; width: 100%; aspect-ratio: 1; padding: 0; border: 0; border-radius: 14px; overflow: hidden; cursor: pointer; background: rgba(var(--hi-rgb), .06); box-shadow: 0 0 0 1px var(--line); transition: transform .15s var(--ease); }
+.gal-thumb:hover { transform: scale(1.03); }
+.gal-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gal-add { margin-top: 12px; }
+.gal-empty { margin: 4px 0 8px; }
+.gal-panel { margin-bottom: 16px; }
+.gal-strip { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x proximity; }
+.gal-strip .gal-thumb { flex: none; width: 112px; scroll-snap-align: start; }
+.gal-view { display: flex; flex-direction: column; gap: 14px; }
+.gal-big { width: 100%; max-height: 62vh; object-fit: contain; border-radius: 16px; background: #050607; }
+.gal-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+
+/* ---- Notification prompt on Summary ---- */
+.push-prompt { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; border-color: rgba(var(--gold-rgb), .4); background: linear-gradient(90deg, rgba(var(--gold-rgb), .12), rgba(var(--hi-rgb), .02)), linear-gradient(180deg, var(--panel-1), var(--panel-2)); }
+.pp-ico { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 14px; color: #241a07; background: linear-gradient(160deg, var(--gold-light), var(--gold)); }
+.pp-text { flex: 1 1 200px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pp-text small { color: var(--muted); }
+.pp-actions { display: flex; gap: 8px; }

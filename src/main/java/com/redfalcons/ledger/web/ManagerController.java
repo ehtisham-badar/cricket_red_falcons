@@ -71,7 +71,7 @@ public class ManagerController {
 
     @GetMapping("/session")
     public Map<String, Object> session(@RequestHeader(value = MANAGER_HEADER, required = false) String token) {
-        return Map.of("manager", access.isManager(token));
+        return Map.of("manager", access.isManager(token), "id", access.find(token).map(m -> m.getId()).orElse(""));
     }
 
     @PostMapping("/logout")
