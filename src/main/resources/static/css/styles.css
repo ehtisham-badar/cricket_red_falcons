@@ -1752,3 +1752,10 @@ a.btn { text-decoration: none; }
 .board-pts { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; }
 .board-pts b { font-size: 20px; color: var(--gold); }
 .board-pts small { color: var(--muted); font-size: 11px; }
+
+/* ---- Profile request ---- */
+.ann-action-note { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 12px; padding: 10px 12px; border-radius: 12px; border: 1px dashed rgba(var(--gold-rgb), .45); background: rgba(var(--gold-rgb), .08); color: var(--gold-light); font-size: 13px; }
+.ann-action-note span { flex: 1 1 200px; }
+.pf-photo { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; }
+.pf-photo > div { display: flex; flex-direction: column; gap: 4px; }
+.pf .form-grid { margin-bottom: 18px; }

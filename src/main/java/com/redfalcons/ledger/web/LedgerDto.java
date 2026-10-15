@@ -33,12 +33,13 @@ public record LedgerDto(
      * {@code phone} is only sent to the admin; null on save keeps the stored number. The profile fields
      * ({@code battingHand} and {@code bowlingArm} are "right", "left" or ""; {@code jersey} is a number) are
      * everyone's to see; a save without {@code battingHand} keeps the stored profile. {@code photoAt} says
-     * when the player's photo last changed ("" when none) and is ignored on save.
+     * when the player's photo last changed ("" when none) and is ignored on save. {@code jerseyName} is the name on the jersey (null on save keeps the stored one); {@code profileAt} is when the player last saved their own profile (ignored on save).
      */
     public record PlayerDto(String id, String name, String role, String paid, Boolean tournament,
                             Map<String, Boolean> att, List<PaymentDto> payments, String phone,
                             String battingHand, String bowlingArm, String bowlingStyle,
-                            Boolean keeper, Boolean captain, Boolean viceCaptain, String jersey, String photoAt) {
+                            Boolean keeper, Boolean captain, Boolean viceCaptain, String jersey, String photoAt,
+                            String jerseyName, String profileAt) {
     }
 
     public record PaymentDto(String id, String date, String amount, String method, String note) {

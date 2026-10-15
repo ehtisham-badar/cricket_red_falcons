@@ -37,6 +37,7 @@ public class NotificationService {
     public List<AppNotification> latest() {
         Instant now = Instant.now();
         return repo.findAll().stream()
+                .filter(n -> !n.forAdminOnly())
                 .filter(n -> !Instant.parse(n.getVisibleAt()).isAfter(now))
                 .sorted(Comparator.comparing((AppNotification n) -> Instant.parse(n.getVisibleAt())).reversed())
                 .limit(30).toList();
@@ -51,7 +52,7 @@ public class NotificationService {
 
     /** @param sendAt an ISO instant to hold it back until, or null/blank to show it straight away */
     @Transactional
-    public AppNotification announce(String authorId, String author, String title, String body, String matchId, String sendAt) {
+    public AppNotification announce(String authorId, String author, String title, String body, String matchId, String sendAt, String action) {
         String t = title == null ? "" : title.trim();
         String b = body == null ? "" : body.trim();
         if (b.isEmpty()) throw new IllegalArgumentException("Write a message first.");
@@ -72,11 +73,26 @@ public class NotificationService {
         }
         String match = matchId == null ? "" : matchId.trim();
         AppNotification n = repo.save(AppNotification.announcement(AdminAuth.randomToken().substring(0, 16), authorId, author, t, b,
-                match.isEmpty() ? null : match, publish, now.toString()));
+                match.isEmpty() ? null : match, publish, now.toString(), "profile".equals(action) ? "profile" : null));
         prune();
         // Straight away: phones with notifications on hear it now. A scheduled one is pushed when its time comes.
         if (publish == null) push.send(t, b, null);
         return n;
+    }
+
+    /** Something only the admin should hear about: shows in the admin's bell and is pushed to the admin's devices. */
+    @Transactional
+    public void adminNotice(String title, String body) {
+        repo.save(AppNotification.adminNotice(AdminAuth.randomToken().substring(0, 16), title, body, Instant.now().toString()));
+        prune();
+        push.sendToAdmins(title, body);
+    }
+
+    /** The admin-only notices, newest first. */
+    @Transactional(readOnly = true)
+    public List<AppNotification> adminUpdates() {
+        return repo.findAll().stream().filter(AppNotification::forAdminOnly)
+                .sorted(Comparator.comparing(AppNotification::getCreatedAt).reversed()).limit(30).toList();
     }
 
     /** Pushes scheduled announcements whose time has come (run every half minute). */

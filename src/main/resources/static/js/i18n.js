@@ -29,6 +29,16 @@
     'Pick your name on Summary to add photos.': 'تصاویر شامل کرنے کے لیے خلاصہ میں اپنا نام چنیں۔',
     'Pick your name on the Summary page first, so the app knows which player you are.': 'پہلے خلاصہ صفحے پر اپنا نام چنیں تاکہ ایپ کو معلوم ہو کہ آپ کون سے کھلاڑی ہیں۔',
 
+    // profile request
+    'Update your profile': 'اپنی پروفائل اپ ڈیٹ کریں', 'Update my profile': 'میری پروفائل اپ ڈیٹ کریں', 'Update now': 'ابھی اپ ڈیٹ کریں',
+    'Update profile': 'پروفائل اپ ڈیٹ', 'Your profile': 'آپ کی پروفائل', 'Save profile': 'پروفائل محفوظ کریں', 'Jersey name': 'جرسی پر نام',
+    'Name on your jersey': 'آپ کی جرسی پر نام', 'Player updates': 'کھلاڑیوں کی اپ ڈیٹس', 'Profile updated': 'پروفائل اپ ڈیٹ ہو گئی',
+    'Plain message': 'سادہ پیغام', 'Profile request': 'پروفائل کی درخواست',
+    'Thanks! Your profile is saved and the admin has been told.': 'شکریہ! آپ کی پروفائل محفوظ ہو گئی اور ایڈمن کو بتا دیا گیا ہے۔',
+    'Your teammates see this on your player card. Press Save when you’re done and the admin is told.': 'آپ کے ساتھی اسے آپ کے پلیئر کارڈ پر دیکھتے ہیں۔ مکمل ہونے پر محفوظ کریں دبائیں اور ایڈمن کو بتا دیا جائے گا۔',
+    'The admin asked everyone to add a photo, jersey name and number, and batting and bowling details.': 'ایڈمن نے سب سے تصویر، جرسی کا نام اور نمبر، اور بیٹنگ و باؤلنگ کی تفصیل شامل کرنے کو کہا ہے۔',
+    'Tap the camera to add a photo.': 'تصویر لگانے کے لیے کیمرے پر ٹیپ کریں۔', 'Tap the photo to change it.': 'تصویر بدلنے کے لیے اس پر ٹیپ کریں۔',
+
     // weather
     'Clear sky': 'صاف آسمان', 'Mostly clear': 'زیادہ تر صاف', 'Partly cloudy': 'جزوی ابر آلود', 'Overcast': 'ابر آلود', 'Foggy': 'دھند',
     'Drizzle': 'ہلکی بوندا باندی', 'Rain': 'بارش', 'Snow': 'برف باری', 'Rain showers': 'بارش کی بوچھاڑ', 'Thunderstorm': 'آندھی طوفان',
@@ -168,6 +178,8 @@
     [/^(\d+) arrived$/, (m) => `${m[1]} پہنچے`],
     [/^In (\d+) days?$/, (m) => `${m[1]} دن میں`],
     [/^(\d+) photos? from the matches\. Tap one to open it\.$/, (m) => `میچوں کی ${m[1]} تصاویر۔ کھولنے کے لیے ٹیپ کریں۔`],
+    [/^(.+) updated their profile(.*)$/, (m) => `${m[1]} نے اپنی پروفائل اپ ڈیٹ کی${m[2]}`],
+    [/^Profile request · (\d+) of (\d+) done$/, (m) => `پروفائل کی درخواست · ${m[2]} میں سے ${m[1]} مکمل`],
     [/^Match (\d+)$/, (m) => `میچ ${m[1]}`],
     [/^Training (\d+)$/, (m) => `ٹریننگ ${m[1]}`],
     [/^Test (\d+)$/, (m) => `ٹیسٹ ${m[1]}`],

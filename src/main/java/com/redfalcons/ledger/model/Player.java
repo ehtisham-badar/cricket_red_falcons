@@ -51,6 +51,14 @@ public class Player {
     @Column(length = 3)
     private String jersey;
 
+    /** The name printed on the player's jersey. */
+    @Column(name = "jersey_name", length = 24)
+    private String jerseyName;
+
+    /** When the player last pressed Save on their own profile (ISO instant), or null. */
+    @Column(name = "profile_saved_at", length = 40)
+    private String profileSavedAt;
+
     /** Ids of the days ('t1', 'm1'…) this player attended. */
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "player_attendance", joinColumns = @JoinColumn(name = "player_id"))
@@ -98,5 +106,9 @@ public class Player {
     public boolean isKeeper() { return Boolean.TRUE.equals(keeper); }
     public boolean isCaptain() { return Boolean.TRUE.equals(captain); }
     public boolean isViceCaptain() { return Boolean.TRUE.equals(viceCaptain); }
+    public String getJerseyName() { return jerseyName == null ? "" : jerseyName; }
+    public void setJerseyName(String v) { this.jerseyName = v; }
+    public String getProfileSavedAt() { return profileSavedAt == null ? "" : profileSavedAt; }
+    public void setProfileSavedAt(String v) { this.profileSavedAt = v; }
     public String getJersey() { return jersey == null ? "" : jersey; }
 }

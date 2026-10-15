@@ -96,7 +96,7 @@
   let mgrList = null;                         // admin: manager requests and approved managers
   let editedAt = 0;                           // when the admin last changed something on this screen
   let announcements = null;                   // staff: every announcement written, newest first
-  let annDraft = { title: '', body: '', matchId: '', later: false, at: '' };   // the announcement being written
+  let annDraft = { title: '', body: '', matchId: '', later: false, at: '', action: '' };   // the announcement being written
   let calMonth = null;                        // the month the fixtures calendar shows: { y, m }
   let feed = null;                            // viewers and managers: what the admin has announced, newest first
   let inbox = null;                           // admin: { access, lineups } waiting for a decision
@@ -435,7 +435,7 @@
         battingHand: p.battingHand === 'left' || p.battingHand === 'right' ? p.battingHand : '',
         bowlingArm: p.bowlingArm === 'left' || p.bowlingArm === 'right' ? p.bowlingArm : '',
         bowlingStyle: p.bowlingStyle || '', keeper: p.keeper === true, captain: p.captain === true, viceCaptain: p.viceCaptain === true,
-        jersey: p.jersey == null ? '' : String(p.jersey).replace(/\D/g, '').slice(0, 3), photoAt: p.photoAt || ''
+        jersey: p.jersey == null ? '' : String(p.jersey).replace(/\D/g, '').slice(0, 3), photoAt: p.photoAt || '', jerseyName: p.jerseyName || '', profileAt: p.profileAt || ''
       };
     });
     const ids = new Set(players.map(p => p.id));
@@ -771,6 +771,29 @@
     render();
   }
 
+  // Things players did that the admin should know about (like saving their profile).
+  let adminUpdates = null;
+  const ADMIN_SEEN_KEY = 'rf.adminSeen';
+  const adminUnread = () => {
+    if (!adminUpdates) return 0;
+    const seen = readStore(ADMIN_SEEN_KEY);
+    return seen == null ? 0 : adminUpdates.filter(n => n.createdAt > seen).length;
+  };
+  const markAdminSeen = () => { if (adminUpdates) writeStore(ADMIN_SEEN_KEY, adminUpdates.length ? adminUpdates[0].createdAt : ''); };
+  async function loadAdminUpdates() {
+    if (!realAdmin()) return;
+    let next;
+    try { next = await api('GET', '/api/notifications/admin'); } catch { return; }
+    if (JSON.stringify(next) === JSON.stringify(adminUpdates)) return;
+    const first = adminUpdates === null;
+    const before = adminUpdates && adminUpdates.length ? adminUpdates[0].createdAt : '';
+    adminUpdates = next;
+    if (readStore(ADMIN_SEEN_KEY) == null) markAdminSeen();
+    if (sheet && sheet.type === 'inbox') markAdminSeen();
+    else if (!first && next.length && next[0].createdAt > before) toast(`${next[0].title}: ${next[0].body}`);
+    render();
+  }
+
   const inboxCount = () => inbox ? inbox.access.filter(m => m.status === 'pending').length + inbox.lineups.length : 0;
 
   function managerPanel() {
@@ -823,6 +846,7 @@
     { id: 'before', label: 'Day before', title: 'Match tomorrow', make: m => m ? `${matchLine(m)} is tomorrow. Get some rest and bring your kit.` : 'We have a match tomorrow. Get some rest and bring your kit.', at: m => suggestAt(m, 1, 18) },
     { id: 'report', label: 'Report time', title: 'Report time', make: m => m ? `Please report for ${m.label}${m.venue ? ` at ${m.venue}` : ''} by __ (time).${m.time ? ` Kick-off is ${fmtClock(m.time)}.` : ''}` : 'Please report at __ (time).', at: () => '' },
     { id: 'xi', label: 'XI announced', title: 'Playing XI announced', make: m => m ? `The playing XI for ${m.label}${m.opponent ? ` vs ${m.opponent}` : ''} is out. Check the app.` : 'The playing XI is out. Check the app.', at: () => '' },
+    { id: 'profile', label: 'Update profile', title: 'Update your profile', make: () => 'Please update your profile: add your photo, jersey name and number, and your batting and bowling details. Tap here to fill it in.', at: () => '', action: 'profile' },
     { id: 'update', label: 'Match update', title: 'Match update', make: m => m ? `Update for ${m.label}: ` : 'Match update: ', at: () => '' }
   ];
 
@@ -837,6 +861,7 @@
         <div class="note-head"><strong>${esc(a.title)}</strong>
           <small><span class="ann-status ${a.status}">${a.status === 'scheduled' ? 'Scheduled' : 'Sent'}</span> ${when(a)} · by ${esc(a.author || 'Admin')}</small></div>
         <p class="note-detail">${esc(a.body)}</p>
+        ${a.action === 'profile' ? `<span class="ann-chip">Profile request · ${state.players.filter(pl => pl.profileAt && pl.profileAt >= a.createdAt).length} of ${state.players.length} done</span>` : ''}
         ${m ? `<span class="ann-chip">${m.label}${m.opponent ? ` · vs ${esc(m.opponent)}` : ''}</span>` : ''}
         <div class="note-actions">
           <button class="btn btn-ghost small" data-action="ann-duplicate" data-id="${esc(a.id)}">${COPY_ICON} Duplicate</button>
@@ -858,6 +883,8 @@
           <input class="field" type="text" maxlength="80" value="${esc(d.title)}" placeholder="e.g. Match reminder" data-input="ann-title" data-focus="ann-title"></label>
         <label class="ann-field"><span>Message <small class="muted" id="ann-count">${d.body.length}/300</small></span>
           <textarea class="field" rows="4" maxlength="300" placeholder="What should the team know?" data-input="ann-body" data-focus="ann-body">${esc(d.body)}</textarea></label>
+        ${d.action === 'profile' ? `<p class="ann-action-note">${icon(PERSON_PATH, 16)} <span>Players who tap this open the profile editor (photo, jersey, batting and bowling). You get a notification as each one saves.</span>
+          <button class="chip" data-action="ann-action-clear" title="Send as a plain message">Plain message</button></p>` : ''}
         <div class="ann-when">
           <button class="tog ${d.later ? '' : 'on'}" data-action="ann-mode" data-later="0" aria-pressed="${!d.later}">Send now</button>
           <button class="tog ${d.later ? 'on' : ''}" data-action="ann-mode" data-later="1" aria-pressed="${d.later}">Send later</button>
@@ -915,6 +942,7 @@
           return `<article class="note-card ${n.kind === 'announcement' || n.kind === 'notice' ? 'is-ann' : ''}"><div class="note-head"><strong>${esc(n.title)}</strong>
             <small>${n.kind === 'announcement' && n.author ? `${esc(n.author)} · ` : ''}${ago(n.createdAt)}</small></div>
             <p class="note-detail">${esc(n.body)}</p>
+            ${n.action === 'profile' ? `<button class="btn btn-gold small" data-action="open-profile-form">${icon(PERSON_PATH, 16)} Update my profile</button>` : ''}
             ${m && matchVisible(m) ? `<span class="ann-chip">${m.label}${m.opponent ? ` · vs ${esc(m.opponent)}` : ''}</span>` : ''}</article>`;
         }).join('')
         : '<p class="muted center">Nothing new yet. Announcements and new expenses will show up here.</p>'}</div>`;
@@ -973,10 +1001,11 @@
     };
     return `<header class="sheet-head">
         <div><span class="day-kind">Admin</span><h2>Notifications</h2>
-          <p class="muted">Manager requests and lineup changes wait here for your decision.</p></div>
+          <p class="muted">Manager requests and lineup changes wait here for your decision, and you see when players update their profile.</p></div>
         <button class="icon-btn" data-action="close-sheet" aria-label="Close">${X_ICON}</button>
       </header>
-      <div class="sheet-body">${inbox === null ? '<p class="muted center">Loading…</p>' : items.length ? items.map(card).join('') : '<p class="muted center">Nothing waiting. You’re all caught up.</p>'}</div>`;
+      <div class="sheet-body">${inbox === null ? '<p class="muted center">Loading…</p>' : items.length ? items.map(card).join('') : (adminUpdates && adminUpdates.length ? '' : '<p class="muted center">Nothing waiting. You’re all caught up.</p>')}
+        ${adminUpdates && adminUpdates.length ? `<h3 class="sub ${items.length ? '' : 'first'}">Player updates</h3>${adminUpdates.map(n => `<article class="note-card is-ann"><div class="note-head"><strong>${esc(n.title)}</strong><small>${ago(n.createdAt)}</small></div><p class="note-detail">${esc(n.body)}</p></article>`).join('')}` : ''}</div>`;
   }
 
   function managerRequestPanel() {
@@ -1009,7 +1038,7 @@
       loadGallery();
       loadEngage();
       if (isStaff() && tab === 'announce') loadAnnouncements();
-      if (isAdmin()) { loadInbox(); syncProfiles(); return; }
+      if (isAdmin()) { loadInbox(); loadAdminUpdates(); syncProfiles(); return; }
       await refreshManager();
       if (isManager()) await loadMyLineups();
       await loadFeed();
@@ -1186,6 +1215,7 @@
     refreshPush();
     loadTfa();
     loadInbox();
+    loadAdminUpdates();
     loadFeed();
     loadGallery();
     loadEngage();
@@ -1240,7 +1270,7 @@
 
     document.body.classList.toggle('is-admin', isAdmin());
     const bell = $('#bell');
-    const bellCount = realAdmin() ? inboxCount() : unreadCount();
+    const bellCount = realAdmin() ? inboxCount() + adminUnread() : unreadCount();
     bell.hidden = false;
     bell.dataset.count = bellCount;
     bell.setAttribute('aria-label', bellCount ? `Notifications, ${bellCount} new` : 'Notifications');
@@ -2008,6 +2038,7 @@
       ${pageHead('Summary', `${state.players.length} player${state.players.length === 1 ? '' : 's'} · ${state.trainings.length} training${state.trainings.length === 1 ? '' : 's'} · ${realMatchCount()} match${realMatchCount() === 1 ? '' : 'es'}`,
         admin && state.players.length ? `<div class="share-row">
           <button class="btn btn-gold" data-action="share-image">${IMAGE_ICON} Share as image</button></div>` : '')}
+      ${profileBanner()}
       ${pushPrompt()}
       ${nextMatchCard()}
       ${fixturesPanel()}
@@ -2567,6 +2598,56 @@
       </div>`;
   }
 
+  // ---------- profile form (opened from the "Update your profile" announcement) ----------
+  let pForm = null;   // the draft: { id, jerseyName, jersey, bat, arm, style }
+  function openProfileForm() {
+    const me = myPlayer();
+    if (!me) { toast('Pick your name on Summary first, so the app knows which player you are.'); return; }
+    pForm = { id: me.id, jerseyName: me.jerseyName || '', jersey: me.jersey || '', bat: me.battingHand || '', arm: me.bowlingArm || '', style: me.bowlingStyle || '' };
+    sheet = { type: 'profile-form' };
+    render();
+  }
+
+  function sheetProfileForm() {
+    const me = pForm && findPlayer(pForm.id);
+    if (!me) return '';
+    const sel = (key, label, options) => `<label><span>${label}</span><select class="field select" data-input="pf-${key}">
+      ${options.map(([v, l]) => `<option value="${esc(v)}" ${pForm[key] === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`;
+    return `<header class="sheet-head">
+        <div><span class="day-kind">Your profile</span><h2>Update your profile</h2>
+          <p class="muted">Your teammates see this on your player card. Press Save when you’re done and the admin is told.</p></div>
+        <button class="icon-btn" data-action="close-sheet" aria-label="Close">${X_ICON}</button>
+      </header>
+      <div class="sheet-body pf">
+        <div class="pf-photo">
+          <button class="avatar-btn" data-action="photo-pick" data-id="${esc(me.id)}" title="Change photo" aria-label="Change photo">${avatar(me, 112)}<span class="cam">${CAMERA_ICON}</span></button>
+          <div><strong>${esc(me.name)}</strong><small class="muted">${me.photoAt ? 'Tap the photo to change it.' : 'Tap the camera to add a photo.'}</small></div>
+        </div>
+        <div class="form-grid">
+          <label><span>Name on your jersey</span><input class="field" type="text" maxlength="24" value="${esc(pForm.jerseyName)}" placeholder="e.g. BABAR" data-input="pf-jerseyName" data-focus="pf-jname" autocomplete="off"></label>
+          <label><span>Jersey number</span><input class="field" type="text" inputmode="numeric" maxlength="3" value="${esc(pForm.jersey)}" placeholder="e.g. 56" data-input="pf-jersey" data-focus="pf-jnum" autocomplete="off"></label>
+          ${sel('bat', 'Batting hand', [['', 'Not set'], ['right', 'Right-hand'], ['left', 'Left-hand']])}
+          ${sel('arm', 'Bowling arm', [['', 'Not set'], ['right', 'Right-arm'], ['left', 'Left-arm']])}
+          ${sel('style', 'Bowling style', BOWL_STYLES.map(x => [x, x || 'Not set']))}
+        </div>
+        <button class="btn btn-gold btn-block" data-action="profile-form-save">${icon('<path d="M20 6 9 17l-5-5"/>', 18)} Save profile</button>
+      </div>`;
+  }
+
+  // Shown on Summary while the admin's latest "update your profile" request is still waiting for this player.
+  function profileBanner() {
+    if (realAdmin() || archive || !feed) return '';
+    const me = myPlayer();
+    if (!me) return '';
+    const req = feed.find(n => n.action === 'profile');
+    if (!req || (me.profileAt && me.profileAt >= req.createdAt)) return '';
+    return `<section class="panel push-prompt profile-banner">
+      <span class="pp-ico">${icon(PERSON_PATH, 22)}</span>
+      <div class="pp-text"><strong>Update your profile</strong><small>The admin asked everyone to add a photo, jersey name and number, and batting and bowling details.</small></div>
+      <div class="pp-actions"><button class="btn btn-gold" data-action="open-profile-form">Update now</button></div>
+    </section>`;
+  }
+
   // ---------- player photos ----------
   let photoTarget = null;
 
@@ -2637,7 +2718,7 @@
     live.players.forEach(lp => {
       const p = findPlayer(lp.id);
       if (!p) return;
-      ['battingHand', 'bowlingArm', 'bowlingStyle', 'photoAt'].forEach(k => { if (p[k] !== lp[k]) { p[k] = lp[k]; changed = true; } });
+      ['battingHand', 'bowlingArm', 'bowlingStyle', 'photoAt', 'jersey', 'jerseyName', 'profileAt'].forEach(k => { if (p[k] !== lp[k]) { p[k] = lp[k]; changed = true; } });
     });
     if (changed) render();
   }
@@ -2713,6 +2794,7 @@
             ${[['', 'Not set'], ['right', 'Right-arm'], ['left', 'Left-arm']].map(([v, l]) => `<option value="${v}" ${p.bowlingArm === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
           <label><span>Bowling style</span><select class="field select" data-input="p-bowl-style" data-id="${esc(p.id)}">
             ${BOWL_STYLES.map(s => `<option value="${esc(s)}" ${p.bowlingStyle === s ? 'selected' : ''}>${s || 'Not set'}</option>`).join('')}</select></label>
+          <label><span>Jersey name</span><input class="field" type="text" maxlength="24" value="${esc(p.jerseyName)}" data-input="p-jersey-name" data-id="${esc(p.id)}" data-focus="pjname-${esc(p.id)}"></label>
           <label><span>Jersey number</span><input class="field" type="text" inputmode="numeric" maxlength="3" value="${esc(p.jersey)}" data-input="p-jersey" data-id="${esc(p.id)}" data-focus="pjersey-${esc(p.id)}"></label>
           <div class="form-row"><span>Roles</span><span class="prof-flags">
             ${[['captain', 'Captain'], ['viceCaptain', 'Vice-captain'], ['keeper', 'Wicket-keeper']].map(([k, l]) =>
@@ -2734,7 +2816,7 @@
           <div class="prof-main">
             <div class="prof-namerow"><h2 class="prof-name">${esc(p.name) || 'Unnamed'}</h2>
               <button class="icon-btn exp-btn" data-action="open-player" data-id="${esc(p.id)}" title="Expenses and payments" aria-label="Expense card for ${esc(p.name)}">${WALLET_ICON}</button></div>
-            ${p.jersey ? `<span class="prof-jersey">#${esc(p.jersey)}</span>` : ''}
+            ${p.jersey || p.jerseyName ? `<span class="prof-jersey">${p.jerseyName ? `${esc(p.jerseyName)} ` : ''}${p.jersey ? `#${esc(p.jersey)}` : ''}</span>` : ''}
             <div class="prof-badges">${badges}</div>
             <span class="muted">${esc(p.role) || '—'}</span>
             ${state.tournament.name ? `<span class="prof-tour">${TROPHY_ICON} ${esc(state.tournament.name)}${C.inTournament(p) ? '' : ' · not taking part'}</span>` : ''}
@@ -2936,7 +3018,8 @@ ${tabRows.map(r => {
             ${pick('me-bat', 'Batting hand', 'battingHand', [['', 'Not set'], ['right', 'Right-hand'], ['left', 'Left-hand']])}
             ${pick('me-arm', 'Bowling arm', 'bowlingArm', [['', 'Not set'], ['right', 'Right-arm'], ['left', 'Left-arm']])}
             ${pick('me-style', 'Bowling type', 'bowlingStyle', BOWL_STYLES.map(s => [s, s || 'Not set']))}
-          </div>`
+          </div>
+          <button class="btn btn-ghost" data-action="open-profile-form">Jersey name and number, and send to admin</button>`
           : '<p class="muted">Pick your name on the Summary page first, so the app knows which player you are.</p>'}
       </section>` : '';
 
@@ -3025,6 +3108,7 @@ ${tabRows.map(r => {
     if (sheet.type === 'scorecard') body = sheetMatchInfo();
     if (sheet.type === 'feed') body = sheetFeed();
     if (sheet.type === 'photo') body = sheetPhoto();
+    if (sheet.type === 'profile-form') body = sheetProfileForm();
     if (!body) { sheet = null; return ''; }
     return `<div class="sheet-backdrop" data-action="close-sheet"></div>
       <div class="sheet" role="dialog" aria-modal="true">${body}</div>`;
@@ -3570,6 +3654,7 @@ ${tabRows.map(r => {
       const m = realMatchesById(annDraft.matchId);
       annDraft.title = x.title;
       annDraft.body = x.make(m);
+      annDraft.action = x.action || '';
       const at = x.at(m);
       if (at) { annDraft.later = true; annDraft.at = at; toast('Timed for the right moment — change it if you like.'); }
       render();
@@ -3584,7 +3669,8 @@ ${tabRows.map(r => {
       }
       render();
     },
-    'ann-clear'() { annDraft = { title: '', body: '', matchId: '', later: false, at: '' }; render(); },
+    'ann-action-clear'() { annDraft.action = ''; render(); },
+    'ann-clear'() { annDraft = { title: '', body: '', matchId: '', later: false, at: '', action: '' }; render(); },
     async 'ann-send'() {
       if (!isStaff()) return;
       const d = annDraft;
@@ -3596,9 +3682,9 @@ ${tabRows.map(r => {
         sendAt = when.toISOString();
       }
       try {
-        await api('POST', '/api/announcements', { title: d.title, body: d.body, matchId: d.matchId, sendAt });
+        await api('POST', '/api/announcements', { title: d.title, body: d.body, matchId: d.matchId, sendAt, action: d.action });
         const later = d.later;
-        annDraft = { title: '', body: '', matchId: '', later: false, at: '' };
+        annDraft = { title: '', body: '', matchId: '', later: false, at: '', action: '' };
         await loadAnnouncements();
         render();
         toast(later ? 'Scheduled. It will appear for everyone at that time.' : 'Sent. It now shows in everyone’s notifications.');
@@ -3607,7 +3693,7 @@ ${tabRows.map(r => {
     'ann-duplicate'(el) {
       const a = (announcements || []).find(x => x.id === el.dataset.id);
       if (!a) return;
-      annDraft = { title: a.title, body: a.body, matchId: a.matchId || '', later: false, at: '' };
+      annDraft = { title: a.title, body: a.body, matchId: a.matchId || '', later: false, at: '', action: a.action || '' };
       render();
       const box = $('#ann-composer');
       if (box) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -3663,6 +3749,22 @@ ${tabRows.map(r => {
         render();
         toast('Notes saved.');
       } catch (e) { toast(e.message || 'Could not save the notes.'); }
+    },
+    'open-profile-form'() { openProfileForm(); },
+    async 'profile-form-save'() {
+      const me = pForm && findPlayer(pForm.id);
+      if (!me) return;
+      try {
+        await api('PUT', `/api/players/${encodeURIComponent(me.id)}/profile`, {
+          battingHand: pForm.bat, bowlingArm: pForm.arm, bowlingStyle: pForm.style, jersey: pForm.jersey, jerseyName: pForm.jerseyName, submit: true
+        });
+        Object.assign(me, { battingHand: pForm.bat, bowlingArm: pForm.arm, bowlingStyle: pForm.style, jersey: pForm.jersey.replace(/\D/g, '').slice(0, 3),
+          jerseyName: pForm.jerseyName.trim().slice(0, 24), profileAt: new Date().toISOString() });
+        pForm = null;
+        sheet = null;
+        render();
+        toast('Thanks! Your profile is saved and the admin has been told.');
+      } catch (e) { toast(e.message || 'Could not save your profile.'); }
     },
     'gallery-add'(el) { galleryTarget = el.dataset.match; $('#gallery-file').click(); },
     'open-photo'(el) { sheet = { type: 'photo', id: el.dataset.id, back: sheet && sheet.type !== 'photo' ? sheet : (sheet && sheet.back) || null }; render(); },
@@ -3790,7 +3892,7 @@ ${tabRows.map(r => {
       toast('Access revoked.');
     },
     'open-inbox'() {
-      if (realAdmin()) { sheet = { type: 'inbox' }; loadInbox(); } else { sheet = { type: 'feed' }; markFeedSeen(); loadFeed(); }
+      if (realAdmin()) { sheet = { type: 'inbox' }; markAdminSeen(); loadInbox(); loadAdminUpdates(); } else { sheet = { type: 'feed' }; markFeedSeen(); loadFeed(); }
       render();
     },
     async 'inbox-approve'(el) {
@@ -4370,6 +4472,7 @@ ${tabRows.map(r => {
     'p-bat'(el) { const p = findPlayer(el.dataset.id); if (p) p.battingHand = el.value; },
     'p-bowl-arm'(el) { const p = findPlayer(el.dataset.id); if (p) p.bowlingArm = el.value; },
     'p-bowl-style'(el) { const p = findPlayer(el.dataset.id); if (p) p.bowlingStyle = el.value; },
+    'p-jersey-name'(el) { const p = findPlayer(el.dataset.id); if (p) p.jerseyName = el.value.slice(0, 24); },
     'p-jersey'(el) { el.value = el.value.replace(/\D/g, '').slice(0, 3); const p = findPlayer(el.dataset.id); if (p) p.jersey = el.value; },
     'training-desc'(el) { const t = state.trainings.find(x => x.id === el.dataset.id); if (t) t.desc = el.value; },
     'exp-item'(el) { const e = findExpense(el); if (e) e.item = el.value; },
@@ -4429,6 +4532,12 @@ ${tabRows.map(r => {
         else if (k === 'ann-body') { annDraft.body = el.value; const c = $('#ann-count'); if (c) c.textContent = `${el.value.length}/300`; }
         else if (k === 'ann-at') annDraft.at = el.value;
         else if (k === 'ann-match') { annDraft.matchId = el.value; render(); }
+        return;
+      }
+      if (el.dataset && /^pf-/.test(el.dataset.input || '')) {
+        const k = el.dataset.input.slice(3);
+        if (k === 'jersey') el.value = el.value.replace(/\D/g, '').slice(0, 3);
+        if (pForm) pForm[k] = el.value;
         return;
       }
       if (el.dataset && /^poll-/.test(el.dataset.input || '')) {

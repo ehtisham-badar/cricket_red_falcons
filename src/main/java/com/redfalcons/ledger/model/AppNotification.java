@@ -48,17 +48,26 @@ public class AppNotification {
     @Column(name = "push_done")
     private Boolean pushDone;
 
+    /** "admin" for notices only the admin should see (e.g. a player updated their profile); null for everyone. */
+    @Column(length = 8)
+    private String audience;
+
+    /** What tapping it should open: "profile" asks the player to update their profile; null for none. */
+    @Column(length = 16)
+    private String action;
+
     protected AppNotification() {
     }
 
     public static AppNotification announcement(String id, String authorId, String author, String title, String body,
-                                               String matchId, String publishAt, String createdAt) {
+                                               String matchId, String publishAt, String createdAt, String action) {
         AppNotification n = new AppNotification(id, "announcement:" + id, title, body, createdAt);
         n.kind = "announcement";
         n.authorId = authorId;
         n.author = author;
         n.matchId = matchId;
         n.publishAt = publishAt;
+        n.action = action;
         n.pushDone = publishAt == null;
         return n;
     }
@@ -89,6 +98,15 @@ public class AppNotification {
     public String getTitle() { return title; }
     public String getBody() { return body; }
     public String getCreatedAt() { return createdAt; }
+    public static AppNotification adminNotice(String id, String title, String body, String createdAt) {
+        AppNotification n = new AppNotification(id, "admin:" + id, title, body, createdAt);
+        n.kind = "notice";
+        n.audience = "admin";
+        return n;
+    }
+
+    public boolean forAdminOnly() { return "admin".equals(audience); }
+    public String getAction() { return action == null ? "" : action; }
     public boolean isNotice() { return "notice".equals(kind); }
     public boolean awaitingPush() { return Boolean.FALSE.equals(pushDone); }
     public void markPushed() { this.pushDone = true; }

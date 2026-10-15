@@ -30,15 +30,15 @@ public class AnnouncementController {
         this.auth = auth;
     }
 
-    public record NewAnnouncement(String title, String body, String matchId, String sendAt) {
+    public record NewAnnouncement(String title, String body, String matchId, String sendAt, String action) {
     }
 
     public record Row(String id, String title, String body, String matchId, String author, String authorId,
-                      String createdAt, String sendAt, String status) {
+                      String createdAt, String sendAt, String status, String action) {
         static Row of(AppNotification n) {
             boolean waiting = !n.getPublishAt().isEmpty() && Instant.parse(n.getPublishAt()).isAfter(Instant.now());
             return new Row(n.getId(), n.getTitle(), n.getBody(), n.getMatchId(), n.getAuthor(), n.getAuthorId(), n.getCreatedAt(),
-                    n.getPublishAt(), waiting ? "scheduled" : "sent");
+                    n.getPublishAt(), waiting ? "scheduled" : "sent", n.getAction());
         }
     }
 
@@ -70,7 +70,8 @@ public class AnnouncementController {
         if (who == null) return forbidden();
         try {
             return ResponseEntity.ok(Row.of(notifications.announce(who.id(), who.name(), body == null ? null : body.title(),
-                    body == null ? null : body.body(), body == null ? null : body.matchId(), body == null ? null : body.sendAt())));
+                    body == null ? null : body.body(), body == null ? null : body.matchId(), body == null ? null : body.sendAt(),
+                    body == null ? null : body.action())));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }

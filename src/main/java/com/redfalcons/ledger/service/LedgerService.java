@@ -125,7 +125,7 @@ public class LedgerService {
             boolean hide = ownOnly && !p.id().equals(viewerId);
             return new PlayerDto(p.id(), p.name(), p.role(), hide ? "" : p.paid(), p.tournament(), p.att(),
                     hide ? List.of() : p.payments(), null, p.battingHand(), p.bowlingArm(), p.bowlingStyle(),
-                    p.keeper(), p.captain(), p.viceCaptain(), p.jersey(), p.photoAt());
+                    p.keeper(), p.captain(), p.viceCaptain(), p.jersey(), p.photoAt(), p.jerseyName(), p.profileAt());
         }).toList();
         return new LedgerDto(full.app(), full.version(), full.savedAt(), ps, full.amounts(), full.trainings(), full.expenses(),
                 full.tournament(), st, full.twelfth(), full.battingOrder(), full.matches(),
@@ -150,7 +150,7 @@ public class LedgerService {
                     return new PlayerDto(p.getId(), p.getName(), p.getRole(), sum(paid.stream().map(PaymentDto::amount)),
                             p.isInTournament(), att, paid, p.getPhone(), p.getBattingHand(), p.getBowlingArm(),
                             p.getBowlingStyle(), p.isKeeper(), p.isCaptain(), p.isViceCaptain(), p.getJersey(),
-                            photoAt.getOrDefault(p.getId(), ""));
+                            photoAt.getOrDefault(p.getId(), ""), p.getJerseyName(), p.getProfileSavedAt());
                 })
                 .toList();
 
@@ -199,15 +199,35 @@ public class LedgerService {
 
     /** A player's own cricket details (batting hand, bowling arm and style); the rest of the profile is untouched. */
     @Transactional
-    public boolean updateProfile(String playerId, String battingHand, String bowlingArm, String bowlingStyle) {
+    public boolean updateProfile(String playerId, String battingHand, String bowlingArm, String bowlingStyle,
+                                 String jerseyNumber, String jerseyName, boolean submit) {
         Player p = players.findById(playerId).orElse(null);
         if (p == null) return false;
+        // A field left out keeps what is stored.
+        if (battingHand == null) battingHand = p.getBattingHand();
+        if (bowlingArm == null) bowlingArm = p.getBowlingArm();
+        if (bowlingStyle == null) bowlingStyle = p.getBowlingStyle();
         if (!(HANDS.contains(nz(battingHand)) || nz(battingHand).isEmpty())
                 || !(HANDS.contains(nz(bowlingArm)) || nz(bowlingArm).isEmpty())
                 || !BOWLING_STYLES.contains(nz(bowlingStyle))) {
             throw new IllegalArgumentException("Pick one of the listed options.");
         }
-        p.setProfile(nz(battingHand), nz(bowlingArm), nz(bowlingStyle), p.isKeeper(), p.isCaptain(), p.isViceCaptain(), p.getJersey());
+        p.setProfile(nz(battingHand), nz(bowlingArm), nz(bowlingStyle), p.isKeeper(), p.isCaptain(), p.isViceCaptain(),
+                jerseyNumber != null ? jersey(jerseyNumber) : p.getJersey());
+        if (jerseyName != null) p.setJerseyName(clip(jerseyName, 24).trim());
+        if (submit) {
+            p.setProfileSavedAt(Instant.now().toString());
+            List<String> bits = new ArrayList<>();
+            if (photos.existsById(playerId)) bits.add("photo");
+            if (!p.getJerseyName().isEmpty() || !p.getJersey().isEmpty()) {
+                bits.add("jersey " + (p.getJerseyName().isEmpty() ? "" : p.getJerseyName()) + (p.getJersey().isEmpty() ? "" : " #" + p.getJersey()));
+            }
+            if (!p.getBattingHand().isEmpty()) bits.add(p.getBattingHand() + "-hand bat");
+            if (!p.getBowlingStyle().isEmpty() || !p.getBowlingArm().isEmpty()) {
+                bits.add(("bowls " + p.getBowlingArm() + " " + p.getBowlingStyle()).replaceAll("\\s+", " ").trim());
+            }
+            notifications.adminNotice("Profile updated", p.getName() + " updated their profile" + (bits.isEmpty() ? "." : ": " + String.join(", ", bits) + "."));
+        }
         return true;
     }
 
@@ -316,6 +336,8 @@ public class LedgerService {
             Player copy = new Player(p.getId(), 0, "", "", "", true, "", Set.of());
             copy.setProfile(p.getBattingHand(), p.getBowlingArm(), p.getBowlingStyle(), p.isKeeper(), p.isCaptain(),
                     p.isViceCaptain(), p.getJersey());
+            copy.setJerseyName(p.getJerseyName());
+            copy.setProfileSavedAt(p.getProfileSavedAt());
             storedProfiles.put(p.getId(), copy);
         });
 
@@ -351,6 +373,8 @@ public class LedgerService {
                 row.setProfile(kept.getBattingHand(), kept.getBowlingArm(), kept.getBowlingStyle(), kept.isKeeper(),
                         kept.isCaptain(), kept.isViceCaptain(), kept.getJersey());
             }
+            row.setJerseyName(p.jerseyName() != null ? clip(p.jerseyName(), 24) : kept != null ? kept.getJerseyName() : "");
+            row.setProfileSavedAt(kept != null ? kept.getProfileSavedAt() : "");
             newPlayers.add(row);
         }
 
