@@ -286,7 +286,7 @@
     else if (push.subscribed) {
       const me = !realAdmin() && myPlayer();
       status = `<p class="install-done">${icon('<path d="M20 6 9 17l-5-5"/>', 18)} On for this device${me ? ` · ${esc(me.name)}` : ''}</p>
-        ${!realAdmin() && !me ? '<p class="muted notify-note">Pick your name on Summary so messages meant for you reach you.</p>' : ''}
+        ${!realAdmin() && !me ? '<p class="muted notify-note">Choose your name in Settings so messages meant for you reach you.</p>' : ''}
         <button class="btn btn-ghost" data-action="push-off">Turn off</button>`;
     } else {
       status = `<button class="btn btn-gold btn-block" data-action="push-on">${BELL_ICON} Turn on notifications</button>`;
@@ -2388,6 +2388,8 @@
   const momRow = id => engage && engage.mom.find(x => x.matchId === id);
   const predRow = id => engage && engage.predictions.find(x => x.matchId === id);
   const canAct = () => !!myPlayer();
+  // Shown wherever someone has to be a real squad member to take part (votes, predictions, polls, photos).
+  const needName = what => `<span class="need-name">${what} <button class="chip" data-action="go-settings">Choose your name in Settings</button></span>`;
   const pctBar = (n, total) => `<span class="eg-bar"><i style="width:${total ? Math.round(n * 100 / total) : 0}%"></i></span>`;
 
   // Man of the match: players who played vote once finished; the admin closes the voting and the winner is announced.
@@ -2409,7 +2411,7 @@
           <div class="mom-list">${xi.filter(p => p.id !== me.id).map(p => `<button type="button" class="mom-opt ${row.mine === p.id ? 'on' : ''}" data-action="mom-vote" data-match="${esc(m.id)}" data-player="${esc(p.id)}" aria-pressed="${row.mine === p.id}">
               ${avatar(p, 36)}<span class="mom-name">${esc(p.name)}</span>
               ${row.counts && row.counts[p.id] != null ? `<span class="mom-n">${row.counts[p.id]}</span>` : ''}</button>`).join('')}</div>`
-        : `<p class="muted eg-note">${isStaff() ? 'Players vote here once the match is finished.' : 'Pick your name on Summary to vote.'}</p>`;
+        : `<p class="muted eg-note">${isStaff() ? 'Players vote here once the match is finished.' : needName('To vote,')}</p>`;
       if (isStaff() && total) {
         body += `<div class="mom-tally">${Object.entries(row.counts).sort((a, b) => b[1] - a[1]).map(([id, n]) => { const p = findPlayer(id); return p ? `<div class="tally-row"><span>${esc(p.name)}</span>${pctBar(n, total)}<b>${n}</b></div>` : ''; }).join('')}</div>`;
       }
@@ -2426,43 +2428,66 @@
     const row = predRow(m.id) || { locked: false, mine: '', counts: {} };
     const opp = m.opponent || 'Opponent';
     const total = (row.counts.win || 0) + (row.counts.loss || 0);
-    const btn = (pick, label) => `<button type="button" class="pred-opt ${row.mine === pick ? 'on' : ''}" data-action="predict" data-match="${esc(m.id)}" data-pick="${pick}" ${row.locked || !canAct() ? 'disabled' : ''} aria-pressed="${row.mine === pick}">${label}</button>`;
+    const btn = (pick, label) => `<button type="button" class="pred-opt ${row.mine === pick ? 'on' : ''}" data-action="predict" data-match="${esc(m.id)}" data-pick="${pick}" ${row.locked || !canAct() || row.mine ? 'disabled' : ''} aria-pressed="${row.mine === pick}">${label}</button>`;
+    const staff = isStaff();
+    const identified = canAct();
     let note;
-    if (row.locked) note = 'Predictions are closed — the match has started.';
-    else if (!canAct()) note = isStaff() ? 'Players can guess the winner until the match starts.' : 'Pick your name on Summary to join in.';
-    else note = row.mine ? 'Locked in. You can change it until the match starts.' : 'Guess the winner. One point for every right guess.';
-    const tally = total && (row.locked || isStaff()) ? `<div class="mom-tally">
+    if (row.mine) note = 'Locked in. A prediction can’t be changed.';
+    else if (row.locked) note = 'Predictions are closed — the match has started.';
+    else if (!identified && !staff) note = needName('To predict,');
+    else if (!identified) note = 'Players can guess the winner until the match starts.';
+    else note = 'Guess the winner — once you pick, it’s locked. One point for every right guess.';
+    // Players see how the team guessed once the match has started; the admin and managers open the full list instead.
+    const tally = total && row.locked && !staff ? `<div class="mom-tally">
         <div class="tally-row"><span>Red Falcons</span>${pctBar(row.counts.win || 0, total)}<b>${row.counts.win || 0}</b></div>
         <div class="tally-row"><span>${esc(opp)}</span>${pctBar(row.counts.loss || 0, total)}<b>${row.counts.loss || 0}</b></div></div>` : '';
-    // The admin sees who guessed what.
-    const names = pick => (row.picks || []).filter(x => x.pick === pick).map(x => findPlayer(x.playerId)).filter(Boolean);
-    const chips = list => list.length ? list.map(p => `<span class="pick-chip">${avatar(p, 22)}${esc(p.name)}</span>`).join('') : '<small class="muted">Nobody</small>';
-    const waiting = isAdmin() && !compact ? state.players.filter(p => C.inTournament(p) && !(row.picks || []).some(x => x.playerId === p.id)) : [];
-    const who = isAdmin() ? `<div class="pick-list">
-        <div class="pick-group"><b>Red Falcons win · ${names('win').length}</b><div>${chips(names('win'))}</div></div>
-        <div class="pick-group"><b>${esc(opp)} win · ${names('loss').length}</b><div>${chips(names('loss'))}</div></div>
-        ${waiting.length ? `<div class="pick-group dim"><b>No prediction yet · ${waiting.length}</b><div>${waiting.map(p => `<span class="pick-chip off">${esc(p.name)}</span>`).join('')}</div></div>` : ''}
-      </div>` : '';
+    const list = staff ? `<div class="eg-actions"><button class="btn btn-ghost small" data-action="open-predictions" data-match="${esc(m.id)}">${icon(PERSON_PATH, 16)} See who predicted${total ? ` (${total})` : ''}</button></div>` : '';
     return `<div class="pred ${compact ? 'compact' : ''}">
       <div class="pred-head"><strong>Who will win?</strong><small class="muted">${note}</small></div>
-      <div class="pred-btns">${btn('win', 'Red Falcons')}${btn('loss', esc(opp))}</div>${tally}${who}</div>`;
+      <div class="pred-btns">${btn('win', 'Red Falcons')}${btn('loss', esc(opp))}</div>${tally}${list}</div>`;
   }
 
-  // Admin only, on a finished match: who guessed what, and who was right.
+  // Admin and managers: who guessed what for one match (and who was right, once it is finished), on its own screen.
+  function sheetPredictions() {
+    const m = C.matches(state).find(x => x.id === sheet.id);
+    if (!m || !isStaff()) return '';
+    const row = predRow(m.id) || { picks: [], finished: false, result: '' };
+    const picks = row.picks || [];
+    const opp = m.opponent || 'Opponent';
+    const names = pick => picks.filter(x => x.pick === pick).map(x => findPlayer(x.playerId)).filter(Boolean);
+    const mark = pick => {
+      if (!(row.finished && (row.result === 'win' || row.result === 'loss'))) return '';
+      const right = pick === row.result;
+      return `<b class="pr-mark ${right ? 'ok' : 'no'}">${right ? '✓ Right' : '✗ Wrong'}</b>`;
+    };
+    const group = (pick, label) => {
+      const ps = names(pick);
+      return `<div class="pick-group"><b>${label} · ${ps.length}</b>${ps.length
+        ? `<ul class="pick-results">${ps.map(p => `<li>${avatar(p, 28)}<span class="pr-name">${esc(p.name)}</span>${mark(pick)}</li>`).join('')}</ul>`
+        : '<p class="muted">Nobody.</p>'}</div>`;
+    };
+    const waiting = state.players.filter(p => C.inTournament(p) && !picks.some(x => x.playerId === p.id));
+    const res = RESULTS.find(r => r[0] === m.result);
+    return `<header class="sheet-head">
+        <div><span class="day-kind">Predictions</span><h2>${esc(m.label)}${m.opponent ? ` · vs ${esc(m.opponent)}` : ''}</h2>
+          <p class="muted">${picks.length} player${picks.length === 1 ? '' : 's'} predicted${res ? ` · result: ${res[1]}` : ''}. Only you and managers see this.</p></div>
+        <button class="icon-btn" data-action="sheet-back" aria-label="Close">${X_ICON}</button>
+      </header>
+      <div class="sheet-body pick-sheet">
+        ${group('win', 'Red Falcons win')}
+        ${group('loss', `${esc(opp)} win`)}
+        ${waiting.length ? `<div class="pick-group dim"><b>No prediction yet · ${waiting.length}</b><div>${waiting.map(p => `<span class="pick-chip off">${esc(p.name)}</span>`).join('')}</div></div>` : ''}
+        ${m.finished && !m.result ? '<p class="muted eg-note">Set the match result (Won, Lost or Tie) to score these.</p>' : ''}
+      </div>`;
+  }
+
+  // On a finished match the admin and managers get a button to the list of predictions.
   function predictResults(m) {
-    if (!isAdmin() || !m.finished || m.test || !engage) return '';
+    if (!isStaff() || !m.finished || m.test || !engage) return '';
     const row = predRow(m.id);
     if (!row || !row.finished || !(row.picks || []).length) return '';
-    const opp = m.opponent || 'Opponent';
-    const label = pick => pick === 'win' ? 'Red Falcons win' : `${opp} win`;
-    return `<h3 class="sub gal-title">Predictions <span class="muted">${row.picks.length}</span></h3>
-      <ul class="pick-results">${row.picks.map(x => {
-        const p = findPlayer(x.playerId);
-        if (!p) return '';
-        const right = row.result === 'win' || row.result === 'loss' ? x.pick === row.result : null;
-        return `<li>${avatar(p, 28)}<span class="pr-name">${esc(p.name)}</span><span class="muted">${label(x.pick)}</span>${right == null ? '' : `<b class="pr-mark ${right ? 'ok' : 'no'}">${right ? '✓ Right' : '✗ Wrong'}</b>`}</li>`;
-      }).join('')}</ul>
-      ${m.result ? '' : '<p class="muted eg-note">Set the match result (Won, Lost or Tie) to score these.</p>'}`;
+    return `<h3 class="sub gal-title">Predictions</h3>
+      <div class="eg-actions"><button class="btn btn-ghost small" data-action="open-predictions" data-match="${esc(m.id)}">${icon(PERSON_PATH, 16)} See who predicted (${row.picks.length})</button></div>`;
   }
   const predictSection = m => (m.finished || m.test || !engage) ? '' : `<h3 class="sub gal-title">Prediction</h3>${predictBlock(m, false)}`;
 
@@ -2495,7 +2520,7 @@
       <div class="poll-head"><strong>${esc(p.question)}</strong><small class="muted">${esc(p.author)} · ${ago(p.createdAt)}${p.closed ? ' · Closed' : ''}</small></div>
       <div class="poll-opts">${p.options.map((o, i) => `<button type="button" class="poll-opt ${p.mine === i ? 'on' : ''}" data-action="poll-vote" data-id="${esc(p.id)}" data-i="${i}" ${p.closed || !can ? 'disabled' : ''} aria-pressed="${p.mine === i}">
           <span class="poll-text">${esc(o.text)}</span>${o.count != null ? `${pctBar(o.count, total)}<b>${o.count}</b>` : ''}</button>`).join('')}</div>
-      ${!can ? '<small class="muted">Pick your name on Summary to answer.</small>' : p.mine == null && !p.closed ? '<small class="muted">Answer to see how the team voted.</small>' : `<small class="muted">${total} answer${total === 1 ? '' : 's'}</small>`}
+      ${!can ? `<small class="muted">${needName('To answer,')}</small>` : p.mine == null && !p.closed ? '<small class="muted">Answer to see how the team voted.</small>' : `<small class="muted">${total} answer${total === 1 ? '' : 's'}</small>`}
     </article>`;
   }
 
@@ -2598,7 +2623,7 @@
       ${list.length ? `<div class="gal-grid">${list.map(p => `<button type="button" class="gal-thumb" data-action="open-photo" data-id="${esc(p.id)}" aria-label="Photo by ${esc(p.by)}">
           <img src="${matchPhotoSrc(p.id)}" alt="" loading="lazy"></button>`).join('')}</div>` : '<p class="muted gal-empty">No photos yet. Be the first to add one.</p>'}
       ${canAddPhotos() ? `<button class="btn btn-ghost gal-add" data-action="gallery-add" data-match="${esc(m.id)}">${icon('<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>', 18)} Add photos</button>`
-        : '<p class="muted gal-empty">Pick your name on Summary to add photos.</p>'}`;
+        : `<p class="muted gal-empty">${needName('To add photos,')}</p>`}`;
   }
 
   // Latest photos across matches, on Summary.
@@ -3234,6 +3259,11 @@ ${tabRows.map(r => {
     const photoPanel = !realAdmin() ? `
       <section class="panel photo-panel">
         <div class="panel-head"><p class="muted">Shown on your player profile for everyone in the team. Changes save as soon as you pick them.</p></div>
+        <label class="me-who ${me ? '' : 'needed'}"><span>${me ? 'You are' : 'Which player are you?'}${me ? '' : ' <small class="muted">Choose your squad name to vote, predict, answer polls and add photos.</small>'}</span>
+          <select class="field select" data-input="pick-me" aria-label="Choose your name">
+            ${me ? '' : '<option value="">Choose your name…</option>'}
+            ${state.players.map(p => `<option value="${esc(p.id)}" ${me && me.id === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
+          </select></label>
         ${me ? `<div class="photo-row">${avatar(me, 84)}<div class="photo-actions">
             <button class="btn btn-gold" data-action="photo-pick" data-id="${esc(me.id)}">${me.photoAt ? 'Change photo' : 'Upload photo'}</button>
             ${me.photoAt ? `<button class="btn btn-ghost" data-action="photo-remove" data-id="${esc(me.id)}">Remove</button>` : ''}</div></div>
@@ -3243,7 +3273,7 @@ ${tabRows.map(r => {
             ${pick('me-style', 'Bowling type', 'bowlingStyle', BOWL_STYLES.map(s => [s, s || 'Not set']))}
           </div>
           <button class="btn btn-ghost" data-action="open-profile-form">Jersey name and number, and send to admin</button>`
-          : '<p class="muted">Pick your name on the Summary page first, so the app knows which player you are.</p>'}
+          : ''}
       </section>` : '';
 
     const accountPanel = `
@@ -3332,6 +3362,7 @@ ${tabRows.map(r => {
     if (sheet.type === 'feed') body = sheetFeed();
     if (sheet.type === 'photo') body = sheetPhoto();
     if (sheet.type === 'profile-form') body = sheetProfileForm();
+    if (sheet.type === 'predictions') body = sheetPredictions();
     if (!body) { sheet = null; return ''; }
     return `<div class="sheet-backdrop" data-action="close-sheet"></div>
       <div class="sheet" role="dialog" aria-modal="true">${body}</div>`;
@@ -3936,7 +3967,21 @@ ${tabRows.map(r => {
       engageCall('POST', `/api/engage/mom/${encodeURIComponent(el.dataset.match)}/close`, null, 'Winner announced.');
     },
     'mom-reopen'(el) { engageCall('POST', `/api/engage/mom/${encodeURIComponent(el.dataset.match)}/reopen`, null, 'Voting reopened.'); },
-    'predict'(el) { engageCall('PUT', `/api/engage/predict/${encodeURIComponent(el.dataset.match)}`, { pick: el.dataset.pick }, 'Prediction saved.'); },
+    async 'predict'(el) {
+      const m = C.matches(state).find(x => x.id === el.dataset.match);
+      const label = el.dataset.pick === 'win' ? 'Red Falcons to win' : `${(m && m.opponent) || 'The opponent'} to win`;
+      if (!await confirmDialog('Lock in your prediction?', `${label}. Once you lock it in, it can’t be changed.`, 'Lock it in')) return;
+      engageCall('PUT', `/api/engage/predict/${encodeURIComponent(el.dataset.match)}`, { pick: el.dataset.pick }, 'Prediction locked in.');
+    },
+    'open-predictions'(el) { sheet = { type: 'predictions', id: el.dataset.match, back: sheet && sheet.type !== 'predictions' ? sheet : null }; render(); },
+    'sheet-back'() { sheet = (sheet && sheet.back) || null; render(); },
+    'go-settings'() {
+      sheet = null;
+      tab = 'settings';
+      render();
+      const t = document.getElementById('set-account');
+      if (t) window.scrollTo({ top: t.getBoundingClientRect().top + window.scrollY - (window.innerWidth <= 960 ? 140 : 90), behavior: 'smooth' });
+    },
     'poll-vote'(el) { engageCall('PUT', `/api/engage/polls/${encodeURIComponent(el.dataset.id)}/vote`, { option: Number(el.dataset.i) }); },
     'poll-add-opt'() { if (pollDraft.opts.length < 5) { pollDraft.opts.push(''); render(); } },
     async 'poll-ask'() {
@@ -4811,7 +4856,7 @@ ${tabRows.map(r => {
         if (key !== 'title') render();
         return;
       }
-      if (el.dataset && el.dataset.input === 'pick-me') { writeStore(ME_KEY, el.value || NOT_ME); refetchForViewer(); refreshPush(); return; }
+      if (el.dataset && el.dataset.input === 'pick-me') { writeStore(ME_KEY, el.value || NOT_ME); refetchForViewer(); refreshPush(); loadEngage(); return; }
       if (!fn || !isAdmin()) return;
       fn(el);
       commit();

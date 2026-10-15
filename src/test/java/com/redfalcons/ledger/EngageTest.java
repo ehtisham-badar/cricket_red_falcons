@@ -54,8 +54,12 @@ class EngageTest {
         assertThat(send("PUT", "/api/engage/predict/m2", "{\"pick\":\"win\"}", null, null).statusCode()).isEqualTo(400);
         assertThat(send("PUT", "/api/engage/predict/m2", "{\"pick\":\"draw\"}", null, "p1").statusCode()).isEqualTo(400);
         assertThat(send("PUT", "/api/engage/predict/m2", "{\"pick\":\"win\"}", null, "p1").statusCode()).isEqualTo(200);
-        assertThat(send("PUT", "/api/engage/predict/m2", "{\"pick\":\"loss\"}", null, "p2").statusCode()).isEqualTo(200);
         assertThat(send("PUT", "/api/engage/predict/m2", "{\"pick\":\"win\"}", null, "p2").statusCode()).isEqualTo(200);
+        // A prediction is locked once made: it can't be changed or repeated.
+        assertThat(send("PUT", "/api/engage/predict/m2", "{\"pick\":\"loss\"}", null, "p2").statusCode()).isEqualTo(400);
+        assertThat(send("PUT", "/api/engage/predict/m2", "{\"pick\":\"win\"}", null, "p1").statusCode()).isEqualTo(400);
+        // Someone who isn't a squad member (no valid player) can't predict.
+        assertThat(send("PUT", "/api/engage/predict/m2", "{\"pick\":\"win\"}", null, "test").statusCode()).isEqualTo(400);
         String viewerView = send("GET", "/api/engage", null, null, "p1").body();
         assertThat(viewerView).contains("\"mine\":\"win\"").contains("\"locked\":false").doesNotContain("\"counts\":{\"win\"");
         assertThat(send("GET", "/api/engage", null, admin, null).body()).contains("\"counts\":{\"win\":2}")

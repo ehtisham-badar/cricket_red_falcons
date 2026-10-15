@@ -1804,3 +1804,10 @@ a.btn { text-decoration: none; }
 .crop-tools { display: flex; align-items: center; gap: 8px; margin: 0 auto 10px; max-width: 300px; }
 .crop-tools input { flex: 1; min-width: 0; accent-color: var(--gold); }
 .crop-tools .icon-btn { flex: none; width: 38px; height: 38px; font-size: 20px; line-height: 1; }
+
+/* ---- Choose your name prompts ---- */
+.need-name { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.me-who { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; font-weight: 600; }
+.me-who small { display: block; font-weight: 400; margin-top: 2px; }
+.me-who.needed { padding: 12px 14px; border-radius: 14px; border: 1px solid rgba(var(--gold-rgb), .5); background: rgba(var(--gold-rgb), .08); }
+.pick-sheet .pick-group { margin-bottom: 16px; }

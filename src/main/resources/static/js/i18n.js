@@ -52,6 +52,11 @@
     'Crop your photo': 'اپنی تصویر کاٹیں', 'Use photo': 'تصویر استعمال کریں', 'Zoom': 'زوم',
     'Drag to move the picture, and zoom so your face fills the circle.': 'تصویر کو کھسکائیں اور زوم کریں تاکہ آپ کا چہرہ دائرے میں بھر جائے۔',
 
+    'Choose your name in Settings': 'ترتیبات میں اپنا نام چنیں', 'You are': 'آپ ہیں', 'Lock in your prediction?': 'اپنی پیشگوئی پکی کریں؟', 'Lock it in': 'پکی کریں',
+    'See who predicted': 'دیکھیں کس نے کیا پیشگوئی کی', 'Prediction locked in.': 'پیشگوئی پکی ہو گئی۔',
+    'Locked in. A prediction can’t be changed.': 'پکی ہو گئی۔ پیشگوئی بدلی نہیں جا سکتی۔',
+    'Choose your squad name to vote, predict, answer polls and add photos.': 'ووٹ دینے، پیشگوئی کرنے، پول کا جواب دینے اور تصاویر لگانے کے لیے اپنا اسکواڈ کا نام چنیں۔',
+
     // weather
     'Clear sky': 'صاف آسمان', 'Mostly clear': 'زیادہ تر صاف', 'Partly cloudy': 'جزوی ابر آلود', 'Overcast': 'ابر آلود', 'Foggy': 'دھند',
     'Drizzle': 'ہلکی بوندا باندی', 'Rain': 'بارش', 'Snow': 'برف باری', 'Rain showers': 'بارش کی بوچھاڑ', 'Thunderstorm': 'آندھی طوفان',

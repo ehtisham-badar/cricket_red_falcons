@@ -46,7 +46,7 @@ public class EngageService {
     public record Guessed(String playerId, String pick) {
     }
 
-    /** {@code picks} (who guessed what) is only sent to the admin; {@code result} is set once a match is finished. */
+    /** {@code picks} (who guessed what) is only sent to the admin and managers; {@code result} is set once a match is finished. */
     public record PredRow(String matchId, boolean locked, String mine, Map<String, Integer> counts, List<Guessed> picks,
                           boolean finished, String result) {
     }
@@ -132,7 +132,7 @@ public class EngageService {
         Map<String, int[]> table = new LinkedHashMap<>();   // player -> {correct, played}
         for (MatchDay m : real) {
             List<Prediction> ps = predictions.findByMatchId(m.getId());
-            List<Guessed> picks = who.admin() ? ps.stream().map(p -> new Guessed(p.getPlayerId(), p.getPick())).toList() : List.of();
+            List<Guessed> picks = who.staff() ? ps.stream().map(p -> new Guessed(p.getPlayerId(), p.getPick())).toList() : List.of();
             if (m.isFinished()) {
                 String r = m.getResult();
                 if (r.equals("win") || r.equals("loss")) {
@@ -142,7 +142,7 @@ public class EngageService {
                         if (p.getPick().equals(r)) t[0]++;
                     }
                 }
-                if (who.admin() && !ps.isEmpty()) predRows.add(new PredRow(m.getId(), true, "", Map.of(), picks, true, r));
+                if (who.staff() && !ps.isEmpty()) predRows.add(new PredRow(m.getId(), true, "", Map.of(), picks, true, r));
                 continue;
             }
             boolean locked = locked(m);
@@ -174,7 +174,7 @@ public class EngageService {
 
     @Transactional
     public void vote(Who who, String matchId, String candidateId) {
-        if (who.playerId() == null) throw new IllegalArgumentException("Pick your name on Summary first.");
+        if (who.playerId() == null) throw new IllegalArgumentException("Choose your name in Settings first.");
         MatchDay m = matches.findById(matchId).filter(x -> !x.isTest()).orElseThrow(() -> new IllegalArgumentException("No such match."));
         if (!m.isFinished()) throw new IllegalArgumentException("Voting opens once the match is finished.");
         if (closed.existsById(matchId)) throw new IllegalArgumentException("Voting is closed for this match.");
@@ -224,7 +224,7 @@ public class EngageService {
 
     @Transactional
     public void answerPoll(Who who, String pollId, int choice) {
-        if (!who.known()) throw new IllegalArgumentException("Pick your name on Summary first.");
+        if (!who.known()) throw new IllegalArgumentException("Choose your name in Settings first.");
         Poll p = polls.findById(pollId).orElseThrow(() -> new IllegalArgumentException("No such poll."));
         if (p.isClosed()) throw new IllegalArgumentException("This poll is closed.");
         int n = p.getChoices().split("\n").length;
@@ -251,12 +251,14 @@ public class EngageService {
 
     @Transactional
     public void predict(Who who, String matchId, String pick) {
-        if (who.playerId() == null) throw new IllegalArgumentException("Pick your name on Summary first.");
+        if (who.playerId() == null) throw new IllegalArgumentException("Choose your name in Settings first.");
         MatchDay m = matches.findById(matchId).filter(x -> !x.isTest()).orElseThrow(() -> new IllegalArgumentException("No such match."));
         String v = pick == null ? "" : pick.trim().toLowerCase();
         if (!v.equals("win") && !v.equals("loss")) throw new IllegalArgumentException("Pick win or loss.");
         if (locked(m)) throw new IllegalArgumentException("Predictions are closed for this match.");
-        predictions.save(new Prediction(matchId + ":" + who.playerId(), matchId, who.playerId(), v, Instant.now().toString()));
+        String key = matchId + ":" + who.playerId();
+        if (predictions.existsById(key)) throw new IllegalArgumentException("Your prediction is locked in — it can't be changed.");
+        predictions.save(new Prediction(key, matchId, who.playerId(), v, Instant.now().toString()));
     }
 
     // ---------- captain's notes ----------

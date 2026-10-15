@@ -88,7 +88,7 @@ public class MatchPhotoController {
                                  @RequestBody byte[] body) {
         Actor who = actor(adminToken, managerToken, viewer);
         if (who == null) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Pick your name on Summary first to add photos."));
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Choose your name in Settings first to add photos."));
         }
         if (!matches.existsById(matchId)) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "No such match."));
         if (body == null || body.length == 0) return bad("No picture sent.");
