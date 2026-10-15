@@ -38,11 +38,15 @@ public class MatchDay {
     @Column(name = "xi_announced")
     private Boolean announced;
 
+    /** How the match ended for the Red Falcons: "win", "loss", "tie", or null/empty until the admin enters it. */
+    @Column(name = "match_result", length = 8)
+    private String result;
+
     protected MatchDay() {
     }
 
     public MatchDay(String id, int position, String date, String opponent, String venue, boolean finished, boolean test,
-                    String time, boolean announced) {
+                    String time, boolean announced, String result) {
         this.id = id;
         this.position = position;
         this.date = date;
@@ -52,6 +56,7 @@ public class MatchDay {
         this.test = test;
         this.time = time;
         this.announced = announced;
+        this.result = result;
     }
 
     public String getId() { return id; }
@@ -62,5 +67,6 @@ public class MatchDay {
     public boolean isFinished() { return Boolean.TRUE.equals(finished); }
     public boolean isTest() { return Boolean.TRUE.equals(test); }
     public String getTime() { return time == null ? "" : time; }
+    public String getResult() { return result == null ? "" : result; }
     public boolean isAnnounced() { return Boolean.TRUE.equals(announced); }
 }

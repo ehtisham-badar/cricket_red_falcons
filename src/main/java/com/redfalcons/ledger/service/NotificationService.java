@@ -95,12 +95,20 @@ public class NotificationService {
     /** The admin announced a match's Playing XI: a bell notice for everyone, and a push to phones. */
     @Transactional
     public void xiAnnounced(String matchId, String title, String body) {
-        repo.findByRefKey("xi:" + matchId).ifPresent(repo::delete);
+        broadcast("xi:" + matchId, title, body, matchId);
+    }
+
+    /** A notice in everyone's bell plus a push; a later one with the same key replaces the earlier. */
+    @Transactional
+    public void broadcast(String refKey, String title, String body, String matchId) {
+        String t = title == null ? "" : title.trim();
+        String b = body == null ? "" : body.trim();
+        repo.findByRefKey(refKey).ifPresent(repo::delete);
         repo.flush();
-        repo.save(AppNotification.notice(AdminAuth.randomToken().substring(0, 16), "xi:" + matchId, title, body, matchId,
-                Instant.now().toString()));
+        repo.save(AppNotification.notice(AdminAuth.randomToken().substring(0, 16), refKey, t.length() > 80 ? t.substring(0, 80) : t,
+                b.length() > 300 ? b.substring(0, 300) : b, matchId, Instant.now().toString()));
         prune();
-        push.send(title, body, null);
+        push.send(t, b, null);
     }
 
     /** The admin may delete any announcement; a manager only their own. */

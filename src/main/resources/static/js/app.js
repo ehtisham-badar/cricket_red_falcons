@@ -445,7 +445,7 @@
     // (m1–m5); keep those that hold any attendance, expenses or 12th man.
     let matches;
     if (Array.isArray(d.matches)) {
-      matches = d.matches.filter(m => m && m.id).map(m => ({ id: m.id, date: m.date || '', opponent: m.opponent || '', venue: m.venue || '', time: /^([01]\d|2[0-3]):[0-5]\d$/.test(m.time || '') ? m.time : '', test: m.test === true, finished: m.test !== true && m.finished === true, announced: m.announced === true }));
+      matches = d.matches.filter(m => m && m.id).map(m => ({ id: m.id, date: m.date || '', opponent: m.opponent || '', venue: m.venue || '', time: /^([01]\d|2[0-3]):[0-5]\d$/.test(m.time || '') ? m.time : '', test: m.test === true, finished: m.test !== true && m.finished === true, announced: m.announced === true, result: ['win', 'loss', 'tie'].includes(m.result) ? m.result : '' }));
     } else {
       const used = id => players.some(p => p.att[id]) || (expenses[id] || []).length || (d.twelfth || {})[id];
       // These were charged as soon as they were marked, so they count as finished.
@@ -530,6 +530,11 @@
       // Which player this viewer is, so private ledgers send them their own payments.
       const me = readStore(ME_KEY);
       if (me && me !== NOT_ME) headers['X-Viewer'] = me;
+      else if (!me && state && session) {
+        // Not chosen on this device, but the name they signed in with matches one player: that's who they are.
+        const guess = myPlayer();
+        if (guess) headers['X-Viewer'] = guess.id;
+      }
     }
     const res = await fetch(API + path, { method, headers, body: body ? JSON.stringify(body) : undefined, ...opts });
     const data = await res.json().catch(() => ({}));
@@ -863,6 +868,7 @@
           <button class="btn btn-ghost" data-action="ann-clear">Clear</button>
         </div>
       </section>
+      ${pollsAdmin()}
       <section class="panel">
         <div class="panel-head"><h3>Sent</h3><p class="muted">Duplicate one to reuse it, for example for the next match.</p></div>
         ${announcements === null ? '<p class="muted">Loading…</p>' : announcements.length ? announcements.map(item).join('') : '<p class="muted season-empty">Nothing sent yet.</p>'}
@@ -1001,6 +1007,7 @@
     pollTimer = setInterval(async () => {
       if (archive || document.visibilityState !== 'visible') return;
       loadGallery();
+      loadEngage();
       if (isStaff() && tab === 'announce') loadAnnouncements();
       if (isAdmin()) { loadInbox(); syncProfiles(); return; }
       await refreshManager();
@@ -1181,6 +1188,7 @@
     loadInbox();
     loadFeed();
     loadGallery();
+    loadEngage();
     loadAnnouncements();
     refreshManager().then(loadMyLineups);
     startPolling();
@@ -1683,7 +1691,7 @@
     if (!m) return '';
     const preview = !m.announced && isAdmin() && xiOf(m).length > 0;
     const html = m.finished ? sheetScorecard() : xiPublic(m) || preview ? sheetLineup(m, preview) : sheetSquad(m);
-    return html.replace(/<\/div>\s*$/, `${matchGallery(m)}</div>`);
+    return html.replace(/<\/div>\s*$/, `${matchExtras(m)}</div>`);
   }
 
   function lineupHead(m, kind) {
@@ -1735,7 +1743,7 @@
     const name = p => `${esc(p.name)}${isCaptain(p) ? ' (c)' : ''}${isKeeper(p) ? ' †' : ''}`;
     const head = `<header class="sheet-head">
         <div>${opponentLogo(m)}<span class="day-kind">Scorecard</span><h2>Red Falcons v ${m.opponent ? esc(m.opponent) : 'TBC'}</h2>
-          <p class="muted">${esc(matchInfo(m)) || m.label}</p></div>
+          <p class="muted">${esc(matchInfo(m)) || m.label} ${resultChip(m)}</p></div>
         <button class="icon-btn" data-action="close-sheet" aria-label="Close">${X_ICON}</button>
       </header>`;
     if (!src) {
@@ -1877,6 +1885,7 @@
       <div class="nm-count" data-id="${esc(m.id)}">${countdownHtml(m)}</div>
       <div class="nm-chips">${chips}</div>
       ${weatherLine(m)}
+      ${predictBlock(m, true)}
       <div class="nm-foot">
         ${squad}
         <div class="nm-actions">
@@ -1902,7 +1911,7 @@
       return lg ? `<span class="fx-badge"><img src="${lg}" alt=""></span>` : `<span class="fx-badge ini">${esc(ini)}</span>`;
     };
     const tag = x => {
-      if (x.finished) return '<em class="fx-tag done">Played</em>';
+      if (x.finished) { const r = RESULTS.find(q => q[0] === x.result); return r ? `<em class="fx-tag res ${x.result}">${r[1]}</em>` : '<em class="fx-tag done">Played</em>'; }
       if (!x.date) return '<em class="fx-tag">Date TBC</em>';
       const n = dayDiff(x.date);
       return `<em class="fx-tag ${n === 0 ? 'now' : ''}">${n === 0 ? 'Today' : n === 1 ? 'Tomorrow' : n > 1 ? `In ${n} days` : 'Awaiting result'}</em>`;
@@ -2002,6 +2011,8 @@
       ${pushPrompt()}
       ${nextMatchCard()}
       ${fixturesPanel()}
+      ${pollsPanel()}
+      ${leaguePanel()}
       ${galleryStrip()}
       ${myBalance()}
       ${leagueBlock()}
@@ -2305,6 +2316,159 @@
         <td class="strong">${t.catches}</td><td>${t.drops}</td><td>${t.misfields}</td><td>${t.goodFielding}</td></tr>`))}`;
   }
 
+  // ---------- team activity: man of the match, polls, predictions, captain's notes ----------
+  let engage = null;                 // GET /api/engage: { mom, polls, predictions, leaderboard, me }
+  const pollDraft = { q: '', opts: ['Yes', 'No', 'Maybe'] };
+  const notesCache = {};             // matchId -> { fieldPlan, battingPlan, opposition, updatedBy, updatedAt }
+  const notesDraft = {};             // matchId -> edited copy
+  const notesBusy = {};
+
+  async function loadEngage() {
+    let next;
+    try { next = await api('GET', '/api/engage'); } catch { return; }
+    if (JSON.stringify(next) === JSON.stringify(engage)) return;
+    engage = next;
+    render();
+  }
+
+  async function engageCall(method, path, body, done) {
+    try {
+      await api(method, path, body);
+      await loadEngage();
+      if (done) toast(done);
+    } catch (e) { toast(e.message || 'That didn’t work.'); }
+  }
+
+  const RESULTS = [['win', 'Won'], ['loss', 'Lost'], ['tie', 'Tie']];
+  const resultChip = m => {
+    const r = RESULTS.find(x => x[0] === m.result);
+    return r ? `<span class="res-chip ${m.result}">${r[1]}</span>` : '';
+  };
+  const momRow = id => engage && engage.mom.find(x => x.matchId === id);
+  const predRow = id => engage && engage.predictions.find(x => x.matchId === id);
+  const canAct = () => !!myPlayer();
+  const pctBar = (n, total) => `<span class="eg-bar"><i style="width:${total ? Math.round(n * 100 / total) : 0}%"></i></span>`;
+
+  // Man of the match: players who played vote once finished; the admin closes the voting and the winner is announced.
+  function momSection(m) {
+    if (!m.finished || m.test || !engage) return '';
+    const row = momRow(m.id) || { closed: false, mine: '', counts: {}, winners: [] };
+    const xi = xiOf(m);
+    const total = Object.values(row.counts || {}).reduce((a, b) => a + b, 0);
+    let body;
+    if (row.closed && row.winners.length) {
+      body = row.winners.map(id => {
+        const p = findPlayer(id);
+        return p ? `<div class="mom-winner">${avatar(p, 52)}<span><strong>${esc(p.name)}</strong><small>${row.counts[id] || 0} vote${(row.counts[id] || 0) === 1 ? '' : 's'}</small></span><span class="mom-star">⭐</span></div>` : '';
+      }).join('');
+    } else {
+      const me = myPlayer();
+      body = canAct()
+        ? `<p class="muted eg-note">${row.mine ? 'Your vote is in — you can change it until the admin announces the winner.' : 'Tap the player who stood out. Results show after you vote.'}</p>
+          <div class="mom-list">${xi.filter(p => p.id !== me.id).map(p => `<button type="button" class="mom-opt ${row.mine === p.id ? 'on' : ''}" data-action="mom-vote" data-match="${esc(m.id)}" data-player="${esc(p.id)}" aria-pressed="${row.mine === p.id}">
+              ${avatar(p, 36)}<span class="mom-name">${esc(p.name)}</span>
+              ${row.counts && row.counts[p.id] != null ? `<span class="mom-n">${row.counts[p.id]}</span>` : ''}</button>`).join('')}</div>`
+        : `<p class="muted eg-note">${isStaff() ? 'Players vote here once the match is finished.' : 'Pick your name on Summary to vote.'}</p>`;
+      if (isStaff() && total) {
+        body += `<div class="mom-tally">${Object.entries(row.counts).sort((a, b) => b[1] - a[1]).map(([id, n]) => { const p = findPlayer(id); return p ? `<div class="tally-row"><span>${esc(p.name)}</span>${pctBar(n, total)}<b>${n}</b></div>` : ''; }).join('')}</div>`;
+      }
+    }
+    const admin = isAdmin() ? (row.closed
+      ? `<button class="btn btn-ghost small" data-action="mom-reopen" data-match="${esc(m.id)}">Reopen voting</button>`
+      : `<button class="btn btn-gold small" data-action="mom-close" data-match="${esc(m.id)}" ${total ? '' : 'disabled'}>Close voting &amp; announce winner</button>`) : '';
+    return `<h3 class="sub gal-title">Man of the match</h3>${body}${admin ? `<div class="eg-actions">${admin}</div>` : ''}`;
+  }
+
+  // Who will win? Open until the match starts.
+  function predictBlock(m, compact) {
+    if (m.finished || m.test || !engage) return '';
+    const row = predRow(m.id) || { locked: false, mine: '', counts: {} };
+    const opp = m.opponent || 'Opponent';
+    const total = (row.counts.win || 0) + (row.counts.loss || 0);
+    const btn = (pick, label) => `<button type="button" class="pred-opt ${row.mine === pick ? 'on' : ''}" data-action="predict" data-match="${esc(m.id)}" data-pick="${pick}" ${row.locked || !canAct() ? 'disabled' : ''} aria-pressed="${row.mine === pick}">${label}</button>`;
+    let note;
+    if (row.locked) note = 'Predictions are closed — the match has started.';
+    else if (!canAct()) note = isStaff() ? 'Players can guess the winner until the match starts.' : 'Pick your name on Summary to join in.';
+    else note = row.mine ? 'Locked in. You can change it until the match starts.' : 'Guess the winner. One point for every right guess.';
+    const tally = total && (row.locked || isStaff()) ? `<div class="mom-tally">
+        <div class="tally-row"><span>Red Falcons</span>${pctBar(row.counts.win || 0, total)}<b>${row.counts.win || 0}</b></div>
+        <div class="tally-row"><span>${esc(opp)}</span>${pctBar(row.counts.loss || 0, total)}<b>${row.counts.loss || 0}</b></div></div>` : '';
+    return `<div class="pred ${compact ? 'compact' : ''}">
+      <div class="pred-head"><strong>Who will win?</strong><small class="muted">${note}</small></div>
+      <div class="pred-btns">${btn('win', 'Red Falcons')}${btn('loss', esc(opp))}</div>${tally}</div>`;
+  }
+  const predictSection = m => (m.finished || m.test || !engage) ? '' : `<h3 class="sub gal-title">Prediction</h3>${predictBlock(m, false)}`;
+
+  // The captain's plan for a match: the admin and managers only.
+  function notesSection(m) {
+    if (!isStaff() || m.test) return '';
+    if (!notesCache[m.id] && !notesBusy[m.id]) {
+      notesBusy[m.id] = true;
+      api('GET', `/api/engage/notes/${encodeURIComponent(m.id)}`).then(n => { notesCache[m.id] = n; delete notesBusy[m.id]; render(); }).catch(() => { delete notesBusy[m.id]; });
+    }
+    const n = notesDraft[m.id] || notesCache[m.id];
+    if (!n) return `<h3 class="sub gal-title">Captain’s notes</h3><p class="muted">Loading…</p>`;
+    const field = (key, label, hint) => `<label class="ann-field"><span>${label}</span>
+      <textarea class="field" rows="3" maxlength="1500" placeholder="${hint}" data-input="note-${key}" data-match="${esc(m.id)}" data-focus="note-${key}-${esc(m.id)}">${esc(n[key])}</textarea></label>`;
+    return `<h3 class="sub gal-title">Captain’s notes <span class="note-lock">${icon('<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>', 13)} Only admin and managers</span></h3>
+      ${field('fieldPlan', 'Field plan', 'e.g. two slips, long-on back')}
+      ${field('battingPlan', 'Batting plan', 'e.g. Babar and Rizwan open, hit out from over 15')}
+      ${field('opposition', 'About the opposition', 'e.g. strong spinners, weak in the field')}
+      <div class="eg-actions"><button class="btn btn-gold small" data-action="notes-save" data-match="${esc(m.id)}">Save notes</button>
+        ${n.updatedAt ? `<small class="muted">Last saved by ${esc(n.updatedBy)} · ${ago(n.updatedAt)}</small>` : ''}</div>`;
+  }
+
+  const matchExtras = m => `${momSection(m)}${predictSection(m)}${notesSection(m)}${matchGallery(m)}`;
+
+  // Quick polls on Summary: answer once, see results after.
+  function pollCard(p) {
+    const can = canAct() || isStaff();
+    const total = p.total;
+    return `<article class="poll ${p.closed ? 'closed' : ''}">
+      <div class="poll-head"><strong>${esc(p.question)}</strong><small class="muted">${esc(p.author)} · ${ago(p.createdAt)}${p.closed ? ' · Closed' : ''}</small></div>
+      <div class="poll-opts">${p.options.map((o, i) => `<button type="button" class="poll-opt ${p.mine === i ? 'on' : ''}" data-action="poll-vote" data-id="${esc(p.id)}" data-i="${i}" ${p.closed || !can ? 'disabled' : ''} aria-pressed="${p.mine === i}">
+          <span class="poll-text">${esc(o.text)}</span>${o.count != null ? `${pctBar(o.count, total)}<b>${o.count}</b>` : ''}</button>`).join('')}</div>
+      ${!can ? '<small class="muted">Pick your name on Summary to answer.</small>' : p.mine == null && !p.closed ? '<small class="muted">Answer to see how the team voted.</small>' : `<small class="muted">${total} answer${total === 1 ? '' : 's'}</small>`}
+    </article>`;
+  }
+
+  function pollsPanel() {
+    const list = (engage ? engage.polls : []).filter(p => !p.closed).concat((engage ? engage.polls : []).filter(p => p.closed).slice(0, 1)).slice(0, 4);
+    if (!list.length) return '';
+    return `<section class="panel polls-panel"><div class="panel-head"><h3>Quick polls</h3><p class="muted">Tap an answer. Results show once you have voted.</p></div>${list.map(pollCard).join('')}</section>`;
+  }
+
+  function leaguePanel() {
+    const board = engage ? engage.leaderboard.filter(r => findPlayer(r.playerId)) : [];
+    if (!board.length) return '';
+    return `<section class="panel board-panel"><div class="panel-head"><h3>Prediction league</h3><p class="muted">One point for every match winner you guessed right.</p></div>
+      <ol class="board">${board.slice(0, 5).map((r, i) => { const p = findPlayer(r.playerId); return `<li class="${i === 0 ? 'top' : ''}"><span class="board-n">${i + 1}</span>${avatar(p, 36)}<span class="board-name">${esc(p.name)}</span><span class="board-pts"><b>${r.points}</b><small>of ${r.played}</small></span></li>`; }).join('')}</ol></section>`;
+  }
+
+  // For the admin and managers on the Announce tab: ask a poll, then close or delete it.
+  function pollsAdmin() {
+    const mine = p => realAdmin() || p.authorId === myManagerId;
+    const list = engage ? engage.polls : [];
+    return `<section class="panel ann-composer" id="poll-composer">
+        <div class="panel-head"><h3>Ask a quick poll</h3><p class="muted">Everyone gets a notification. Players answer once and see the result after they vote.</p></div>
+        <label class="ann-field"><span>Question</span>
+          <input class="field" type="text" maxlength="120" value="${esc(pollDraft.q)}" placeholder="e.g. Nets on Friday evening?" data-input="poll-q" data-focus="poll-q"></label>
+        <div class="poll-draft">${pollDraft.opts.map((o, i) => `<input class="field" type="text" maxlength="40" value="${esc(o)}" placeholder="Answer ${i + 1}" data-input="poll-opt" data-i="${i}" data-focus="poll-opt-${i}" aria-label="Answer ${i + 1}">`).join('')}</div>
+        <div class="ann-actions">
+          <button class="btn btn-gold" data-action="poll-ask">${icon('<path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/>', 18)} Ask</button>
+          ${pollDraft.opts.length < 5 ? '<button class="btn btn-ghost" data-action="poll-add-opt">Add an answer</button>' : ''}
+        </div>
+      </section>
+      <section class="panel"><div class="panel-head"><h3>Polls</h3></div>
+        ${list.length ? list.map(p => `<article class="note-card"><div class="note-head"><strong>${esc(p.question)}</strong>
+            <small>${p.closed ? 'Closed' : 'Open'} · ${p.total} answer${p.total === 1 ? '' : 's'} · by ${esc(p.author)}</small></div>
+          ${p.options.map(o => `<div class="tally-row"><span>${esc(o.text)}</span>${pctBar(o.count || 0, p.total)}<b>${o.count || 0}</b></div>`).join('')}
+          ${p.voters.length ? `<p class="muted poll-voters">${p.voters.map(v => `${esc(v.name)}: ${esc(v.option)}`).join(' · ')}</p>` : ''}
+          ${mine(p) ? `<div class="note-actions"><button class="btn btn-ghost small" data-action="poll-toggle" data-id="${esc(p.id)}">${p.closed ? 'Reopen' : 'Close'}</button>
+            <button class="btn btn-ghost small" data-action="poll-delete" data-id="${esc(p.id)}">Delete</button></div>` : ''}</article>`).join('') : '<p class="muted season-empty">No polls yet.</p>'}
+      </section>`;
+  }
+
   // ---------- match photos ----------
   let gallery = null;               // [{ id, matchId, byId, by, createdAt }], newest first
   let galleryTarget = '';
@@ -2537,7 +2701,8 @@
     const playedIn = C.matches(state).filter(m => p.att[m.id] && (m.finished || (m.test && isAdmin())));
     const played = playedIn.length;
     const playedTests = playedIn.filter(m => m.test).length;
-    const badges = [isCaptain(p) ? 'Captain' : '', p.viceCaptain ? 'Vice-captain' : '', isKeeper(p) ? 'Wicket-keeper' : '']
+    const moms = engage ? engage.mom.filter(r => r.winners.includes(p.id)).length : 0;
+    const badges = [isCaptain(p) ? 'Captain' : '', p.viceCaptain ? 'Vice-captain' : '', isKeeper(p) ? 'Wicket-keeper' : '', moms ? `⭐ Man of the match${moms > 1 ? ` ×${moms}` : ''}` : '']
       .filter(Boolean).map(b => `<span class="prof-badge">${b}</span>`).join('');
     const editor = admin ? `<div class="prof-edit">
         <h3 class="sub">Edit profile</h3>
@@ -2994,7 +3159,8 @@ ${tabRows.map(r => {
       return `<div class="finish-box done">
         <span>${icon('<path d="M20 6 9 17l-5-5"/>', 18)}<span><strong>Finished · charged</strong><small>${s.amount > 0 ? 'The XI’s league share and the expenses are' : 'The XI’s league share is'} in everyone’s balances.</small></span></span>
         ${admin ? `<button class="btn btn-ghost small" data-action="reopen-match" data-id="${esc(d.id)}">Reopen</button>` : ''}
-      </div>`;
+      </div>${admin && d.type === 'match' ? `<div class="result-row"><span>Result</span>${RESULTS.map(([v, l]) => `<button class="tog ${d.result === v ? 'on' : ''}" data-action="set-result" data-id="${esc(d.id)}" data-result="${v}" aria-pressed="${d.result === v}">${l}</button>`).join('')}
+        ${d.result ? `<button class="btn btn-ghost small" data-action="set-result" data-id="${esc(d.id)}" data-result="">Clear</button>` : ''}</div>` : ''}`;
     }
     return `<div class="finish-box">
       <span>${icon('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', 18)}<span><strong>Not charged yet</strong><small>${admin
@@ -3454,6 +3620,49 @@ ${tabRows.map(r => {
       if (!ok) return;
       try { await api('DELETE', '/api/announcements/' + encodeURIComponent(a.id)); } catch (e) { toast(e.message || 'Could not delete it.'); }
       await loadAnnouncements();
+    },
+    'mom-vote'(el) { engageCall('PUT', `/api/engage/mom/${encodeURIComponent(el.dataset.match)}`, { candidateId: el.dataset.player }, 'Vote saved.'); },
+    async 'mom-close'(el) {
+      if (!await confirmDialog('Announce the winner?', 'Voting closes and everyone gets a notification with the man of the match.', 'Announce')) return;
+      engageCall('POST', `/api/engage/mom/${encodeURIComponent(el.dataset.match)}/close`, null, 'Winner announced.');
+    },
+    'mom-reopen'(el) { engageCall('POST', `/api/engage/mom/${encodeURIComponent(el.dataset.match)}/reopen`, null, 'Voting reopened.'); },
+    'predict'(el) { engageCall('PUT', `/api/engage/predict/${encodeURIComponent(el.dataset.match)}`, { pick: el.dataset.pick }, 'Prediction saved.'); },
+    'poll-vote'(el) { engageCall('PUT', `/api/engage/polls/${encodeURIComponent(el.dataset.id)}/vote`, { option: Number(el.dataset.i) }); },
+    'poll-add-opt'() { if (pollDraft.opts.length < 5) { pollDraft.opts.push(''); render(); } },
+    async 'poll-ask'() {
+      const opts = pollDraft.opts.map(o => o.trim()).filter(Boolean);
+      if (!pollDraft.q.trim() || opts.length < 2) { toast('Write a question and at least two answers.'); return; }
+      try {
+        await api('POST', '/api/engage/polls', { question: pollDraft.q.trim(), options: opts });
+        pollDraft.q = ''; pollDraft.opts = ['Yes', 'No', 'Maybe'];
+        await loadEngage();
+        render();
+        toast('Poll sent to the team.');
+      } catch (e) { toast(e.message || 'Could not send the poll.'); }
+    },
+    'poll-toggle'(el) { engageCall('POST', `/api/engage/polls/${encodeURIComponent(el.dataset.id)}/toggle`, null); },
+    async 'poll-delete'(el) {
+      if (!await confirmDialog('Delete this poll?', 'The answers go with it.', 'Delete', true)) return;
+      engageCall('DELETE', `/api/engage/polls/${encodeURIComponent(el.dataset.id)}`, null, 'Poll deleted.');
+    },
+    'set-result'(el) {
+      if (!isAdmin()) return;
+      const m = state.matches.find(x => x.id === el.dataset.id);
+      if (!m) return;
+      m.result = el.dataset.result || '';
+      commit();
+      setTimeout(loadEngage, 900);
+    },
+    async 'notes-save'(el) {
+      const id = el.dataset.match;
+      const n = notesDraft[id] || notesCache[id];
+      try {
+        notesCache[id] = await api('PUT', `/api/engage/notes/${encodeURIComponent(id)}`, { fieldPlan: n.fieldPlan, battingPlan: n.battingPlan, opposition: n.opposition });
+        delete notesDraft[id];
+        render();
+        toast('Notes saved.');
+      } catch (e) { toast(e.message || 'Could not save the notes.'); }
     },
     'gallery-add'(el) { galleryTarget = el.dataset.match; $('#gallery-file').click(); },
     'open-photo'(el) { sheet = { type: 'photo', id: el.dataset.id, back: sheet && sheet.type !== 'photo' ? sheet : (sheet && sheet.back) || null }; render(); },
@@ -4220,6 +4429,17 @@ ${tabRows.map(r => {
         else if (k === 'ann-body') { annDraft.body = el.value; const c = $('#ann-count'); if (c) c.textContent = `${el.value.length}/300`; }
         else if (k === 'ann-at') annDraft.at = el.value;
         else if (k === 'ann-match') { annDraft.matchId = el.value; render(); }
+        return;
+      }
+      if (el.dataset && /^poll-/.test(el.dataset.input || '')) {
+        if (el.dataset.input === 'poll-q') pollDraft.q = el.value;
+        else if (el.dataset.input === 'poll-opt') pollDraft.opts[Number(el.dataset.i)] = el.value;
+        return;
+      }
+      if (el.dataset && /^note-/.test(el.dataset.input || '')) {
+        const id = el.dataset.match;
+        if (!notesDraft[id]) notesDraft[id] = { ...(notesCache[id] || { fieldPlan: '', battingPlan: '', opposition: '', updatedBy: '', updatedAt: '' }) };
+        notesDraft[id][el.dataset.input.slice(5)] = el.value;
         return;
       }
       if (el.dataset && /^me-/.test(el.dataset.input || '')) { saveMyProfile(el); return; }

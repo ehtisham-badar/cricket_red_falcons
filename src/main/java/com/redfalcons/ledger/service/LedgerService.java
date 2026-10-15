@@ -81,6 +81,7 @@ public class LedgerService {
     private final NotificationService notifications;
     private final PlayerPhotoRepository photos;
     private final MatchPhotoRepository matchPhotos;
+    private final EngageCleanup engage;
     /** Largest count a single stat can hold. */
     private static final int STAT_MAX = 999;
 
@@ -88,7 +89,8 @@ public class LedgerService {
                          ExpenseRepository expenses, PaymentRepository payments,
                          TournamentPaymentRepository tournamentPayments, SettingRepository settings,
                          MatchDayRepository matches, MatchStatRepository stats, NotificationService notifications,
-                         PlayerPhotoRepository photos, MatchPhotoRepository matchPhotos) {
+                         PlayerPhotoRepository photos, MatchPhotoRepository matchPhotos, EngageCleanup engage) {
+        this.engage = engage;
         this.matchPhotos = matchPhotos;
         this.notifications = notifications;
         this.photos = photos;
@@ -276,10 +278,12 @@ public class LedgerService {
         Map<String, Boolean> storedTest = new HashMap<>();
         Map<String, String> storedTime = new HashMap<>();
         Map<String, Boolean> storedAnnounced = new HashMap<>();
+        Map<String, String> storedResult = new HashMap<>();
         matches.findAll().forEach(m -> {
             storedTest.put(m.getId(), m.isTest());
             storedAnnounced.put(m.getId(), m.isAnnounced());
             storedTime.put(m.getId(), m.getTime());
+            storedResult.put(m.getId(), m.getResult());
         });
         List<MatchDay> newMatches = new ArrayList<>();
         Set<String> matchIds = new LinkedHashSet<>();
@@ -290,7 +294,8 @@ public class LedgerService {
                     Boolean.TRUE.equals(m.finished()) && !(m.test() != null ? m.test() : storedTest.getOrDefault(m.id(), false)),
                     m.test() != null ? m.test() : storedTest.getOrDefault(m.id(), false),
                     m.time() != null ? clockTime(m.time()) : storedTime.getOrDefault(m.id(), ""),
-                    m.announced() != null ? m.announced() : storedAnnounced.getOrDefault(m.id(), false)));
+                    m.announced() != null ? m.announced() : storedAnnounced.getOrDefault(m.id(), false),
+                    m.result() != null ? cleanResult(m.result()) : storedResult.getOrDefault(m.id(), "")));
         }
 
         Set<String> validDays = new HashSet<>(trainingIds);
@@ -484,6 +489,7 @@ public class LedgerService {
         newPlayers.forEach(p -> playerNames.put(p.getId(), p.getName()));
         // Photos of matches that no longer exist go too.
         matchPhotos.matchIds().stream().filter(id -> !matchIds.contains(id)).forEach(matchPhotos::deleteByMatchId);
+        engage.matchesRemoved(matchIds);
         // A Playing XI announced just now is news for the team (a restore that announces many stays quiet).
         List<String[]> freshXi = new ArrayList<>();
         int real = 0;
@@ -526,10 +532,15 @@ public class LedgerService {
         return v == null ? 0 : Math.max(0, Math.min(STAT_MAX, v));
     }
 
+    private static String cleanResult(String r) {
+        String v = r == null ? "" : r.trim().toLowerCase();
+        return v.equals("win") || v.equals("loss") || v.equals("tie") ? v : "";
+    }
+
     private List<MatchDto> storedMatches() {
         return matches.findAll(BY_POSITION).stream()
                 .map(m -> new MatchDto(m.getId(), m.getDate(), m.getOpponent(), m.getVenue(), m.isFinished(), m.isTest(), m.getTime(),
-                        m.isAnnounced())).toList();
+                        m.isAnnounced(), m.getResult())).toList();
     }
 
     private static Map<String, String> parseTwelfth(String stored) {
