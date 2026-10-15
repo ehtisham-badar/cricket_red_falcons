@@ -1680,3 +1680,22 @@ a.btn { text-decoration: none; }
 .pp-text { flex: 1 1 200px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .pp-text small { color: var(--muted); }
 .pp-actions { display: flex; gap: 8px; }
+
+/* ---- Language switch and Urdu (right-to-left) ---- */
+.lang-btn { width: auto; min-width: 40px; padding: 0 10px; font-size: 14px; font-weight: 700; border-radius: var(--pill); }
+.lang-link { display: block; margin: 14px auto 0; background: none; border: 0; color: var(--gold); font: inherit; font-weight: 700; cursor: pointer; text-decoration: none; }
+[lang="ur"] body, [lang="ur"] button, [lang="ur"] input, [lang="ur"] select, [lang="ur"] textarea { font-family: 'Noto Naskh Arabic', var(--body-font, 'Figtree'), system-ui, sans-serif; }
+[lang="ur"] h1, [lang="ur"] h2, [lang="ur"] h3, [lang="ur"] h4, [lang="ur"] strong { font-family: 'Noto Naskh Arabic', var(--body-font, 'Figtree'), system-ui, sans-serif; font-weight: 700; }
+[lang="ur"] * { letter-spacing: 0 !important; text-transform: none !important; }
+[lang="ur"] body { line-height: 1.7; }
+[dir="rtl"] .chev, [dir="rtl"] .icon-btn svg[data-flip] { transform: scaleX(-1); }
+[dir="rtl"] .sheet-head { text-align: right; }
+@media (max-width: 520px) { .lang-btn { min-width: 36px; padding: 0 8px; font-size: 13px; } }
+
+/* ---- Match-day weather ---- */
+.nm-weather { display: flex; align-items: center; gap: 12px; margin: -4px auto 16px; max-width: 460px; padding: 10px 14px; border-radius: 16px; border: 1px solid var(--line); background: rgba(var(--hi-rgb), .05); }
+.nm-weather.wet { border-color: rgba(var(--neg-rgb), .5); background: rgba(var(--neg-rgb), .1); }
+.wx-emoji { font-size: 30px; line-height: 1; }
+.wx-main { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wx-main small { color: var(--muted); font-size: 12px; }
+.wx-warn { font-style: normal; font-size: 11px; font-weight: 800; padding: 4px 10px; border-radius: var(--pill); background: rgba(var(--neg-rgb), .2); color: var(--neg); white-space: nowrap; }

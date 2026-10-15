@@ -511,6 +511,13 @@
     return JSON.stringify({ players, trainings, matches, expenses, tournament, settings, twelfth, battingOrder, stats });
   }
 
+  // ---------- language ----------
+  // The button shows the other language; switching reloads the page (see i18n.js).
+  document.querySelectorAll('[data-lang-toggle]').forEach(b => {
+    b.textContent = window.I18N && I18N.lang === 'ur' ? (b.classList.contains('lang-btn') ? 'EN' : 'English') : 'اردو';
+    b.addEventListener('click', () => I18N.toggle());
+  });
+
   // ---------- API ----------
   async function api(method, path, body, opts = {}) {
     const headers = { 'Content-Type': 'application/json' };
@@ -1768,6 +1775,68 @@
       </div>`;
   }
 
+  // ---------- match-day weather ----------
+  // Free forecast from Open-Meteo (no key): the venue name is looked up once, then the match day's forecast, which
+  // only exists up to 16 days ahead. Anything that fails just leaves the weather line out.
+  const wxCache = {};          // "venue|date" -> { ok, ... } | { ok: false }
+  const wxBusy = {};
+  const WX_CODES = [
+    [[0], 'Clear sky', '☀️'], [[1], 'Mostly clear', '🌤️'], [[2], 'Partly cloudy', '⛅'], [[3], 'Overcast', '☁️'],
+    [[45, 48], 'Foggy', '🌫️'], [[51, 53, 55, 56, 57], 'Drizzle', '🌦️'], [[61, 63, 65, 66, 67], 'Rain', '🌧️'],
+    [[71, 73, 75, 77, 85, 86], 'Snow', '❄️'], [[80, 81, 82], 'Rain showers', '🌦️'], [[95, 96, 99], 'Thunderstorm', '⛈️']
+  ];
+  const wxInfo = code => WX_CODES.find(c => c[0].includes(code)) || [[], 'Weather', '🌡️'];
+
+  async function geocodeVenue(venue) {
+    const key = 'rf.geo.' + venue.toLowerCase();
+    const hit = readStore(key);
+    if (hit) return hit;
+    const tries = [venue, ...venue.split(',').map(x => x.trim()).filter(Boolean).reverse()];
+    for (const q of [...new Set(tries)]) {
+      const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1&language=en`).then(x => x.json());
+      const g = r && r.results && r.results[0];
+      if (g) { const loc = { lat: g.latitude, lon: g.longitude, place: g.name }; writeStore(key, loc); return loc; }
+    }
+    return null;
+  }
+
+  function ensureWeather(m) {
+    if (!m || !m.date || !(m.venue || '').trim()) return;
+    const n = dayDiff(m.date);
+    if (n < 0 || n > 15) return;
+    const key = `${m.venue.trim()}|${m.date}`;
+    if (wxCache[key] || wxBusy[key]) return;
+    wxBusy[key] = true;
+    (async () => {
+      try {
+        const loc = await geocodeVenue(m.venue.trim());
+        if (!loc) throw new Error('place');
+        const u = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&timezone=auto&start_date=${m.date}&end_date=${m.date}`
+          + '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max';
+        const d = (await fetch(u).then(x => x.json())).daily;
+        if (!d || !d.time || !d.time.length) throw new Error('range');
+        wxCache[key] = { ok: true, code: d.weather_code[0], hi: Math.round(d.temperature_2m_max[0]), lo: Math.round(d.temperature_2m_min[0]),
+          rain: d.precipitation_probability_max[0], wind: Math.round(d.wind_speed_10m_max[0]), place: loc.place };
+      } catch { wxCache[key] = { ok: false }; }
+      delete wxBusy[key];
+      render();
+    })();
+  }
+
+  function weatherLine(m) {
+    if (!m || !m.date || !(m.venue || '').trim()) return '';
+    ensureWeather(m);
+    const w = wxCache[`${m.venue.trim()}|${m.date}`];
+    if (!w || !w.ok) return '';
+    const [, label, emoji] = wxInfo(w.code);
+    const wet = w.rain != null && w.rain >= 60;
+    return `<div class="nm-weather ${wet ? 'wet' : ''}" title="Forecast for ${esc(w.place)}">
+      <span class="wx-emoji" aria-hidden="true">${emoji}</span>
+      <span class="wx-main"><strong>${label}</strong><small>${w.hi}° / ${w.lo}° · ${w.rain == null ? '—' : w.rain}% chance of rain · wind ${w.wind} km/h</small></span>
+      ${wet ? '<em class="wx-warn">Rain likely</em>' : ''}
+    </div>`;
+  }
+
   // The Summary's match-day poster: crest vs opponent, a scoreboard countdown, details and the XI if announced.
   function nextMatchCard() {
     if (!cardShown('showNextMatch')) return '';
@@ -1807,6 +1876,7 @@
       </div>
       <div class="nm-count" data-id="${esc(m.id)}">${countdownHtml(m)}</div>
       <div class="nm-chips">${chips}</div>
+      ${weatherLine(m)}
       <div class="nm-foot">
         ${squad}
         <div class="nm-actions">
