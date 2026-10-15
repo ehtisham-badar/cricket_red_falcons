@@ -1820,11 +1820,10 @@
     const byDay = {};
     real.forEach(x => { (byDay[x.date] = byDay[x.date] || []).push(x); });
     const cells = [];
-    for (let i = 0; i < lead; i++) cells.push('<span class="cal-cell empty"></span>');
     for (let d = 1; d <= days; d++) {
       const k = key(d), here = byDay[k] || [];
       const cls = here.length ? (here.some(x => !x.finished) ? 'match' : 'played') : '';
-      cells.push(`<span class="cal-cell ${k === today() ? 'today' : ''} ${cls}"><b>${d}</b></span>`);
+      cells.push(`<span class="cal-cell ${k === today() ? 'today' : ''} ${cls}" ${d === 1 ? `style="grid-column-start:${lead + 1}"` : ''}><b>${d}</b></span>`);
     }
     const monthName = first.toLocaleDateString('en-GB', { month: 'long' });
     const mk = key(1).slice(0, 8);
