@@ -1819,24 +1819,47 @@
     const key = d => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     const byDay = {};
     real.forEach(x => { (byDay[x.date] = byDay[x.date] || []).push(x); });
+    const mini = x => {
+      const lg = teamLogo(x.opponent);
+      const ini = x.opponent ? x.opponent.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() : '?';
+      return lg ? `<span class="fx-badge"><img src="${lg}" alt=""></span>` : `<span class="fx-badge ini">${esc(ini)}</span>`;
+    };
     const cells = [];
     for (let i = 0; i < lead; i++) cells.push('<span class="cal-cell empty"></span>');
     for (let d = 1; d <= days; d++) {
       const k = key(d), here = byDay[k] || [];
       const open = here.some(x => !x.finished);
       const tip = here.map(x => `${x.label}${x.opponent ? ` vs ${x.opponent}` : ''}${x.time ? `, ${fmtClock(x.time)}` : ''}`).join(' · ');
-      cells.push(`<span class="cal-cell ${k === today() ? 'today' : ''} ${here.length ? (open ? 'match' : 'played') : ''}" ${tip ? `title="${esc(tip)}"` : ''}>${d}${here.length ? '<i></i>' : ''}</span>`);
+      cells.push(`<span class="cal-cell ${k === today() ? 'today' : ''} ${here.length ? (open ? 'match' : 'played') : ''}" ${tip ? `title="${esc(tip)}"` : ''}><b>${d}</b>${here.length ? '<i></i>' : ''}</span>`);
     }
-    const monthName = first.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
-    const list = upcoming.length > 1 ? `<ul class="fx-list">${upcoming.map(x => `<li><span class="fx-date">${x.date ? esc(formatDate(x.date).replace(/ \d{4}$/, '')) : 'TBC'}</span>
-        <span class="fx-what"><strong>${x.label}${x.opponent ? ` · vs ${esc(x.opponent)}` : ''}</strong><small>${x.time ? esc(fmtClock(x.time)) : 'Time to be confirmed'}${x.venue ? ` · ${esc(x.venue)}` : ''}</small></span></li>`).join('')}</ul>` : '';
+    const monthName = first.toLocaleDateString('en-GB', { month: 'long' });
+    const inMonth = real.filter(x => x.date.startsWith(key(1).slice(0, 8)))
+      .sort((a, b) => a.date.localeCompare(b.date) || (a.time || '99:99').localeCompare(b.time || '99:99'));
+    const when = x => {
+      if (x.finished) return '<em class="fx-tag done">Played</em>';
+      const n = dayDiff(x.date);
+      return `<em class="fx-tag ${n === 0 ? 'now' : ''}">${n === 0 ? 'Today' : n === 1 ? 'Tomorrow' : n > 1 ? `In ${n} days` : 'Awaiting result'}</em>`;
+    };
+    const list = inMonth.length ? `<ul class="fx-list">${inMonth.map(x => {
+      const dt = new Date(`${x.date}T00:00:00`);
+      return `<li class="${x.finished ? 'played' : ''}">
+        <span class="fx-day"><b>${dt.getDate()}</b><small>${dt.toLocaleDateString('en-GB', { weekday: 'short' })}</small></span>
+        ${mini(x)}
+        <span class="fx-what"><strong>${x.opponent ? `vs ${esc(x.opponent)}` : esc(x.label)}</strong><small>${esc(x.label)} · ${x.time ? esc(fmtClock(x.time)) : 'Time to be confirmed'}${x.venue ? ` · ${esc(x.venue)}` : ''}</small></span>
+        ${when(x)}</li>`;
+    }).join('')}</ul>` : `<p class="fx-empty">${icon('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>', 20)} No matches in ${esc(monthName)}</p>`;
+    const nUp = inMonth.filter(x => !x.finished).length, nPl = inMonth.length - nUp;
     return `<section class="panel fx-panel">
-      <div class="fx-head"><h3>Fixtures ${hiddenNote('showFixtures')}</h3>
-        <span class="fx-nav"><button class="icon-btn" data-action="cal-prev" aria-label="Previous month">${icon('<path d="m15 18-6-6 6-6"/>', 18)}</button>
-          <button class="chip" data-action="cal-today">${esc(monthName)}</button>
-          <button class="icon-btn" data-action="cal-next" aria-label="Next month">${icon('<path d="m9 18 6-6-6-6"/>', 18)}</button></span></div>
+      <div class="fx-head">
+        <span class="fx-title"><span class="fx-ico">${icon('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>', 20)}</span><span><h3>Fixtures ${hiddenNote('showFixtures')}</h3><small class="muted">${nUp} upcoming · ${nPl} played this month</small></span></span>
+      </div>
+      <div class="fx-month">
+        <button class="icon-btn" data-action="cal-prev" aria-label="Previous month">${icon('<path d="m15 18-6-6 6-6"/>', 18)}</button>
+        <button class="fx-month-name" data-action="cal-today" title="Back to this month"><strong>${esc(monthName)}</strong><span>${y}</span></button>
+        <button class="icon-btn" data-action="cal-next" aria-label="Next month">${icon('<path d="m9 18 6-6-6-6"/>', 18)}</button>
+      </div>
       <div class="cal-grid">${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(w => `<span class="cal-dow">${w}</span>`).join('')}${cells.join('')}</div>
-      <p class="muted fx-legend"><i class="dot-open"></i> Upcoming <i class="dot-played"></i> Played</p>
+      <p class="muted fx-legend"><i class="dot-open"></i> Upcoming <i class="dot-played"></i> Played <i class="dot-today"></i> Today</p>
       ${list}
     </section>`;
   }
