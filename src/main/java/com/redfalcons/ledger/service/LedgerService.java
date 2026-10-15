@@ -125,7 +125,9 @@ public class LedgerService {
             boolean hide = ownOnly && !p.id().equals(viewerId);
             return new PlayerDto(p.id(), p.name(), p.role(), hide ? "" : p.paid(), p.tournament(), p.att(),
                     hide ? List.of() : p.payments(), null, p.battingHand(), p.bowlingArm(), p.bowlingStyle(),
-                    p.keeper(), p.captain(), p.viceCaptain(), p.jersey(), p.photoAt(), p.jerseyName(), p.profileAt());
+                    p.keeper(), p.captain(), p.viceCaptain(), p.jersey(), p.photoAt(), p.jerseyName(),
+                    // Who has updated their profile is for the admin; players only learn about their own.
+                    p.id().equals(viewerId) ? p.profileAt() : "");
         }).toList();
         return new LedgerDto(full.app(), full.version(), full.savedAt(), ps, full.amounts(), full.trainings(), full.expenses(),
                 full.tournament(), st, full.twelfth(), full.battingOrder(), full.matches(),

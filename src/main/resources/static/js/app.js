@@ -3097,22 +3097,17 @@
 
   // Who has saved their own profile yet. Players press "Update profile" here; the admin sees who is still missing.
   function profilesPanel() {
-    if (archive || !state.players.length) return '';
+    if (archive || !realAdmin() || !state.players.length) return '';
     const done = state.players.filter(p => p.profileAt);
     const todo = state.players.filter(p => !p.profileAt);
-    const me = realAdmin() ? null : myPlayer();
     const pct = Math.round(done.length * 100 / state.players.length);
     const row = p => `<li class="pu-row">${avatar(p, 34)}
         <button class="pl-name" data-action="open-profile" data-id="${esc(p.id)}">${esc(p.name)}</button>
-        ${me && me.id === p.id ? `<button class="btn btn-gold small" data-action="open-profile-form">Update profile</button>` : '<span class="prof-tag todo">Not updated</span>'}</li>`;
-    const mine = !realAdmin() && !(me && me.profileAt)
-      ? `<div class="pu-mine"><span>${me ? `<strong>${esc(me.name)}</strong>, your profile hasn’t been updated yet.` : 'Tell us which player you are and fill in your profile.'}</span>
-          <button class="btn btn-gold" data-action="open-profile-form">${icon(PERSON_PATH, 18)} Update profile</button></div>` : '';
+        <span class="prof-tag todo">Not updated</span></li>`;
     return `<section class="panel pu-panel">
       <div class="panel-head"><h3>Profiles</h3>
         <p class="muted">${done.length} of ${state.players.length} players have updated their profile. Tap a name to see it.</p></div>
       <span class="eg-bar pu-bar"><i style="width:${pct}%"></i></span>
-      ${mine}
       ${todo.length ? `<h4 class="pu-sub">Not updated yet <span>${todo.length}</span></h4><ul class="pu-list">${todo.map(row).join('')}</ul>` : '<p class="muted pu-all">Everyone has updated their profile. 🎉</p>'}
       ${realAdmin() && todo.length ? `<div class="eg-actions"><button class="btn btn-ghost small" data-action="ask-profile">${icon('<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/>', 16)} Ask everyone to update</button></div>` : ''}
       ${done.length ? `<h4 class="pu-sub">Updated <span>${done.length}</span></h4><ul class="pu-list done">${done.map(p => `<li class="pu-row">${avatar(p, 34)}<button class="pl-name" data-action="open-profile" data-id="${esc(p.id)}">${esc(p.name)}</button><span class="prof-tag ok">${icon('<path d="M20 6 9 17l-5-5"/>', 13)} Updated ${ago(p.profileAt)}</span></li>`).join('')}</ul>` : ''}
@@ -3121,7 +3116,7 @@
 
   function viewPlayers() {
     const admin = isAdmin();
-    const tag = p => p.profileAt ? `<span class="pl-dot ok" title="Profile updated" aria-label="Profile updated">${icon('<path d="M20 6 9 17l-5-5"/>', 11)}</span>` : `<span class="pl-dot todo" title="Profile not updated yet" aria-label="Profile not updated yet"></span>`;
+    const tag = p => !realAdmin() ? '' : p.profileAt ? `<span class="pl-dot ok" title="Profile updated" aria-label="Profile updated">${icon('<path d="M20 6 9 17l-5-5"/>', 11)}</span>` : `<span class="pl-dot todo" title="Profile not updated yet" aria-label="Profile not updated yet"></span>`;
     const list = state.players.map((p, i) => `
       <div class="player-line">
         <span class="sr">${i + 1}</span>

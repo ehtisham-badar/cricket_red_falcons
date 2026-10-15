@@ -66,6 +66,10 @@ class ProfileRequestTest {
         String view = send("GET", "/api/ledger", null, null, "p1").body();
         assertThat(view).contains("\"jersey\":\"56\"").contains("\"jerseyName\":\"BABAR\"");
         assertThat(view.substring(view.indexOf("\"id\":\"p1\""), view.indexOf("\"id\":\"p2\""))).containsPattern("\"profileAt\":\"20");
+        // Others (and anonymous viewers) don't learn who has updated; the admin does.
+        assertThat(send("GET", "/api/ledger", null, null, "p2").body()).doesNotContainPattern("\"profileAt\":\"20");
+        assertThat(send("GET", "/api/ledger", null, null, null).body()).doesNotContainPattern("\"profileAt\":\"20");
+        assertThat(send("GET", "/api/ledger", null, admin, null).body()).containsPattern("\"profileAt\":\"20");
 
         // Saving without "submit" (or by the admin) stays quiet, and a full admin save keeps the name and the saved time.
         send("PUT", "/api/players/p1/profile", "{\"battingHand\":\"left\"}", null, "p1");
