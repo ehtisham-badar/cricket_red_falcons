@@ -26,10 +26,11 @@
   const POLL_MS = 15000;
 
   const TABS = [
-    { id: 'summary', label: 'Summary', icon: '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>' },
+    { id: 'summary', label: 'Home', icon: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/>' },
     { id: 'days', label: 'Days', daysTab: true, icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' },
+    { id: 'money', label: 'Money', icon: '<rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20M16 14.5h2"/>' },
     { id: 'stats', label: 'Stats', statsTab: true, icon: '<path d="M18 20V10M12 20V4M6 20v-6"/>' },
-    { id: 'players', label: 'Players', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>' },
+    { id: 'players', label: 'Team', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>' },
     { id: 'announce', label: 'Announce', staffTab: true, icon: '<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>' },
     { id: 'settings', label: 'Settings', icon: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>' }
   ];
@@ -96,6 +97,7 @@
   let mgrList = null;                         // admin: manager requests and approved managers
   let editedAt = 0;                           // when the admin last changed something on this screen
   let announcements = null;                   // staff: every announcement written, newest first
+  let annSeg = 'ann';                         // which part of the Announce tab is open: 'ann' or 'poll'
   let annDraft = { title: '', body: '', matchId: '', later: false, at: '', action: '' };   // the announcement being written
   let calMonth = null;                        // the month the fixtures calendar shows: { y, m }
   let feed = null;                            // viewers and managers: what the admin has announced, newest first
@@ -215,18 +217,6 @@
   function renderIfSettings() { if (state && (tab === 'settings' || tab === 'summary')) render(); }
 
   const PUSH_PROMPT_KEY = 'rf.pushPromptOff';
-  // A nudge on Summary until this device has notifications on (or the person says no thanks).
-  function pushPrompt() {
-    if (!push.ready || !push.supported || !push.enabled || push.subscribed || push.permission === 'denied') return '';
-    if (isIOS() && !isInstalled()) return '';
-    if (readStore(PUSH_PROMPT_KEY)) return '';
-    return `<section class="panel push-prompt">
-      <span class="pp-ico">${BELL_ICON}</span>
-      <div class="pp-text"><strong>Never miss the team news</strong><small>Get a notification when the Playing XI is announced or the team posts an update.</small></div>
-      <div class="pp-actions"><button class="btn btn-gold" data-action="push-on">Turn on</button><button class="btn btn-ghost" data-action="push-dismiss">Not now</button></div>
-    </section>`;
-  }
-
   async function enablePush() {
     try {
       const perm = await Notification.requestPermission();
@@ -868,9 +858,13 @@
           ${mine ? `<button class="btn btn-ghost small" data-action="ann-delete" data-id="${esc(a.id)}">Delete</button>` : ''}
         </div></article>`;
     };
+    const openPolls = engage ? engage.polls.filter(x => !x.closed).length : 0;
+    const seg = `<div class="seg-tabs" role="tablist">${[['ann', 'Announcements', 0], ['poll', 'Polls', openPolls]].map(([k, l, n]) =>
+      `<button class="seg-btn ${annSeg === k ? 'on' : ''}" role="tab" aria-selected="${annSeg === k}" data-action="ann-seg" data-seg="${k}">${l}${n ? ` <span>${n}</span>` : ''}</button>`).join('')}</div>`;
     return `
-      ${pageHead('Announcements', 'Write a message for the team. It shows in everyone’s notifications, and goes to the phones that have notifications on.')}
-      <section class="panel ann-composer" id="ann-composer">
+      ${pageHead(annSeg === 'poll' ? 'Polls' : 'Announcements', annSeg === 'poll' ? 'Ask the team a quick question and see who answered.' : 'Write a message for the team. It shows in everyone’s notifications, and goes to the phones that have notifications on.')}
+      ${seg}
+      ${annSeg === 'poll' ? pollsAdmin() : `<section class="panel ann-composer" id="ann-composer">
         <div class="panel-head"><h3>New announcement</h3><p class="muted">Start from a template, or write your own. Pick a match to fill in its details.</p></div>
         <label class="ann-field"><span>About match <small class="muted">(optional)</small></span>
           <select class="field select" data-input="ann-match" data-focus="ann-match">
@@ -895,11 +889,10 @@
           <button class="btn btn-ghost" data-action="ann-clear">Clear</button>
         </div>
       </section>
-      ${pollsAdmin()}
       <section class="panel">
         <div class="panel-head"><h3>Sent</h3><p class="muted">Duplicate one to reuse it, for example for the next match.</p></div>
         ${announcements === null ? '<p class="muted">Loading…</p>' : announcements.length ? announcements.map(item).join('') : '<p class="muted season-empty">Nothing sent yet.</p>'}
-      </section>`;
+      </section>`}`;
   }
 
   const realMatchesById = id => id ? C.matches(state).find(m => m.id === id && !m.test) : null;
@@ -1283,8 +1276,8 @@
       ? `<span class="badge badge-admin">${icon('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>', 14)} Admin</span>`
       : `<span class="badge badge-view">${icon('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>', 14)} ${esc(session.name)} · ${isManager() ? 'manager' : 'view only'}</span>`;
 
-    const views = { summary: viewSummary, days: viewDays, stats: viewStats, players: viewPlayers, announce: viewAnnounce, settings: viewSettings };
-    $('#view').innerHTML = archiveBar() + (views[tab] || viewSummary)();
+    const views = { summary: viewHome, money: viewMoney, days: viewDays, stats: viewStats, players: viewPlayers, announce: viewAnnounce, settings: viewSettings };
+    $('#view').innerHTML = archiveBar() + (views[tab] || viewHome)();
     $('#sheet-root').innerHTML = sheet ? renderSheet() : '';
     document.body.classList.toggle('sheet-open', !!sheet);
     markSettingsNav();
@@ -1991,7 +1984,7 @@
 
   const realMatchCount = () => state.matches.filter(m => !m.test && matchVisible(m)).length;
 
-  function viewSummary() {
+  function viewMoney() {
     const t = C.totals(state, fmt);
     const stats = C.allStats(state);
     const tour = C.tournamentStats(state);
@@ -2050,16 +2043,9 @@
       </section>` : '';
 
     return `
-      ${pageHead('Summary', `${state.players.length} player${state.players.length === 1 ? '' : 's'} · ${state.trainings.length} training${state.trainings.length === 1 ? '' : 's'} · ${realMatchCount()} match${realMatchCount() === 1 ? '' : 'es'}`,
+      ${pageHead('Money', `${C.leagueMatchCount(state) ? leagueName() + ' · ' : ''}${state.players.length} player${state.players.length === 1 ? '' : 's'} · ${realMatchCount()} match${realMatchCount() === 1 ? '' : 'es'}`,
         admin && state.players.length ? `<div class="share-row">
           <button class="btn btn-gold" data-action="share-image">${IMAGE_ICON} Share as image</button></div>` : '')}
-      ${profileBanner()}
-      ${pushPrompt()}
-      ${nextMatchCard()}
-      ${fixturesPanel()}
-      ${pollsPanel()}
-      ${leaguePanel()}
-      ${galleryStrip()}
       ${myBalance()}
       ${leagueBlock()}
       <div class="stats" ${ownOnly() ? 'hidden' : ''}>${cards.map(c => `<div class="stat ${c.cls}"><span>${c.label}</span><strong>${c.value}</strong><small>${esc(c.note)}</small></div>`).join('')}</div>
@@ -2071,6 +2057,68 @@
         </section>
         ${table}
       </div>`;
+  }
+
+  // ---------- Home: what's coming up, and anything that needs you ----------
+  // Things waiting for this person, shown as one short card instead of separate banners.
+  function todoCard() {
+    if (archive) return '';
+    const items = [];
+    const item = (iconHtml, title, note, buttons) => `<li class="todo-item"><span class="pp-ico">${iconHtml}</span>
+      <div class="pp-text"><strong>${title}</strong><small>${note}</small></div><div class="pp-actions">${buttons}</div></li>`;
+    if (realAdmin()) {
+      const n = inboxCount();
+      if (n) items.push(item(BELL_ICON, `${n} request${n === 1 ? '' : 's'} waiting`, 'Manager access or lineup changes need your decision.', '<button class="btn btn-gold" data-action="open-inbox">Open</button>'));
+    } else if (state.players.length && !myPlayer()) {
+      items.push(item(icon(PERSON_PATH, 22), 'Which player are you?', 'Choose your squad name to vote, predict, answer polls and see your balance.', '<button class="btn btn-gold" data-action="go-settings">Choose name</button>'));
+    }
+    if (!realAdmin() && feed) {
+      const me = myPlayer();
+      const req = feed.find(n => n.action === 'profile');
+      if (req && !(me && me.profileAt && me.profileAt >= req.createdAt)) {
+        items.push(item(icon(PERSON_PATH, 22), 'Update your profile', 'Add a photo, jersey name and number, and batting and bowling details.', '<button class="btn btn-gold" data-action="open-profile-form">Update now</button>'));
+      }
+    }
+    const canPush = push.ready && push.supported && push.enabled && !push.subscribed && push.permission !== 'denied' && !(isIOS() && !isInstalled()) && !readStore(PUSH_PROMPT_KEY);
+    if (canPush) {
+      items.push(item(BELL_ICON, 'Never miss the team news', 'Get a notification when the Playing XI is announced or the team posts an update.',
+        '<button class="btn btn-gold" data-action="push-on">Turn on</button><button class="btn btn-ghost" data-action="push-dismiss">Not now</button>'));
+    }
+    return items.length ? `<section class="panel todo-card"><h3 class="todo-title">${icon('<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>', 18)} For you <span>${items.length}</span></h3><ul class="todo-list">${items.join('')}</ul></section>` : '';
+  }
+
+  // A small money line, with the full picture one tap away on the Money tab.
+  function moneyGlance() {
+    if (!state.players.length) return '';
+    const open = '<button class="btn btn-ghost small" data-action="tab" data-tab="money">Open Money</button>';
+    if (realAdmin()) {
+      const t = C.totals(state, fmt);
+      return `<section class="panel glance"><div class="glance-row">
+          <div><small>Collected</small><strong>${fmt(t.collected)}</strong></div>
+          <div><small>Still owed to you</small><strong class="neg">${fmt(t.owed)}</strong></div>
+          <div><small>In my account</small><strong>${fmtNet(t.cashInHand).replace(/^\+/, '')}</strong></div>
+        </div>${open}</section>`;
+    }
+    const me = myPlayer();
+    if (!me) return '';
+    const c = C.playerCalc(state, me, null, fmt);
+    return `<section class="panel glance ${netClass(c.net)}"><div class="glance-row">
+        <div><small>Your balance</small><strong class="${c.net < 0 ? 'neg' : ''}">${c.net < 0 ? fmt(-c.net) : fmt(c.net)}</strong></div>
+        <div class="glance-note">${c.net < 0 ? 'Still to pay' : c.net > 0 ? 'To be paid back to you' : 'All settled'}</div>
+      </div>${open}</section>`;
+  }
+
+  function viewHome() {
+    const next = nextMatchCard();
+    return `
+      ${pageHead('Home', `${leagueName()} · ${state.players.length} player${state.players.length === 1 ? '' : 's'}`)}
+      ${todoCard()}
+      ${next || `<section class="panel empty-next"><span class="pp-ico">${icon('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>', 22)}</span>
+        <div class="pp-text"><strong>No upcoming match yet</strong><small>${isAdmin() ? 'Add one on the Days tab and it shows here with a countdown.' : 'When the next match is added, it shows here with a countdown.'}</small></div></section>`}
+      ${moneyGlance()}
+      ${pollsPanel()}
+      ${fixturesPanel()}
+      ${galleryStrip()}`;
   }
 
   function emptyPlayers() {
@@ -2732,19 +2780,6 @@
       </div>`;
   }
 
-  // Shown on Summary while the admin's latest "update your profile" request is still waiting for this player.
-  function profileBanner() {
-    if (realAdmin() || archive || !feed) return '';
-    const me = myPlayer();
-    const req = feed.find(n => n.action === 'profile');
-    if (!req || (me && me.profileAt && me.profileAt >= req.createdAt)) return '';
-    return `<section class="panel push-prompt profile-banner">
-      <span class="pp-ico">${icon(PERSON_PATH, 22)}</span>
-      <div class="pp-text"><strong>Update your profile</strong><small>The admin asked everyone to add a photo, jersey name and number, and batting and bowling details.</small></div>
-      <div class="pp-actions"><button class="btn btn-gold" data-action="open-profile-form">Update now</button></div>
-    </section>`;
-  }
-
   // ---------- player photos ----------
   let photoTarget = null;
 
@@ -3099,9 +3134,10 @@
       </div>`).join('');
 
     return `
-      ${pageHead('Players', `${state.players.length} in the squad`, admin && state.players.length ? `<div class="share-row">
+      ${pageHead('Team', `${state.players.length} in the squad`, admin && state.players.length ? `<div class="share-row">
           <button class="btn btn-gold" data-action="share-squad">${IMAGE_ICON} Send squad list to management</button></div>` : '')}
       ${profilesPanel()}
+      ${leaguePanel()}
       <div class="players-layout">
         <section class="panel">
           <div class="player-head"><span>Sr.</span><span>Name</span><span>Role</span><span>Tournament</span></div>
@@ -3224,12 +3260,12 @@
       { key: 'statsVisibility', label: 'Stats', path: '<path d="M18 20V10M12 20V4M6 20v-6"/>' }
     ];
     const cardRows = [
-      { key: 'showNextMatch', label: 'Next match card', note: 'The countdown and “See details” on the Summary screen', path: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>' },
-      { key: 'showFixtures', label: 'Fixtures calendar', note: 'The month calendar of matches on the Summary screen', path: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' }
+      { key: 'showNextMatch', label: 'Next match card', note: 'The countdown and “See details” on the Home screen', path: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>' },
+      { key: 'showFixtures', label: 'Fixtures calendar', note: 'Every fixture with its date, on the Home screen', path: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' }
     ];
     const cardsPanel = admin ? `
       <section class="panel">
-        <div class="panel-head"><h3>Summary cards</h3><p class="muted">Show or hide these for all players. When they’re hidden from players you still see them, marked “Hidden from players”.</p></div>
+        <div class="panel-head"><h3>Home cards</h3><p class="muted">Show or hide these for all players. When they’re hidden from players you still see them, marked “Hidden from players”.</p></div>
         ${cardRows.map(r => {
           const on = !!s[r.key];
           return `<div class="pref switch-row">
@@ -3240,7 +3276,7 @@
         }).join('')}
         <div class="pref switch-row">
           <span class="sw-ico">${icon('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>', 18)}</span>
-          <span class="sw-text">Fixtures calendar for me<small class="muted">${s.adminShowFixtures ? 'You see it on Summary' : 'Hidden on your Summary too'}</small></span>
+          <span class="sw-text">Fixtures calendar for me<small class="muted">${s.adminShowFixtures ? 'You see it on Home' : 'Hidden on your Home too'}</small></span>
           <button class="switch ${s.adminShowFixtures ? 'on' : ''}" role="switch" aria-checked="${s.adminShowFixtures}" data-action="set-admin-fixtures" aria-label="Show the fixtures calendar to me"><span></span></button>
         </div>
       </section>` : '';
@@ -3928,6 +3964,7 @@ ${tabRows.map(r => {
       }
       render();
     },
+    'ann-seg'(el) { annSeg = el.dataset.seg === 'poll' ? 'poll' : 'ann'; render(); },
     'ann-action-clear'() { annDraft.action = ''; render(); },
     'ann-clear'() { annDraft = { title: '', body: '', matchId: '', later: false, at: '', action: '' }; render(); },
     async 'ann-send'() {
@@ -4459,7 +4496,7 @@ ${tabRows.map(r => {
       if (!isAdmin()) return;
       state.settings.adminShowFixtures = !state.settings.adminShowFixtures;
       commit();
-      toast(`Fixtures calendar is now ${state.settings.adminShowFixtures ? 'shown' : 'hidden'} on your Summary.`);
+      toast(`Fixtures calendar is now ${state.settings.adminShowFixtures ? 'shown' : 'hidden'} on your Home.`);
     },
     'set-summary-card'(el) {
       const key = el.dataset.key;
