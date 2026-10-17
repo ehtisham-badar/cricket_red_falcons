@@ -875,7 +875,7 @@
       const rows = (hpl.pointsTable || []).filter(r => r.round === (hpl.pointsTable[0] || {}).round);
       body = rows.length ? `<div class="table-wrap"><table class="sheet-table hpl-table">
           <thead><tr><th>#</th><th class="hpl-team-col">Team</th><th>P</th><th>W</th><th>L</th><th>T</th><th>NR</th><th>Pts</th><th>NRR</th><th>Form</th></tr></thead>
-          <tbody>${rows.map((r, i) => `<tr class="${isUs(r.team) ? 'us' : ''}"><td>${i + 1}</td>
+          <tbody>${rows.map((r, i) => `<tr class="hpl-open ${isUs(r.team) ? 'us' : ''}" data-action="hpl-team" data-team="${esc(r.team)}" data-logo="${esc(r.logo || '')}" title="See the ${esc(titleCase(r.team))} squad"><td>${i + 1}</td>
             <td class="hpl-team-col"><span class="hpl-team">${logo(r.team, r.logo)}<strong>${esc(titleCase(r.team))}</strong></span></td>
             <td>${r.played}</td><td>${r.won}</td><td>${r.lost}</td><td>${r.tie}</td><td>${r.noResult}</td><td class="strong">${r.points}</td><td>${esc(r.nrr)}</td>
             <td><span class="hpl-form">${(r.form || []).slice(-5).map(f => `<i class="f-${esc(String(f).toLowerCase())}">${esc(f)}</i>`).join('') || '—'}</span></td></tr>`).join('')}</tbody>
@@ -885,7 +885,7 @@
       body = list.length ? `<div class="hpl-results">${list.map(m => {
         const when = m.start ? new Date(m.start).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '';
         const won = t => m.result && m.result.toUpperCase().startsWith((t.name || '').toUpperCase());
-        const side = t => `<div class="hpl-side ${won(t) ? 'won' : ''} ${isUs(t.name) ? 'us' : ''}">
+        const side = t => `<div class="hpl-side hpl-open ${won(t) ? 'won' : ''} ${isUs(t.name) ? 'us' : ''}" data-action="hpl-team" data-team="${esc(t.name)}" data-logo="${esc(t.logo || '')}" title="See the squad">
             ${logo(t.name, t.logo, 34)}<strong>${esc(titleCase(t.name))}</strong>
             <span class="hpl-score">${t.runs == null ? '—' : `${t.runs}/${t.wickets}`}<small>${t.overs ? `(${esc(t.overs)} ov)` : ''}</small></span></div>`;
         return `<article class="hpl-match">
@@ -915,6 +915,100 @@
       ${body}
       <p class="hpl-source">From <a href="${esc(hpl.source)}" target="_blank" rel="noopener">Crickslab</a>${ago != null ? ` · updated ${ago < 1 ? 'just now' : ago === 1 ? '1 min ago' : ago + ' min ago'}` : ''}</p>
     </section>`;
+  }
+
+  // ---------- HPL team squads: tap a team to see its players ----------
+  let hplSquads = null;                       // [{ key, team, players: ["Name (c) - Batsman", …], updatedAt }]
+  let squadDraft = null;                      // the admin's text while editing the open team's squad
+
+  async function loadSquads() {
+    try { hplSquads = await api('GET', '/api/hpl/squads'); } catch { hplSquads = hplSquads || []; }
+    if (sheet && sheet.type === 'hpl-team') render();
+  }
+
+  const teamKey = n => String(n || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  // "Ali Khan (c) - Batsman" → { name: 'Ali Khan', role: 'Batsman', tags: ['c'] }. (wk) and (vc) work too.
+  function squadLine(line) {
+    const tags = [];
+    let s = String(line).replace(/\(([a-z&\s]+)\)|†/gi, (all, t) => {
+      (t || 'wk').toLowerCase().split(/\s*&\s*|\s+/).filter(x => ['c', 'vc', 'wk'].includes(x)).forEach(x => tags.includes(x) || tags.push(x));
+      return ' ';
+    });
+    const [name, ...rest] = s.split(/\s+[-–—|]\s+|\s*,\s*/);
+    return { name: name.replace(/\s+/g, ' ').trim(), role: rest.join(', ').trim(), tags };
+  }
+
+  const initials = n => String(n || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+  const squadTags = tags => tags.map(t => `<span class="lu-tag ${t}">${t.toUpperCase()}</span>`).join('');
+
+  function sheetHplTeam() {
+    const name = sheet.team;
+    const key = teamKey(name);
+    const us = isUs(name);
+    const table = (hpl && hpl.pointsTable || []).filter(r => r.round === ((hpl.pointsTable || [])[0] || {}).round);
+    const pos = table.findIndex(r => teamKey(r.team) === key);
+    const row = table[pos];
+    const src = hplLogo(name, (row && row.logo) || sheet.logo);
+    const logo = src ? `<img class="hpl-logo sq-logo" src="${esc(src)}" alt="" width="56" height="56">` : `<span class="hpl-logo ph sq-logo">${esc(initials(name))}</span>`;
+
+    const tile = (label, value) => `<div class="stat"><span>${label}</span><strong>${value}</strong></div>`;
+    const tiles = row ? `<div class="prof-tiles sq-tiles">${tile('Position', pos + 1)}${tile('Played', row.played)}${tile('Won', row.won)}${tile('Lost', row.lost)}${tile('Points', row.points)}${tile('NRR', esc(row.nrr))}</div>` : '';
+
+    const games = (hpl && hpl.results || []).filter(m => (m.teams || []).some(t => teamKey(t.name) === key));
+    const gamesHtml = games.length ? `<h3 class="sub">Matches</h3><ul class="sq-games">${games.map(m => {
+        const [a, b] = (m.teams || []).slice().sort((x, y) => (teamKey(y.name) === key) - (teamKey(x.name) === key));
+        const sc = t => t.runs == null ? '—' : `${t.runs}/${t.wickets}`;
+        const won = m.result && teamKey(m.result).startsWith(key);
+        const done = /completed/i.test(m.status || '');
+        return `<li><span class="sq-res ${!done ? 'up' : won ? 'w' : 'l'}">${!done ? (m.live ? 'LIVE' : '•') : won ? 'W' : 'L'}</span>
+          <span class="sq-vs"><strong>v ${esc(titleCase(b ? b.name : ''))}</strong><small>${esc(m.result || m.status || '')}</small></span>
+          <span class="sq-score">${sc(a)}${b ? ` <small>v ${sc(b)}</small>` : ''}</span></li>`;
+      }).join('')}</ul>` : '';
+
+    const stars = [];
+    const lead = hpl && hpl.leaders || {};
+    [['batting', 'runs'], ['bowling', 'wkts'], ['fielding', '']].forEach(([k]) => (lead[k] || []).forEach(l => {
+      if (teamKey(l.team) === key) stars.push({ name: l.name, value: l.value, label: l.label || k });
+    }));
+    const starsHtml = stars.length ? `<h3 class="sub">In the league leaders</h3><ul class="sq-stars">${stars.map(s =>
+      `<li><strong>${esc(s.name)}</strong><span>${esc(s.value)} <small>${esc(s.label)}</small></span></li>`).join('')}</ul>` : '';
+
+    let squadHtml;
+    if (us) {
+      const squad = state.players.filter(C.inTournament);
+      squadHtml = `<h3 class="sub first">Squad <span class="muted">${squad.length} players</span></h3>
+        <ul class="lu-list squad">${squad.map(p => `<li class="lu-row">
+          ${avatar(p, 40)}<span class="lu-name"><strong>${esc(p.name)}</strong><small>${esc(p.role) || '—'}</small></span>
+          <span class="lu-tags">${roleTags(p)}</span></li>`).join('')}</ul>`;
+    } else if (isAdmin() && squadDraft !== null) {
+      squadHtml = `<h3 class="sub first">Edit squad</h3>
+        <p class="muted sq-hint">One player per line. Add a role after a dash, and (c), (vc) or (wk) for captain, vice-captain and keeper — e.g. <code>Ali Khan (c) - Batsman</code>.</p>
+        <textarea class="field textarea sq-text" rows="12" maxlength="2400" placeholder="Ali Khan (c) - Batsman&#10;Bilal Ahmed (wk) - Wicket-keeper&#10;Hamza - Bowler" data-input="squad-text" data-focus="squad-text" aria-label="Squad">${esc(squadDraft)}</textarea>
+        <div class="settings-actions">
+          <button class="btn btn-primary" data-action="squad-save">Save squad</button>
+          <button class="btn btn-ghost" data-action="squad-cancel">Cancel</button>
+        </div>`;
+    } else if (hplSquads === null) {
+      squadHtml = `<h3 class="sub first">Squad</h3><p class="muted">Loading…</p>`;
+    } else {
+      const saved = hplSquads.find(s => s.key === key);
+      const list = saved ? saved.players.map(squadLine).filter(p => p.name) : [];
+      const edit = isAdmin() ? `<button class="btn btn-ghost small" data-action="squad-edit">${list.length ? 'Edit squad' : 'Add squad'}</button>` : '';
+      squadHtml = list.length ? `<h3 class="sub first sq-head"><span>Squad <span class="muted">${list.length} players</span></span>${edit}</h3>
+        <ul class="lu-list squad">${list.map(p => `<li class="lu-row">
+          <span class="avatar ph sq-ini" style="--s:40px">${esc(initials(p.name))}</span>
+          <span class="lu-name"><strong>${esc(p.name)}</strong><small>${esc(p.role) || '—'}</small></span>
+          <span class="lu-tags">${squadTags(p.tags)}</span></li>`).join('')}</ul>`
+        : `<h3 class="sub first">Squad</h3><div class="sq-empty">${icon('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>', 26)}
+            <p>${isAdmin() ? 'No squad yet. Paste it in once and everyone will see it.' : 'The squad hasn’t been added yet.'}</p>${edit}</div>`;
+    }
+
+    return `<header class="sheet-head">
+        <div class="sq-title">${logo}<span><span class="day-kind">${us ? 'Our team' : 'HPL team'}</span><h2>${esc(titleCase(name))}</h2></span></div>
+        <button class="icon-btn" data-action="close-sheet" aria-label="Close">${X_ICON}</button>
+      </header>
+      <div class="sheet-body lu">${squadHtml}${tiles ? `<h3 class="sub">League</h3>${tiles}` : ''}${gamesHtml}${starsHtml}</div>`;
   }
 
   async function loadNews() {
@@ -3578,6 +3672,7 @@ ${tabRows.map(r => {
     if (sheet.type === 'photo') body = sheetPhoto();
     if (sheet.type === 'profile-form') body = sheetProfileForm();
     if (sheet.type === 'predictions') body = sheetPredictions();
+    if (sheet.type === 'hpl-team') body = sheetHplTeam();
     if (!body) { sheet = null; return ''; }
     return `<div class="sheet-backdrop" data-action="close-sheet"></div>
       <div class="sheet" role="dialog" aria-modal="true">${body}</div>`;
@@ -4717,6 +4812,33 @@ ${tabRows.map(r => {
       render();
     },
     'hpl-view'(el) { hplView = el.dataset.id; render(); },
+    'hpl-team'(el) {
+      sheet = { type: 'hpl-team', team: el.dataset.team, logo: el.dataset.logo };
+      squadDraft = null;
+      render();
+      loadSquads();
+    },
+    'squad-edit'() {
+      if (!isAdmin() || !sheet || sheet.type !== 'hpl-team') return;
+      const saved = (hplSquads || []).find(s => s.key === teamKey(sheet.team));
+      squadDraft = saved ? saved.players.join('\n') : '';
+      render();
+    },
+    'squad-cancel'() { squadDraft = null; render(); },
+    async 'squad-save'(el) {
+      if (!isAdmin() || squadDraft === null || !sheet) return;
+      const players = squadDraft.split('\n').map(x => x.trim()).filter(Boolean);
+      el.disabled = true;
+      try {
+        await api('PUT', '/api/hpl/squads', { team: titleCase(sheet.team), players });
+        squadDraft = null;
+        toast(players.length ? `Squad saved — ${players.length} players.` : 'Squad removed.');
+        await loadSquads();
+      } catch (e) {
+        toast(e.message || 'Could not save the squad.');
+        el.disabled = false;
+      }
+    },
     async 'hpl-refresh'() {
       if (!isAdmin() || hplRefreshing) return;
       hplRefreshing = true;
@@ -5128,6 +5250,7 @@ ${tabRows.map(r => {
       if (el.dataset && el.dataset.input === 'mgr-phrase') { mgrDraft.phrase = el.value; return; }
       if (el.dataset && el.dataset.input === 'mgr-edit') { mgrDraft.edits[el.dataset.id] = el.value; render(); return; }
       if (el.dataset && /^tfa-/.test(el.dataset.input || '')) { tfaDraft[el.dataset.input.slice(4)] = el.value; return; }
+      if (el.dataset && el.dataset.input === 'squad-text') { squadDraft = el.value; return; }
       if (el.dataset && /^news-/.test(el.dataset.input || '')) {
         const key = el.dataset.input.slice(5);
         newsDraft[key] = el.type === 'checkbox' ? el.checked : el.value;
