@@ -45,26 +45,54 @@ public class LeagueFeedService {
     private Map<String, Object> cached;
     private Instant fetchedAt = Instant.EPOCH;
     private Instant lastTry = Instant.EPOCH;
+    private boolean refreshing;
+    private final java.util.concurrent.ExecutorService background = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "hpl-feed");
+        t.setDaemon(true);
+        return t;
+    });
 
     public LeagueFeedService(ObjectMapper json, @Value("${ledger.hpl-url:}") String url) {
         this.json = json;
         this.url = url == null ? "" : url.trim();
     }
 
-    /** The latest summary (fetching a fresh one when it's old), or an "unavailable" note. */
-    public synchronized Map<String, Object> summary() {
+    /**
+     * The latest summary, or an "unavailable" note. When the copy is old it is refreshed in the background (the
+     * caller gets the current copy straight away); only the very first request waits for a fetch.
+     */
+    public Map<String, Object> summary() {
         Instant now = Instant.now();
-        boolean stale = cached == null || fetchedAt.plus(REFRESH).isBefore(now);
-        boolean mayTry = lastTry.plus(cached == null ? RETRY_AFTER_ERROR.dividedBy(5) : RETRY_AFTER_ERROR).isBefore(now);
-        if (!url.isEmpty() && stale && mayTry) {
+        boolean first;
+        synchronized (this) {
+            boolean stale = cached == null || fetchedAt.plus(REFRESH).isBefore(now);
+            boolean mayTry = !refreshing && lastTry.plus(cached == null ? RETRY_AFTER_ERROR.dividedBy(5) : RETRY_AFTER_ERROR).isBefore(now);
+            if (url.isEmpty() || !stale || !mayTry) return snapshot();
             lastTry = now;
-            try {
-                cached = parse(fetch());
-                fetchedAt = now;
-            } catch (Exception e) {
-                log.warn("HPL feed: could not refresh from Crickslab ({}); keeping the last copy.", e.getMessage());
-            }
+            refreshing = true;
+            first = cached == null;
         }
+        if (first) refresh(); else background.submit(this::refresh);
+        synchronized (this) {
+            return snapshot();
+        }
+    }
+
+    private void refresh() {
+        try {
+            Map<String, Object> fresh = parse(fetch());
+            synchronized (this) {
+                cached = cached == null ? fresh : newest(cached, fresh);
+                fetchedAt = Instant.now();
+            }
+        } catch (Exception e) {
+            log.warn("HPL feed: could not refresh from Crickslab ({}); keeping the last copy.", e.getMessage());
+        } finally {
+            synchronized (this) { refreshing = false; }
+        }
+    }
+
+    private Map<String, Object> snapshot() {
         if (cached == null) return Map.of("available", false);
         Map<String, Object> out = new LinkedHashMap<>(cached);
         out.put("available", true);
@@ -72,13 +100,70 @@ public class LeagueFeedService {
         return out;
     }
 
+    /**
+     * Crickslab caches its pages and may answer with an old copy ("x-nextjs-cache: STALE") while it refreshes in
+     * the background; in that case wait a moment and ask again, which returns the refreshed page.
+     */
     private String fetch() throws Exception {
+        HttpResponse<String> res = get();
+        for (int i = 0; i < 2 && "STALE".equalsIgnoreCase(res.headers().firstValue("x-nextjs-cache").orElse("")); i++) {
+            Thread.sleep(3000);
+            res = get();
+        }
+        return res.body();
+    }
+
+    private HttpResponse<String> get() throws Exception {
         HttpRequest req = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(20))
                 .header("User-Agent", "RedFalconsLedger/1.0 (+https://red-falcons-ledger.vercel.app)")
                 .header("Accept", "text/html").GET().build();
         HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
         if (res.statusCode() != 200) throw new IllegalStateException("HTTP " + res.statusCode());
-        return res.body();
+        return res;
+    }
+
+    /**
+     * Combines the copy we had with a newly fetched one so the data never goes backwards, even if Crickslab
+     * serves an older cached page: a match keeps its most advanced state (finished beats in progress, more
+     * balls beats fewer), and the table and leaders are replaced only by ones with at least as many games.
+     */
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> newest(Map<String, Object> old, Map<String, Object> fresh) {
+        Map<String, Object> out = new LinkedHashMap<>(fresh);
+        if (played((List<Map<String, Object>>) old.get("pointsTable")) > played((List<Map<String, Object>>) fresh.get("pointsTable"))) {
+            out.put("pointsTable", old.get("pointsTable"));
+            out.put("leaders", old.get("leaders"));
+        }
+        Map<Object, Map<String, Object>> oldById = new HashMap<>();
+        ((List<Map<String, Object>>) old.getOrDefault("results", List.of())).forEach(r -> oldById.put(r.get("id"), r));
+        List<Map<String, Object>> results = new ArrayList<>();
+        Set<Object> seen = new HashSet<>();
+        for (Map<String, Object> r : (List<Map<String, Object>>) fresh.getOrDefault("results", List.of())) {
+            Map<String, Object> before = oldById.get(r.get("id"));
+            results.add(before != null && progress(before) > progress(r) ? before : r);
+            seen.add(r.get("id"));
+        }
+        // A match the new copy doesn't list (an older cached page) stays.
+        oldById.forEach((id, r) -> { if (!seen.contains(id)) results.add(r); });
+        results.sort(Comparator.comparing((Map<String, Object> r) -> String.valueOf(r.get("start"))).reversed());
+        out.put("results", results);
+        return out;
+    }
+
+    private static int played(List<Map<String, Object>> table) {
+        return table == null ? 0 : table.stream().mapToInt(r -> ((Number) r.getOrDefault("played", 0)).intValue()).sum();
+    }
+
+    /** How far a match has got: finished counts most, then the runs and wickets on the board. */
+    @SuppressWarnings("unchecked")
+    private static long progress(Map<String, Object> r) {
+        long p = "Completed".equalsIgnoreCase(String.valueOf(r.get("status"))) || !String.valueOf(r.getOrDefault("result", "")).isEmpty() ? 1_000_000 : 0;
+        for (Map<String, Object> t : (List<Map<String, Object>>) r.getOrDefault("teams", List.of())) {
+            Object runs = t.get("runs"), wk = t.get("wickets");
+            if (runs instanceof Number n) p += n.longValue() * 10;
+            if (wk instanceof Number n) p += n.longValue();
+        }
+        return p;
     }
 
     /** Pulls the page's own data (the props of its tournament component) out of the streamed page payload. */

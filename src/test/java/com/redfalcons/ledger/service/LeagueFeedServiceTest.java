@@ -48,4 +48,24 @@ class LeagueFeedServiceTest {
         Map<String, Object> leaders = (Map<String, Object>) out.get("leaders");
         assertThat(((List<Map<String, Object>>) leaders.get("batting")).get(0)).containsEntry("name", "Abdul Mannan").containsEntry("value", "57");
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void anOlderCachedPageNeverUndoesAFinishedMatch() {
+        Map<String, Object> finished = Map.of("pointsTable", List.of(Map.of("team", "RAPTORS", "played", 1)), "leaders", Map.of("batting", List.of()),
+                "results", List.of(Map.of("id", 2L, "start", "2026-10-17T12:45", "status", "Completed", "result", "RAPTORS won by 30 runs",
+                        "teams", List.of(Map.of("name", "RAPTORS", "runs", 163, "wickets", 5), Map.of("name", "GALACTICOS", "runs", 133, "wickets", 7)))));
+        Map<String, Object> stale = Map.of("pointsTable", List.of(Map.of("team", "RAPTORS", "played", 0)), "leaders", Map.of("batting", List.of()),
+                "results", List.of(Map.of("id", 2L, "start", "2026-10-17T12:45", "status", "In-Progress", "result", "",
+                        "teams", List.of(Map.of("name", "RAPTORS", "runs", 163, "wickets", 5), Map.of("name", "GALACTICOS", "runs", 129, "wickets", 6)))));
+
+        Map<String, Object> merged = LeagueFeedService.newest(finished, stale);
+        Map<String, Object> m = ((List<Map<String, Object>>) merged.get("results")).get(0);
+        assertThat(m).containsEntry("status", "Completed").containsEntry("result", "RAPTORS won by 30 runs");
+        assertThat(((List<Map<String, Object>>) merged.get("pointsTable")).get(0)).containsEntry("played", 1);
+
+        // And a genuinely newer page does replace the old one.
+        Map<String, Object> back = LeagueFeedService.newest(stale, finished);
+        assertThat(((List<Map<String, Object>>) back.get("results")).get(0)).containsEntry("status", "Completed");
+    }
 }
