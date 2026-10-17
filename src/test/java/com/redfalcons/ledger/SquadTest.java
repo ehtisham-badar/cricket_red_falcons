@@ -39,6 +39,9 @@ class SquadTest {
 
     @Test
     void onlyTheAdminSavesAndNamesMatch() throws Exception {
+        // The squads from Crickslab are there from the start.
+        assertThat(list()).contains("\"key\":\"raptors\"").contains("Ali Raza (c) - Batter").contains("\"key\":\"galacticos\"");
+
         assertThat(put(null, "{\"team\":\"Raptors\",\"players\":[\"Ali\"]}").statusCode()).isEqualTo(403);
 
         String login = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/login"))
@@ -53,10 +56,10 @@ class SquadTest {
         // Crickslab writes it "RAGEROVERS": same squad, replaced rather than duplicated.
         put(token, "{\"team\":\"RAGEROVERS\",\"players\":[\"Ali Khan (c)\",\"Bilal (wk)\",\"Hamza\"]}");
         assertThat(list()).contains("\"Hamza\"").doesNotContain("Batsman");
-        assertThat(list().split("\"key\"").length - 1).isEqualTo(1);
+        assertThat(list().split("\"key\":\"ragerovers\"").length - 1).isEqualTo(1);
 
         // An empty list removes the squad.
         put(token, "{\"team\":\"Rage Rovers\",\"players\":[]}");
-        assertThat(list()).isEqualTo("[]");
+        assertThat(list()).doesNotContain("ragerovers").contains("raptors");
     }
 }
