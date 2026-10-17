@@ -1967,7 +1967,7 @@ a.btn { text-decoration: none; }
 .avatar.sq-ini { display: inline-grid; place-items: center; font-weight: 800; font-size: 14px; letter-spacing: .02em; }
 .sq-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; padding: 22px 16px; border: 1px dashed var(--line); border-radius: 16px; color: var(--muted); }
 .sq-empty p { margin: 0; }
-.sq-tiles { margin-bottom: 4px; }
+.prof-tiles.sq-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 4px; }
 .sq-games, .sq-stars { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .sq-games li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 14px; border: 1px solid var(--line); background: rgba(var(--hi-rgb), .025); }
 .sq-res { display: inline-grid; place-items: center; min-width: 28px; height: 28px; padding: 0 4px; border-radius: 8px; font-weight: 800; font-size: 12px; background: rgba(var(--hi-rgb), .08); color: var(--muted); }
