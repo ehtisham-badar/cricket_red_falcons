@@ -127,7 +127,9 @@ public class LeagueFeedService {
             r.put("id", x.path("id").asLong());
             r.put("title", x.path("matchTitle").asString(""));
             r.put("status", x.path("status").path("title").asString(""));
-            r.put("live", x.path("isLive").asBoolean(false));
+            // Crickslab can leave isLive set after a match ends, so a completed match is never shown as live.
+            String status = x.path("status").path("title").asString("");
+            r.put("live", x.path("isLive").asBoolean(false) && !"Completed".equalsIgnoreCase(status));
             r.put("start", pakistanTime(x.path("scheduledDateTime").asString("")));
             r.put("ground", x.path("ground").path("title").asString(""));
             r.put("teams", List.of(team(x.path("firstTeam")), team(x.path("secondTeam"))));

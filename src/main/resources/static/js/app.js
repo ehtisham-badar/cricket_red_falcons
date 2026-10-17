@@ -855,8 +855,8 @@
     if (tab === 'news') render();
   }
 
-  // Our own copy of a team's logo where we have one, else Crickslab's.
-  const hplLogo = (name, remote) => /red\s*falcons/i.test(name) ? 'img/logo.jpeg' : (teamLogo(name) || remote || '');
+  // Crickslab's square team logos suit this small size; our crest for Red Falcons.
+  const hplLogo = (name, remote) => /red\s*falcons/i.test(name) ? 'img/logo.jpeg' : (remote || teamLogo(name) || '');
   const isUs = name => /red\s*falcons/i.test(name || '');
   const titleCase = n => String(n || '').toLowerCase().replace(/\b([a-z])/g, c => c.toUpperCase()).replace(/\bPak\b/, 'Pak');
 
