@@ -849,6 +849,7 @@
   // ---------- HPL live (from Crickslab, via our server) ----------
   let hpl = null;                             // the server's summary of the league page
   let hplView = 'table';
+  let hplRefreshing = false;
 
   async function loadHpl() {
     try { hpl = await api('GET', '/api/hpl'); } catch { hpl = hpl || { available: false }; }
@@ -905,7 +906,11 @@
     return `<section class="panel hpl">
       <div class="hpl-head">
         <span class="hpl-title">${hpl.logo ? `<img class="hpl-logo big" src="${esc(hpl.logo)}" alt="">` : ''}<span><span class="day-kind">HPL live</span><h3>${esc(hpl.title)}</h3></span></span>
-        <div class="seg hpl-seg">${seg}</div>
+        <div class="hpl-controls">
+          <div class="seg hpl-seg">${seg}</div>
+          ${isAdmin() ? `<button class="icon-btn hpl-refresh ${hplRefreshing ? 'spinning' : ''}" data-action="hpl-refresh" ${hplRefreshing ? 'disabled' : ''}
+            title="Get the latest from Crickslab" aria-label="Refresh league results">${icon('<path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>', 18)}</button>` : ''}
+        </div>
       </div>
       ${body}
       <p class="hpl-source">From <a href="${esc(hpl.source)}" target="_blank" rel="noopener">Crickslab</a>${ago != null ? ` · updated ${ago < 1 ? 'just now' : ago === 1 ? '1 min ago' : ago + ' min ago'}` : ''}</p>
@@ -4712,6 +4717,21 @@ ${tabRows.map(r => {
       render();
     },
     'hpl-view'(el) { hplView = el.dataset.id; render(); },
+    async 'hpl-refresh'() {
+      if (!isAdmin() || hplRefreshing) return;
+      hplRefreshing = true;
+      render();
+      try {
+        const r = await api('POST', '/api/hpl/refresh');
+        if (r.available) hpl = r;
+        toast(r.fetchOk === false ? 'Couldn’t reach Crickslab — showing the last results.' : r.refreshed ? 'League updated from Crickslab.' : 'Already up to date.');
+      } catch {
+        toast('Couldn’t refresh the league.');
+      } finally {
+        hplRefreshing = false;
+        render();
+      }
+    },
     'news-new'() { if (!isAdmin()) return; newsDraft = { id: null, title: '', tag: '', body: '', pinned: false }; render(); },
     'news-edit'(el) {
       const n = (news || []).find(x => x.id === el.dataset.id);

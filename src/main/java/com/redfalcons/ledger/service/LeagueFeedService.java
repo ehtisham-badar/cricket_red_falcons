@@ -33,6 +33,8 @@ public class LeagueFeedService {
     private static final Logger log = LoggerFactory.getLogger(LeagueFeedService.class);
     private static final Duration REFRESH = Duration.ofMinutes(15);
     private static final Duration RETRY_AFTER_ERROR = Duration.ofMinutes(5);
+    /** The admin's refresh button doesn't fetch more often than this, to stay polite to Crickslab. */
+    private static final Duration MIN_MANUAL_GAP = Duration.ofSeconds(10);
     private static final Pattern CHUNK = Pattern.compile("self\\.__next_f\\.push\\(\\[1,\"(.*?)\"\\]\\)</script>", Pattern.DOTALL);
     private static final ZoneId PAKISTAN = ZoneId.of("Asia/Karachi");
     private static final DateTimeFormatter CL_TIME = DateTimeFormatter.ofPattern("EEE, d MMM yyyy hh:mm a", Locale.ENGLISH);
@@ -72,21 +74,42 @@ public class LeagueFeedService {
             refreshing = true;
             first = cached == null;
         }
-        if (first) refresh(); else background.submit(this::refresh);
+        if (first) refresh(); else background.submit(() -> { refresh(); });
         synchronized (this) {
             return snapshot();
         }
     }
 
-    private void refresh() {
+    /**
+     * Fetches the latest page now (the admin's refresh button), unless one was fetched in the last
+     * {@link #MIN_MANUAL_GAP}. Returns the summary and whether the fetch worked.
+     */
+    public Map<String, Object> refreshNow() {
+        if (url.isEmpty()) return Map.of("available", false, "refreshed", false);
+        boolean go;
+        synchronized (this) {
+            go = !refreshing && lastTry.plus(MIN_MANUAL_GAP).isBefore(Instant.now());
+            if (go) { lastTry = Instant.now(); refreshing = true; }
+        }
+        boolean ok = !go || refresh();
+        Map<String, Object> out;
+        synchronized (this) { out = new LinkedHashMap<>(snapshot()); }
+        out.put("refreshed", go && ok);
+        out.put("fetchOk", ok);
+        return out;
+    }
+
+    private boolean refresh() {
         try {
             Map<String, Object> fresh = parse(fetch());
             synchronized (this) {
                 cached = cached == null ? fresh : newest(cached, fresh);
                 fetchedAt = Instant.now();
             }
+            return true;
         } catch (Exception e) {
             log.warn("HPL feed: could not refresh from Crickslab ({}); keeping the last copy.", e.getMessage());
+            return false;
         } finally {
             synchronized (this) { refreshing = false; }
         }
