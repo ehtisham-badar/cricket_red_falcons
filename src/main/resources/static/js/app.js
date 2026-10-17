@@ -1253,6 +1253,11 @@
     if (Math.abs(window.scrollY - before.y) > 1) window.scrollTo(0, before.y);
   }
 
+  function setTopbarHeight() {
+    const bar = document.querySelector('.topbar');
+    if (bar && bar.offsetHeight) document.documentElement.style.setProperty('--topbar-h', bar.offsetHeight + 'px');
+  }
+
   function render() {
     if (!state) return;
     const scroll = scrollState();
@@ -1282,6 +1287,7 @@
     document.body.classList.toggle('sheet-open', !!sheet);
     markSettingsNav();
 
+    setTopbarHeight();
     restoreScroll(scroll);
 
     if (focusKey) {
@@ -4939,11 +4945,10 @@ ${tabRows.map(r => {
   }
 
   applyTheme(currentTheme());
-  // The top bar is fixed to the screen; the page starts below it whatever its height.
+  // The top bar is fixed to the screen; the page starts below it whatever its height. It is measured
+  // again on every render too, since it has no height while the app is still hidden behind the loader.
   const topbarEl = document.querySelector('.topbar');
   if (topbarEl) {
-    const setTopbarHeight = () => document.documentElement.style.setProperty('--topbar-h', topbarEl.offsetHeight + 'px');
-    setTopbarHeight();
     if (window.ResizeObserver) new ResizeObserver(setTopbarHeight).observe(topbarEl);
     window.addEventListener('resize', setTopbarHeight);
   }
