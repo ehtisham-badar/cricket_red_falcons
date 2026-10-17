@@ -67,7 +67,7 @@ class LedgerApiTest {
                 // Payment account details stay null until the admin sets them.
                 .contains("\"payBank\":null,\"payTitle\":null,\"payAccount\":null")
                 .contains("\"desc\":\"Nets\"")
-                .contains("\"matches\":[{\"id\":\"m1\",\"date\":\"2026-10-24\",\"opponent\":\"Lahore Lions\",\"venue\":\"\",\"finished\":true,\"test\":false,\"time\":\"\",\"announced\":false,\"result\":\"\"},{\"id\":\"m2\",\"date\":\"\",\"opponent\":\"\",\"venue\":\"\",\"finished\":false,\"test\":false,\"time\":\"\",\"announced\":false,\"result\":\"\"}]");
+                .contains("\"matches\":[{\"id\":\"m1\",\"date\":\"2026-10-24\",\"opponent\":\"Lahore Lions\",\"venue\":\"\",\"finished\":true,\"test\":false,\"time\":\"\",\"announced\":false,\"result\":\"\",\"twelfthPlayed\":false},{\"id\":\"m2\",\"date\":\"\",\"opponent\":\"\",\"venue\":\"\",\"finished\":false,\"test\":false,\"time\":\"\",\"announced\":false,\"result\":\"\",\"twelfthPlayed\":false}]");
 
         // A version 2 file (amounts only) is read as one fund-paid expense per day.
         assertThat(loaded).contains("\"t1\":[{\"id\":\"legacy-t1\",\"item\":\"Amount spent\",\"amount\":\"1500\",\"paidBy\":\"\"}]");
@@ -218,8 +218,16 @@ class LedgerApiTest {
         assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"id\":\"mA\"").contains("\"announced\":true");
         assertThat(send("PUT", "/api/ledger", "{\"players\":[],\"matches\":[{\"id\":\"mA\"}]}", token).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"announced\":true");
-        assertThat(send("PUT", "/api/ledger", "{\"players\":[],\"matches\":[{\"id\":\"mA\",\"announced\":false,\"result\":\"\"}]}", token).statusCode()).isEqualTo(200);
+        assertThat(send("PUT", "/api/ledger", "{\"players\":[],\"matches\":[{\"id\":\"mA\",\"announced\":false,\"result\":\"\",\"twelfthPlayed\":false}]}", token).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"announced\":false");
+
+        // A 12th man who only fields isn't flagged; once he bats or bowls, every viewer is told (stats or not).
+        String tw = "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{\"mT\":true}},{\"id\":\"p2\",\"name\":\"Rizwan\",\"att\":{}}],"
+                + "\"matches\":[{\"id\":\"mT\"}],\"twelfth\":{\"mT\":\"p2\"},\"stats\":{\"mT\":{\"p2\":{%s}}},\"settings\":{\"statsVisibility\":\"admin\"}}";
+        assertThat(send("PUT", "/api/ledger", String.format(tw, "\"catches\":2"), token).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"twelfthPlayed\":false").contains("\"stats\":{}");
+        assertThat(send("PUT", "/api/ledger", String.format(tw, "\"balls\":6,\"fours\":1"), token).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"twelfthPlayed\":true").contains("\"stats\":{}");
 
         // Replacing again with fewer players removes the old ones and their attendance.
         assertThat(send("PUT", "/api/ledger", "{\"players\":[]}", token).statusCode()).isEqualTo(200);

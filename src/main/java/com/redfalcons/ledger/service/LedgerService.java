@@ -192,7 +192,7 @@ public class LedgerService {
                         tournamentPayments.findAll(BY_POSITION).stream()
                                 .map(x -> new PaymentDto(x.getId(), x.getDate(), x.getAmount(), x.getMethod(), x.getNote()))
                                 .toList(), parseIntOr(s.get(MATCH_COUNT), DEFAULT_MATCH_COUNT)),
-                settingsDto, parseTwelfth(s.get(TWELFTH)), parseBatting(s), storedMatches(), storedStats());
+                settingsDto, parseTwelfth(s.get(TWELFTH)), parseBatting(s), matchesWithTwelfth(parseTwelfth(s.get(TWELFTH))), storedStats());
     }
 
     /** Bowling styles a player may pick for themselves. */
@@ -579,7 +579,26 @@ public class LedgerService {
     private List<MatchDto> storedMatches() {
         return matches.findAll(BY_POSITION).stream()
                 .map(m -> new MatchDto(m.getId(), m.getDate(), m.getOpponent(), m.getVenue(), m.isFinished(), m.isTest(), m.getTime(),
-                        m.isAnnounced(), m.getResult())).toList();
+                        m.isAnnounced(), m.getResult(), null)).toList();
+    }
+
+    /**
+     * The matches with twelfthPlayed set: the 12th man batted or bowled, so he shares the costs. Sent to everyone,
+     * so balances match even when the stats themselves are hidden from viewers.
+     */
+    private List<MatchDto> matchesWithTwelfth(Map<String, String> twelfth) {
+        Map<String, MatchStat> byId = new HashMap<>();
+        stats.findAll().forEach(x -> byId.put(x.getId(), x));
+        return storedMatches().stream().map(m -> {
+            String pid = twelfth.get(m.id());
+            MatchStat st = pid == null ? null : byId.get(m.id() + ":" + pid);
+            boolean played = false;
+            if (st != null) {
+                int[] n = st.numbers();
+                played = st.isOut() || n[0] > 0 || n[1] + n[2] + n[3] + n[4] + n[5] > 0 || n[6] > 0 || n[13] + n[14] > 0;
+            }
+            return new MatchDto(m.id(), m.date(), m.opponent(), m.venue(), m.finished(), m.test(), m.time(), m.announced(), m.result(), played);
+        }).toList();
     }
 
     private static Map<String, String> parseTwelfth(String stored) {

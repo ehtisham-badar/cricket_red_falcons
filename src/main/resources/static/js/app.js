@@ -437,7 +437,7 @@
     // (m1–m5); keep those that hold any attendance, expenses or 12th man.
     let matches;
     if (Array.isArray(d.matches)) {
-      matches = d.matches.filter(m => m && m.id).map(m => ({ id: m.id, date: m.date || '', opponent: m.opponent || '', venue: m.venue || '', time: /^([01]\d|2[0-3]):[0-5]\d$/.test(m.time || '') ? m.time : '', test: m.test === true, finished: m.test !== true && m.finished === true, announced: m.announced === true, result: ['win', 'loss', 'tie'].includes(m.result) ? m.result : '' }));
+      matches = d.matches.filter(m => m && m.id).map(m => ({ id: m.id, date: m.date || '', opponent: m.opponent || '', venue: m.venue || '', time: /^([01]\d|2[0-3]):[0-5]\d$/.test(m.time || '') ? m.time : '', test: m.test === true, finished: m.test !== true && m.finished === true, announced: m.announced === true, twelfthPlayed: m.twelfthPlayed === true, result: ['win', 'loss', 'tie'].includes(m.result) ? m.result : '' }));
     } else {
       const used = id => players.some(p => p.att[id]) || (expenses[id] || []).length || (d.twelfth || {})[id];
       // These were charged as soon as they were marked, so they count as finished.
@@ -1871,7 +1871,8 @@
     if (!src) {
       return `${head}<div class="sheet-body"><p class="muted center">The scorecard appears here once the match stats are added.</p></div>`;
     }
-    const order = battingOrderOf(src.id);
+    const tw = findPlayer(state.twelfth[src.id]);
+    const order = battingOrderOf(src.id).concat(tw && C.twelfthPlays(state, src.id) ? [tw] : []);
     const rows = order.map(p => ({ p, e: C.statOf(state, src.id, p.id) }));
     const batters = rows.filter(r => C.batted(r.e));
     const dnb = order.filter(p => !batters.some(r => r.p.id === p.id));
@@ -2277,7 +2278,7 @@
       const count = d.type === 'match' ? `${s.n} / ${max} played${state.twelfth[d.id] ? ' + 12th' : ''}` : `${s.n} arrived`;
       const share = s.n > 0 && s.amount > 0 ? `${fmt(s.share)} each` : '—';
       const tour = d.type === 'match' ? C.tournamentStats(state, stats) : null;
-      const leagueEach = tour && tour.fee > 0 && s.n > 0 ? `<div class="amount league-each"><span>League share</span><strong>${fmt(C.round2(tour.perMatch / s.n))} each</strong></div>` : '';
+      const leagueEach = tour && tour.fee > 0 && s.payers > 0 ? `<div class="amount league-each"><span>League share</span><strong>${fmt(C.round2(tour.perMatch / s.payers))} each</strong></div>` : '';
       const status = d.test ? `<span class="match-status test">${icon('<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/>', 14)} Test match · never charged</span>` : d.type === 'match' ? (d.finished
         ? `<span class="match-status done">${icon('<path d="M20 6 9 17l-5-5"/>', 14)} Finished · charged</span>`
         : `<span class="match-status open">${icon('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', 14)} Not charged yet</span>`) : '';
@@ -2408,11 +2409,11 @@
     return `<article class="st-card ${twelfthMan ? 'twelfth' : ''} ${folded ? 'folded' : ''}">
       <button class="st-head" data-action="stat-fold" data-m="${esc(d.id)}" data-p="${esc(p.id)}" aria-expanded="${!folded}" title="${folded ? 'Show' : 'Minimise'} ${esc(p.name)}’s stats">
         <span class="bat-pos ${pos <= 2 && !twelfthMan ? 'opener' : ''}">${twelfthMan ? '12' : pos}</span>
-        <span class="pname"><strong>${esc(p.name)}</strong><small>${twelfthMan ? '12th man · fielding only' : esc([bat, bowl, field].filter(Boolean).join('  ·  '))}</small></span>
+        <span class="pname"><strong>${esc(p.name)}</strong><small>${twelfthMan ? `12th man · ${C.twelfthPlays(state, d.id) ? 'batted or bowled — shares the costs' : 'not charged unless he bats or bowls'}${[bat, bowl, field].filter(x => x && x !== 'Did not bat').length ? ' · ' + esc([bat, bowl, field].filter(x => x && x !== 'Did not bat').join('  ·  ')) : ''}` : esc([bat, bowl, field].filter(Boolean).join('  ·  '))}</small></span>
         <span class="st-fold-ico">${icon(folded ? '<path d="m6 9 6 6 6-6"/>' : '<path d="m18 15-6-6-6 6"/>', 18)}</span>
       </button>
-      ${folded ? '' : `<div class="st-body ${twelfthMan ? 'only-field' : ''}">`}
-      ${folded || twelfthMan ? '' : `<div class="st-group bat">
+      ${folded ? '' : `<div class="st-body">`}
+      ${folded ? '' : `<div class="st-group bat">
         <div class="st-title"><span>Batting</span><strong>${runs} runs · SR ${SR(runs, e.balls)}</strong>
           <button class="tog st-out ${e.out ? 'on' : ''} ${isAdmin() ? '' : 'ro'}" data-action="stat-out" data-m="${esc(d.id)}" data-p="${esc(p.id)}" aria-pressed="${e.out}" ${isAdmin() ? '' : 'disabled'}>${e.out ? 'Out' : 'Not out'}</button></div>
         <div class="st-steps">${st('balls', 'Balls')}${st('ones', '1s')}${st('twos', '2s')}${st('threes', '3s')}${st('fours', '4s')}${st('sixes', '6s')}</div>
@@ -3627,7 +3628,7 @@ ${tabRows.map(r => {
   function leagueLine(d, s) {
     const tour = C.tournamentStats(state);
     if (!(tour.fee > 0)) return '';
-    const split = s.n ? `${fmt(tour.perMatch)} ÷ ${s.n} = ${fmt(C.round2(tour.perMatch / s.n))} each` : fmt(tour.perMatch);
+    const split = s.payers ? `${fmt(tour.perMatch)} ÷ ${s.payers} = ${fmt(C.round2(tour.perMatch / s.payers))} each` : fmt(tour.perMatch);
     const when = d.finished ? '' : s.n ? ' · charged to the XI when you finish the match' : ' · split across everyone until the match is finished';
     return `<p class="league-line">League fee for ${d.label}: <strong>${split}</strong>${when}</p>`;
   }
@@ -3717,7 +3718,9 @@ ${tabRows.map(r => {
         ${isMatch && !d.test ? finishBox(d, s) : ''}
         ${d.test ? '<p class="test-note">A generated test match: it never changes anyone’s balance or the league fee.</p>' : ''}
         ${isMatch ? leagueLine(d, s) : ''}
-        ${twelfthId ? `<p class="twelfth-line">12th man: <strong>${esc(playerName(twelfthId))}</strong> · not charged for this match</p>` : ''}
+        ${twelfthId ? `<p class="twelfth-line">12th man: <strong>${esc(playerName(twelfthId))}</strong> · ${C.twelfthPlays(state, d.id)
+          ? 'batted or bowled, so the costs are split among all 12'
+          : 'not charged — only if he bats or bowls does he share the costs (÷12)'}</p>` : ''}
         ${isMatch && s.n > 0 ? battingSection(d) : ''}
         <h3 class="sub first">Expenses <span class="muted">${fmt(s.amount)}</span></h3>
         ${expenseRows(d)}
@@ -4408,10 +4411,10 @@ ${tabRows.map(r => {
       if (!s.n) { toast('Pick the XI first.'); return; }
       const tour = C.tournamentStats(state, stats);
       const parts = [];
-      if (tour.fee > 0) parts.push(`League ${fmt(tour.perMatch)} ÷ ${s.n} = ${fmt(C.round2(tour.perMatch / s.n))} each`);
+      if (tour.fee > 0) parts.push(`League ${fmt(tour.perMatch)} ÷ ${s.payers} = ${fmt(C.round2(tour.perMatch / s.payers))} each`);
       if (s.amount > 0) parts.push(`expenses ${fmt(s.amount)} ÷ ${s.n} = ${fmt(s.share)} each`);
       const ok = await confirmDialog(`Finish ${d.label}?`,
-        `${parts.length ? parts.join(', and ') + ' — charged' : 'Charged'} to the ${s.n} who played${state.twelfth[d.id] ? ' (not the 12th man)' : ''}. Balances update straight away; you can reopen it if needed.`,
+        `${parts.length ? parts.join(', and ') + ' — charged' : 'Charged'} to the ${s.payers} who played${state.twelfth[d.id] ? (C.twelfthPlays(state, d.id) ? ' (the 12th man batted or bowled, so he’s included)' : ' (not the 12th man — he only fielded)') : ''}. Balances update straight away; you can reopen it if needed.`,
         'Finish & charge');
       if (!ok) return;
       m.finished = true;
