@@ -1270,7 +1270,7 @@
     const shown = t => (!t.staffTab || isStaff()) && (!t.statsTab || statsVisible()) && (!t.daysTab || daysVisible()) && !(archive && t.id === 'settings');
     if (TABS.some(t => t.id === tab && !shown(t))) tab = 'summary';
     $('#tabs').innerHTML = TABS.filter(shown).map(t =>
-      `<button class="tab ${t.id === tab ? 'active' : ''}" data-action="tab" data-tab="${t.id}" ${t.id === tab ? 'aria-current="page"' : ''}>
+      `<button class="tab ${t.id === tab ? 'active' : ''}" data-action="tab" data-tab="${t.id}" title="${t.label}" aria-label="${t.label}" ${t.id === tab ? 'aria-current="page"' : ''}>
         ${icon(t.icon)}<span>${t.label}</span></button>`).join('');
     $('#who-badge').innerHTML = isAdmin()
       ? `<span class="badge badge-admin">${icon('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>', 14)} Admin</span>`
@@ -4939,6 +4939,15 @@ ${tabRows.map(r => {
   }
 
   applyTheme(currentTheme());
+  // The top bar is fixed to the screen; the page starts below it whatever its height.
+  const topbarEl = document.querySelector('.topbar');
+  if (topbarEl) {
+    const setTopbarHeight = () => document.documentElement.style.setProperty('--topbar-h', topbarEl.offsetHeight + 'px');
+    setTopbarHeight();
+    if (window.ResizeObserver) new ResizeObserver(setTopbarHeight).observe(topbarEl);
+    window.addEventListener('resize', setTopbarHeight);
+  }
+
   wireEvents();
   // Returning visitors go straight back in; the name screen is only for first visits and "Switch user".
   if (session) enterApp(); else showSplash();
