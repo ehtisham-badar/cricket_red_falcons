@@ -846,6 +846,72 @@
   let news = null;                            // posts from the server, pinned first
   let newsDraft = null;                       // { id (null for new), title, tag, body, pinned } while editing
 
+  // ---------- HPL live (from Crickslab, via our server) ----------
+  let hpl = null;                             // the server's summary of the league page
+  let hplView = 'table';
+
+  async function loadHpl() {
+    try { hpl = await api('GET', '/api/hpl'); } catch { hpl = hpl || { available: false }; }
+    if (tab === 'news') render();
+  }
+
+  // Our own copy of a team's logo where we have one, else Crickslab's.
+  const hplLogo = (name, remote) => /red\s*falcons/i.test(name) ? 'img/logo.jpeg' : (teamLogo(name) || remote || '');
+  const isUs = name => /red\s*falcons/i.test(name || '');
+  const titleCase = n => String(n || '').toLowerCase().replace(/\b([a-z])/g, c => c.toUpperCase()).replace(/\bPak\b/, 'Pak');
+
+  function hplPanel() {
+    if (hpl === null) { loadHpl(); return `<section class="panel hpl"><p class="muted">Loading the league…</p></section>`; }
+    if (!hpl.available) return '';
+    const logo = (name, remote, size = 28) => {
+      const src = hplLogo(name, remote);
+      return src ? `<img class="hpl-logo" src="${esc(src)}" alt="" width="${size}" height="${size}" loading="lazy">` : `<span class="hpl-logo ph" style="width:${size}px;height:${size}px">${esc((name || '?').slice(0, 2))}</span>`;
+    };
+    const seg = [['table', 'Table'], ['results', 'Results'], ['leaders', 'Leaders']].map(([id, label]) =>
+      `<button class="seg-btn ${hplView === id ? 'on' : ''}" data-action="hpl-view" data-id="${id}">${label}</button>`).join('');
+    let body = '';
+    if (hplView === 'table') {
+      const rows = (hpl.pointsTable || []).filter(r => r.round === (hpl.pointsTable[0] || {}).round);
+      body = rows.length ? `<div class="table-wrap"><table class="sheet-table hpl-table">
+          <thead><tr><th>#</th><th class="hpl-team-col">Team</th><th>P</th><th>W</th><th>L</th><th>T</th><th>NR</th><th>Pts</th><th>NRR</th><th>Form</th></tr></thead>
+          <tbody>${rows.map((r, i) => `<tr class="${isUs(r.team) ? 'us' : ''}"><td>${i + 1}</td>
+            <td class="hpl-team-col"><span class="hpl-team">${logo(r.team, r.logo)}<strong>${esc(titleCase(r.team))}</strong></span></td>
+            <td>${r.played}</td><td>${r.won}</td><td>${r.lost}</td><td>${r.tie}</td><td>${r.noResult}</td><td class="strong">${r.points}</td><td>${esc(r.nrr)}</td>
+            <td><span class="hpl-form">${(r.form || []).slice(-5).map(f => `<i class="f-${esc(String(f).toLowerCase())}">${esc(f)}</i>`).join('') || '—'}</span></td></tr>`).join('')}</tbody>
+        </table></div>` : '<p class="muted">The table appears once matches are played.</p>';
+    } else if (hplView === 'results') {
+      const list = hpl.results || [];
+      body = list.length ? `<div class="hpl-results">${list.map(m => {
+        const when = m.start ? new Date(m.start).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '';
+        const won = t => m.result && m.result.toUpperCase().startsWith((t.name || '').toUpperCase());
+        const side = t => `<div class="hpl-side ${won(t) ? 'won' : ''} ${isUs(t.name) ? 'us' : ''}">
+            ${logo(t.name, t.logo, 34)}<strong>${esc(titleCase(t.name))}</strong>
+            <span class="hpl-score">${t.runs == null ? '—' : `${t.runs}/${t.wickets}`}<small>${t.overs ? `(${esc(t.overs)} ov)` : ''}</small></span></div>`;
+        return `<article class="hpl-match">
+          <header><span class="day-kind">${esc(m.title)}</span>${m.live ? '<span class="hpl-live">LIVE</span>' : `<span class="muted">${esc(m.status)}</span>`}</header>
+          <p class="muted hpl-when">${esc([when, m.ground].filter(Boolean).join(' · '))}</p>
+          ${(m.teams || []).map(side).join('')}
+          ${m.result ? `<p class="hpl-result">${esc(m.result)}</p>` : ''}
+          <footer>${m.playerOfMatch ? `<span>${icon('<circle cx="12" cy="8" r="6"/><path d="M15.5 13.5 17 22l-5-3-5 3 1.5-8.5"/>', 14)} Player of the match: <strong>${esc(m.playerOfMatch)}</strong></span>` : '<span></span>'}
+            ${m.summaryUrl ? `<a href="${esc(m.summaryUrl)}" target="_blank" rel="noopener">Full scorecard ↗</a>` : ''}</footer>
+        </article>`;
+      }).join('')}</div>` : '<p class="muted">No results yet.</p>';
+    } else {
+      const col = (title, list) => `<div class="hpl-lead"><h4>${title}</h4>${(list || []).length ? `<ol>${list.map(l => `<li class="${isUs(l.team) ? 'us' : ''}">
+          <span><strong>${esc(l.name)}</strong><small>${esc(titleCase(l.team))}</small></span><b>${esc(l.value)}</b></li>`).join('')}</ol>` : '<p class="muted">—</p>'}</div>`;
+      body = `<div class="hpl-leaders">${col('Most runs', hpl.leaders && hpl.leaders.batting)}${col('Most wickets', hpl.leaders && hpl.leaders.bowling)}${col('Fielding', hpl.leaders && hpl.leaders.fielding)}</div>`;
+    }
+    const ago = hpl.updatedAt ? Math.max(0, Math.round((Date.now() - new Date(hpl.updatedAt)) / 60000)) : null;
+    return `<section class="panel hpl">
+      <div class="hpl-head">
+        <span class="hpl-title">${hpl.logo ? `<img class="hpl-logo big" src="${esc(hpl.logo)}" alt="">` : ''}<span><span class="day-kind">HPL live</span><h3>${esc(hpl.title)}</h3></span></span>
+        <div class="seg hpl-seg">${seg}</div>
+      </div>
+      ${body}
+      <p class="hpl-source">From <a href="${esc(hpl.source)}" target="_blank" rel="noopener">Crickslab</a>${ago != null ? ` · updated ${ago < 1 ? 'just now' : ago === 1 ? '1 min ago' : ago + ' min ago'}` : ''}</p>
+    </section>`;
+  }
+
   async function loadNews() {
     try { news = await api('GET', '/api/news'); } catch { news = news || []; }
     if (tab === 'news') render();
@@ -911,6 +977,7 @@
     </article>`;
     return `${pageHead('News', 'League rules, fixtures and team updates.',
         admin && !newsDraft ? `<button class="btn btn-primary" data-action="news-new">${icon('<path d="M12 5v14M5 12h14"/>', 18)} Add news</button>` : '')}
+      ${hplPanel()}
       ${admin && newsDraft && !newsDraft.id ? newsEditor() : ''}
       <div class="news-feed">
         ${news === null ? '<p class="muted">Loading…</p>' : posts.length ? posts.map(n => admin && newsDraft && newsDraft.id === n.id ? newsEditor() : card(n)).join('')
@@ -4046,7 +4113,7 @@ ${tabRows.map(r => {
   function findExpense(el) { return (state.expenses[el.dataset.day] || []).find(e => e.id === el.dataset.id); }
 
   const actions = {
-    tab(el) { tab = el.dataset.tab; saveTab(); sheet = null; render(); animateView(); window.scrollTo({ top: 0 }); if (tab === 'announce') loadAnnouncements(); if (tab === 'news') loadNews(); },
+    tab(el) { tab = el.dataset.tab; saveTab(); sheet = null; render(); animateView(); window.scrollTo({ top: 0 }); if (tab === 'announce') loadAnnouncements(); if (tab === 'news') { loadNews(); loadHpl(); } },
     'ann-template'(el) {
       const x = ANN_TEMPLATES.find(y => y.id === el.dataset.t);
       if (!x) return;
@@ -4644,6 +4711,7 @@ ${tabRows.map(r => {
       await prompt.userChoice.catch(() => null);
       render();
     },
+    'hpl-view'(el) { hplView = el.dataset.id; render(); },
     'news-new'() { if (!isAdmin()) return; newsDraft = { id: null, title: '', tag: '', body: '', pinned: false }; render(); },
     'news-edit'(el) {
       const n = (news || []).find(x => x.id === el.dataset.id);
