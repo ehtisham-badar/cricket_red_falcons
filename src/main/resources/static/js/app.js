@@ -28,6 +28,7 @@
 
   const TABS = [
     { id: 'summary', label: 'Home', icon: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/>' },
+    { id: 'news', label: 'News', icon: '<path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8M15 18h-5M10 6h8v4h-8z"/>' },
     { id: 'days', label: 'Days', daysTab: true, icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' },
     { id: 'money', label: 'Money', icon: '<rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20M16 14.5h2"/>' },
     { id: 'stats', label: 'Stats', statsTab: true, icon: '<path d="M18 20V10M12 20V4M6 20v-6"/>' },
@@ -841,6 +842,82 @@
     { id: 'update', label: 'Match update', title: 'Match update', make: m => m ? `Update for ${m.label}: ` : 'Match update: ', at: () => '' }
   ];
 
+  // ---------- News: everyone reads, the admin writes ----------
+  let news = null;                            // posts from the server, pinned first
+  let newsDraft = null;                       // { id (null for new), title, tag, body, pinned } while editing
+
+  async function loadNews() {
+    try { news = await api('GET', '/api/news'); } catch { news = news || []; }
+    if (tab === 'news') render();
+  }
+
+  // Plain text to HTML: blank lines split paragraphs, "1. …" lines become a numbered list, and a
+  // "Heading: text" list item gets its heading in bold.
+  function newsBody(text) {
+    const blocks = [];
+    let list = null;
+    String(text || '').split('\n').forEach(raw => {
+      const line = raw.trim();
+      const item = /^\d+[.)]\s+(.*)$/.exec(line);
+      if (item) {
+        if (!list) { list = []; blocks.push({ list }); }
+        const m = /^([^:]{2,40}):\s+(.*)$/.exec(item[1]);
+        list.push(m ? `<strong>${esc(m[1])}:</strong> ${esc(m[2])}` : esc(item[1]));
+        return;
+      }
+      list = null;
+      if (line) blocks.push({ p: esc(line) });
+    });
+    return blocks.map(b => b.list ? `<ol class="news-list">${b.list.map(x => `<li>${x}</li>`).join('')}</ol>` : `<p>${b.p}</p>`).join('');
+  }
+
+  function newsEditor() {
+    const d = newsDraft;
+    return `<section class="panel news-editor">
+      <div class="panel-head"><h3>${d.id ? 'Edit news' : 'New post'}</h3><p class="muted">Lines starting “1.”, “2.” … become a numbered list; “Heading: text” makes the heading bold.</p></div>
+      <div class="news-form">
+        <input class="field" type="text" maxlength="120" placeholder="Title" value="${esc(d.title)}" data-input="news-title" data-focus="news-title" aria-label="Title">
+        <input class="field" type="text" maxlength="30" placeholder="Tag (e.g. Rules, Fixtures)" value="${esc(d.tag)}" list="news-tags" data-input="news-tag" data-focus="news-tag" aria-label="Tag">
+        <datalist id="news-tags"><option value="Rules"><option value="Fixtures"><option value="Team"><option value="Results"><option value="League"></datalist>
+        <textarea class="field textarea news-text" maxlength="8000" placeholder="Write the news…" data-input="news-body" data-focus="news-body" aria-label="Text">${esc(d.body)}</textarea>
+        <label class="trust-row news-pin"><input type="checkbox" ${d.pinned ? 'checked' : ''} data-input="news-pinned"> Pin to the top</label>
+        <div class="settings-actions">
+          <button class="btn btn-primary" data-action="news-save">${d.id ? 'Save changes' : 'Publish'}</button>
+          <button class="btn btn-ghost" data-action="news-cancel">Cancel</button>
+        </div>
+      </div>
+    </section>`;
+  }
+
+  function viewNews() {
+    if (news === null) loadNews();
+    const admin = isAdmin();
+    const posts = news || [];
+    const fmtWhen = iso => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    const card = n => `<article class="panel news-card ${n.pinned ? 'pinned' : ''}">
+      <header class="news-head">
+        <div class="news-meta">
+          ${n.pinned ? `<span class="news-pinned">${icon('<path d="M12 17v5"/><path d="M9 10.76V6h6v4.76l2 3.24H7z"/><path d="M8 6h8"/>', 13)} Pinned</span>` : ''}
+          ${n.tag ? `<span class="news-tag">${esc(n.tag)}</span>` : ''}
+          <span class="muted">${esc(fmtWhen(n.createdAt))}${n.updatedAt && n.updatedAt.slice(0, 16) !== n.createdAt.slice(0, 16) ? ' · edited' : ''}</span>
+        </div>
+        ${admin ? `<span class="news-admin">
+          <button class="btn btn-ghost small" data-action="news-edit" data-id="${esc(n.id)}">Edit</button>
+          <button class="icon-btn danger" data-action="news-delete" data-id="${esc(n.id)}" aria-label="Delete ${esc(n.title)}">${X_ICON}</button>
+        </span>` : ''}
+      </header>
+      <h3 class="news-title">${esc(n.title)}</h3>
+      <div class="news-body">${newsBody(n.body)}</div>
+    </article>`;
+    return `${pageHead('News', 'League rules, fixtures and team updates.',
+        admin && !newsDraft ? `<button class="btn btn-primary" data-action="news-new">${icon('<path d="M12 5v14M5 12h14"/>', 18)} Add news</button>` : '')}
+      ${admin && newsDraft && !newsDraft.id ? newsEditor() : ''}
+      <div class="news-feed">
+        ${news === null ? '<p class="muted">Loading…</p>' : posts.length ? posts.map(n => admin && newsDraft && newsDraft.id === n.id ? newsEditor() : card(n)).join('')
+          : `<div class="empty st-empty"><p>No news yet.${admin ? ' Add the first post.' : ''}</p></div>`}
+      </div>`;
+  }
+
   function viewAnnounce() {
     const d = annDraft;
     const realMatches = C.matches(state).filter(m => !m.test);
@@ -1282,7 +1359,7 @@
       ? `<span class="badge badge-admin">${icon('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>', 14)} Admin</span>`
       : `<span class="badge badge-view">${icon('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>', 14)} ${esc(session.name)} · ${isManager() ? 'manager' : 'view only'}</span>`;
 
-    const views = { summary: viewHome, money: viewMoney, days: viewDays, stats: viewStats, players: viewPlayers, announce: viewAnnounce, settings: viewSettings };
+    const views = { news: viewNews, summary: viewHome, money: viewMoney, days: viewDays, stats: viewStats, players: viewPlayers, announce: viewAnnounce, settings: viewSettings };
     $('#view').innerHTML = archiveBar() + (views[tab] || viewHome)();
     $('#sheet-root').innerHTML = sheet ? renderSheet() : '';
     document.body.classList.toggle('sheet-open', !!sheet);
@@ -3966,7 +4043,7 @@ ${tabRows.map(r => {
   function findExpense(el) { return (state.expenses[el.dataset.day] || []).find(e => e.id === el.dataset.id); }
 
   const actions = {
-    tab(el) { tab = el.dataset.tab; saveTab(); sheet = null; render(); animateView(); window.scrollTo({ top: 0 }); if (tab === 'announce') loadAnnouncements(); },
+    tab(el) { tab = el.dataset.tab; saveTab(); sheet = null; render(); animateView(); window.scrollTo({ top: 0 }); if (tab === 'announce') loadAnnouncements(); if (tab === 'news') loadNews(); },
     'ann-template'(el) {
       const x = ANN_TEMPLATES.find(y => y.id === el.dataset.t);
       if (!x) return;
@@ -4564,6 +4641,37 @@ ${tabRows.map(r => {
       await prompt.userChoice.catch(() => null);
       render();
     },
+    'news-new'() { if (!isAdmin()) return; newsDraft = { id: null, title: '', tag: '', body: '', pinned: false }; render(); },
+    'news-edit'(el) {
+      const n = (news || []).find(x => x.id === el.dataset.id);
+      if (!n || !isAdmin()) return;
+      newsDraft = { id: n.id, title: n.title, tag: n.tag, body: n.body, pinned: n.pinned };
+      render();
+    },
+    'news-cancel'() { newsDraft = null; render(); },
+    async 'news-save'(el) {
+      if (!isAdmin() || !newsDraft) return;
+      const d = newsDraft;
+      if (!d.title.trim() || !d.body.trim()) { toast('Add a title and some text.'); return; }
+      el.disabled = true;
+      try {
+        await api(d.id ? 'PUT' : 'POST', '/api/news' + (d.id ? '/' + encodeURIComponent(d.id) : ''), { title: d.title, tag: d.tag, body: d.body, pinned: d.pinned });
+        newsDraft = null;
+        toast(d.id ? 'News updated.' : 'News published.');
+        await loadNews();
+      } catch (e) {
+        toast(e.message || 'Could not save the news.');
+        el.disabled = false;
+      }
+    },
+    async 'news-delete'(el) {
+      const n = (news || []).find(x => x.id === el.dataset.id);
+      if (!n || !isAdmin()) return;
+      const ok = await confirmDialog('Delete this news?', `“${n.title}” will be removed for everyone.`, 'Delete', true);
+      if (!ok) return;
+      try { await api('DELETE', '/api/news/' + encodeURIComponent(n.id)); toast('News deleted.'); } catch { toast('Could not delete it.'); }
+      await loadNews();
+    },
     'stat-fold'(el) {
       const m = el.dataset.m, pid = el.dataset.p;
       const ids = ((readStore(STATS_FOLD_KEY) || {})[m] || []).filter(x => x !== pid);
@@ -4929,6 +5037,11 @@ ${tabRows.map(r => {
       if (el.dataset && el.dataset.input === 'mgr-phrase') { mgrDraft.phrase = el.value; return; }
       if (el.dataset && el.dataset.input === 'mgr-edit') { mgrDraft.edits[el.dataset.id] = el.value; render(); return; }
       if (el.dataset && /^tfa-/.test(el.dataset.input || '')) { tfaDraft[el.dataset.input.slice(4)] = el.value; return; }
+      if (el.dataset && /^news-/.test(el.dataset.input || '')) {
+        const key = el.dataset.input.slice(5);
+        newsDraft[key] = el.type === 'checkbox' ? el.checked : el.value;
+        return;
+      }
       if (el.dataset && /^push-/.test(el.dataset.input || '')) {
         const key = el.dataset.input.slice(5);
         pushDraft[key] = el.value;
