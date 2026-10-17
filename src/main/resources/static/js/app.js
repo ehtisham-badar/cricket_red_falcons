@@ -17,6 +17,7 @@
     { id: 'royal', name: 'Royal Purple', note: 'Dark plum, violet and gold', bar: '#140d1c', colors: ['#140d1c', '#8b45d6', '#e2b65c'] },
     { id: 'sunset', name: 'Sunset', note: 'Warm dusk, sunset orange and gold', bar: '#170f0b', colors: ['#170f0b', '#e2662a', '#e2b65c'] }
   ];
+  const STATS_FOLD_KEY = 'rf.statsFold';     // per match, the players whose stats card is minimised on this device
   const COLLAPSED_KEY = 'rf.collapsed';      // Days sections this viewer has folded: { training, match }
   const DEVICE_KEY = 'rf.device';            // this browser's trusted-device token (skips the two-factor code)
   const FEED_SEEN_KEY = 'rf.feedSeen';       // newest notification this device has opened
@@ -2326,12 +2327,15 @@
     const bowl = C.bowled(e) ? `${e.wickets}/${C.concededOf(e)} (${C.oversOf(e.bowlBalls)})` : '';
     const field = [e.catches && `${e.catches} ct`, e.drops && `${e.drops} drop${e.drops > 1 ? 's' : ''}`].filter(Boolean).join(' · ');
     const tooFew = C.shotsOf(e) > e.balls;
-    return `<article class="st-card ${twelfthMan ? 'twelfth' : ''}">
-      <header class="st-head">
+    const folded = statFolded(d.id, p.id);
+    return `<article class="st-card ${twelfthMan ? 'twelfth' : ''} ${folded ? 'folded' : ''}">
+      <button class="st-head" data-action="stat-fold" data-m="${esc(d.id)}" data-p="${esc(p.id)}" aria-expanded="${!folded}" title="${folded ? 'Show' : 'Minimise'} ${esc(p.name)}’s stats">
         <span class="bat-pos ${pos <= 2 && !twelfthMan ? 'opener' : ''}">${twelfthMan ? '12' : pos}</span>
         <span class="pname"><strong>${esc(p.name)}</strong><small>${twelfthMan ? '12th man · fielding only' : esc([bat, bowl, field].filter(Boolean).join('  ·  '))}</small></span>
-      </header>
-      ${twelfthMan ? '' : `<div class="st-group bat">
+        <span class="st-fold-ico">${icon(folded ? '<path d="m6 9 6 6 6-6"/>' : '<path d="m18 15-6-6-6 6"/>', 18)}</span>
+      </button>
+      ${folded ? '' : `<div class="st-body ${twelfthMan ? 'only-field' : ''}">`}
+      ${folded || twelfthMan ? '' : `<div class="st-group bat">
         <div class="st-title"><span>Batting</span><strong>${runs} runs · SR ${SR(runs, e.balls)}</strong>
           <button class="tog st-out ${e.out ? 'on' : ''} ${isAdmin() ? '' : 'ro'}" data-action="stat-out" data-m="${esc(d.id)}" data-p="${esc(p.id)}" aria-pressed="${e.out}" ${isAdmin() ? '' : 'disabled'}>${e.out ? 'Out' : 'Not out'}</button></div>
         <div class="st-steps">${st('balls', 'Balls')}${st('ones', '1s')}${st('twos', '2s')}${st('threes', '3s')}${st('fours', '4s')}${st('sixes', '6s')}</div>
@@ -2342,11 +2346,23 @@
         <div class="st-steps">${st('bowlBalls', 'Balls')}${st('bowlRuns', 'Runs off bat')}${st('wickets', 'Wickets')}${st('wides', 'Wides')}${st('noBalls', 'No-balls')}</div>
         ${C.extrasOf(e) > 0 ? `<p class="st-extra">Extras ${C.extrasOf(e)} · conceded ${e.bowlRuns} + ${C.extrasOf(e)} = ${C.concededOf(e)}</p>` : ''}
       </div>`}
-      <div class="st-group field">
+      ${folded ? '' : `<div class="st-group field">
         <div class="st-title"><span>Fielding</span></div>
         <div class="st-steps">${st('catches', 'Catches')}${st('drops', 'Drops')}${st('misfields', 'Misfields')}${st('goodFielding', 'Good fielding')}</div>
       </div>
+      </div>`}
     </article>`;
+  }
+
+  // Minimised player cards per match, remembered on this device.
+  function statFolded(matchId, playerId) {
+    const f = readStore(STATS_FOLD_KEY) || {};
+    return (f[matchId] || []).includes(playerId);
+  }
+  function setStatFolded(matchId, ids) {
+    const f = readStore(STATS_FOLD_KEY) || {};
+    if (ids.length) f[matchId] = ids; else delete f[matchId];
+    writeStore(STATS_FOLD_KEY, f);
   }
 
   function matchStatsView(d) {
@@ -2371,6 +2387,13 @@
       </div>
       ${isAdmin() ? `<div class="st-tools"><p class="muted st-hint">Tapping + on a 1, 2, 3, 4 or 6 also adds a ball faced. A bowler’s balls are legal balls; wides and no-balls count as extras in runs conceded.</p>
         <button class="btn btn-ghost" data-action="random-stats" data-id="${esc(d.id)}">${DICE_ICON} Random stats</button></div>` : ''}
+      <div class="st-list-tools">
+        <span class="muted">${xi.length + (twelfth ? 1 : 0)} players · tap a name to minimise or show their stats</span>
+        <span class="st-fold-all">
+          <button class="btn btn-ghost small" data-action="stat-fold-all" data-m="${esc(d.id)}" data-mode="open">Expand all</button>
+          <button class="btn btn-ghost small" data-action="stat-fold-all" data-m="${esc(d.id)}" data-mode="fold">Minimise all</button>
+        </span>
+      </div>
       <div class="st-list">
         ${xi.map((p, i) => statCard(d, p, i + 1, false)).join('')}
         ${twelfth ? statCard(d, twelfth, 12, true) : ''}
@@ -4539,6 +4562,19 @@ ${tabRows.map(r => {
       installPrompt = null;
       prompt.prompt();
       await prompt.userChoice.catch(() => null);
+      render();
+    },
+    'stat-fold'(el) {
+      const m = el.dataset.m, pid = el.dataset.p;
+      const ids = ((readStore(STATS_FOLD_KEY) || {})[m] || []).filter(x => x !== pid);
+      if (!statFolded(m, pid)) ids.push(pid);
+      setStatFolded(m, ids);
+      render();
+    },
+    'stat-fold-all'(el) {
+      const m = el.dataset.m;
+      const ids = battingOrderOf(m).map(p => p.id).concat(state.twelfth[m] ? [state.twelfth[m]] : []);
+      setStatFolded(m, el.dataset.mode === 'fold' ? ids : []);
       render();
     },
     'stats-sel'(el) { statsSel = el.dataset.id; render(); },

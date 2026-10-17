@@ -1087,7 +1087,7 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
 .st-summary small { color: var(--muted); font-size: 12px; }
 .st-hint { margin: 0 0 14px; font-size: 13px; }
 
-.st-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 14px; }
+.st-list { display: flex; flex-direction: column; gap: 12px; }
 .st-card { display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: var(--radius); border: 1px solid var(--line); background: linear-gradient(170deg, var(--card-2), var(--card)); box-shadow: var(--shadow); min-width: 0; }
 .st-card.twelfth { border-style: dashed; border-color: rgba(var(--gold-rgb), .4); }
 .st-head { display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: center; gap: 12px; }
@@ -1850,3 +1850,29 @@ a.btn { text-decoration: none; }
 }
 /* Narrow phones: the crest alone identifies the club, so the buttons on the right have room. */
 @media (max-width: 440px) { .topbar .brand-text { display: none; } }
+
+
+/* Stats: one row per player, batting · bowling · fielding side by side; cards fold to one line */
+.st-list-tools { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; font-size: 13px; }
+.st-fold-all { display: flex; gap: 8px; }
+.st-card { gap: 12px; }
+.st-card.folded { padding-top: 10px; padding-bottom: 10px; }
+.st-head { width: 100%; display: grid; grid-template-columns: 34px minmax(0, 1fr) 34px; align-items: center; gap: 12px;
+  padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.st-head:hover .pname strong { color: var(--gold-light); }
+.st-fold-ico { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line-2); color: var(--muted); }
+.st-head:hover .st-fold-ico { color: var(--text); border-color: var(--gold); }
+.st-body { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1.25fr) minmax(0, 1fr); gap: 12px; align-items: stretch; }
+.st-body.only-field { grid-template-columns: minmax(0, 1fr); }
+.st-body .st-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.st-body .st-group.field .st-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.st-body.only-field .st-group.field .st-steps { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.st-body .st-title { flex-wrap: wrap; }
+.st-body .st-title strong { font-size: 13px; }
+@media (max-width: 1100px) {
+  .st-body { grid-template-columns: minmax(0, 1fr); }
+  .st-body .st-steps, .st-body .st-group.field .st-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 520px) {
+  .st-body .st-steps, .st-body .st-group.field .st-steps, .st-body.only-field .st-group.field .st-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
