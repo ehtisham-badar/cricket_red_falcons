@@ -1848,3 +1848,5 @@ a.btn { text-decoration: none; }
   .brand-name { font-size: 18px; }
   .tab { padding: 0 11px; }
 }
+/* Narrow phones: the crest alone identifies the club, so the buttons on the right have room. */
+@media (max-width: 440px) { .topbar .brand-text { display: none; } }
