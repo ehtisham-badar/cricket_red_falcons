@@ -335,7 +335,8 @@
     const info = [o.when, o.venue].map(x => (x || '').trim()).filter(Boolean).join('  ·  ');
     const headerH = 300;
     const bannerTop = headerH + 10;
-    const bannerH = 120 + (opponent ? 56 : 0) + (info ? 44 : 0);
+    const report = (o.report || '').trim();
+    const bannerH = 120 + (opponent ? 56 : 0) + (info ? 44 : 0) + (report ? 70 : 0);
     const listTop = bannerTop + bannerH + 64;
     const ROW_H = 84;
     const GAP = 10;
@@ -375,6 +376,31 @@
       ctx.fillStyle = C.muted;
       ctx.font = `600 24px ${BODY}`;
       ctx.fillText(fit(ctx, info, W - PAD * 2 - 60), W / 2, by);
+      by += 44;
+    }
+    // Reporting time: when the players should be at the ground.
+    if (report) {
+      const label = 'REPORT BY';
+      ctx.font = `800 18px ${BODY}`;
+      const lw = [...label].reduce((w, ch) => w + ctx.measureText(ch).width, 0) + 3 * (label.length - 1);
+      ctx.font = `800 32px ${BODY}`;
+      const tw = ctx.measureText(report).width;
+      const pw = lw + tw + 74;
+      const px = (W - pw) / 2;
+      const py = by - 12;
+      roundRect(ctx, px, py, pw, 54, 27);
+      ctx.fillStyle = 'rgba(208,34,44,0.22)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(208,34,44,0.7)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.textAlign = 'left';
+      ctx.fillStyle = C.muted;
+      ctx.font = `800 18px ${BODY}`;
+      spaced(ctx, label, px + 28, py + 28, 3);
+      ctx.fillStyle = C.goldLight;
+      ctx.font = `800 32px ${BODY}`;
+      ctx.fillText(report, px + 28 + lw + 18, py + 29);
     }
     ctx.textAlign = 'left';
 
@@ -383,6 +409,11 @@
     ctx.fillStyle = C.gold;
     ctx.font = `800 18px ${BODY}`;
     spaced(ctx, 'BATTING ORDER', PAD + 4, listTop - 24, 3);
+    // The order can still change, so say so next to the heading.
+    const headW = [...'BATTING ORDER'].reduce((w, ch) => w + ctx.measureText(ch).width, 0) + 3 * 12;
+    ctx.fillStyle = C.muted;
+    ctx.font = `600 18px ${BODY}`;
+    ctx.fillText('(not finalized)', PAD + 4 + headW + 14, listTop - 24);
     o.players.forEach((p, i) => {
       const x = PAD;
       const y = listTop + i * (ROW_H + GAP);

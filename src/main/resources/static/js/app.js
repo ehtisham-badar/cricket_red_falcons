@@ -1217,7 +1217,7 @@
         sub = ago(it.at);
         detail = `<p class="note-detail"><strong>Playing (${l.playing.length}):</strong> ${l.playing.map(x => esc(playerName(x))).join(', ') || '—'}</p>
           <p class="note-detail"><strong>12th man:</strong> ${l.twelfth ? esc(playerName(l.twelfth)) : '—'}</p>
-          ${l.batting && l.batting.length ? `<p class="note-detail"><strong>Batting order:</strong> ${l.batting.map((x, i) => `${i + 1}. ${esc(playerName(x))}`).join(' · ')}</p>` : ''}
+          ${l.batting && l.batting.length ? `<p class="note-detail"><strong>Batting order</strong> <span class="nf-note">(not finalized)</span><strong>:</strong> ${l.batting.map((x, i) => `${i + 1}. ${esc(playerName(x))}`).join(' · ')}</p>` : ''}
           <p class="note-detail muted">${add.length || drop.length ? [...add.map(n => `+ ${esc(n)}`), ...drop.map(n => `− ${esc(n)}`)].join(' · ') : 'Same XI as now.'}</p>`;
       }
       const declining = key in declineDraft;
@@ -1682,6 +1682,7 @@
   const XI_FIELDS = [
     { key: 'opponent', label: 'Opponent', placeholder: 'e.g. Lahore Lions' },
     { key: 'when', label: 'Date & time', placeholder: 'e.g. Sat 18 Oct · 3 pm' },
+    { key: 'report', label: 'Reporting time', placeholder: 'e.g. 2:30 pm' },
     { key: 'venue', label: 'Venue', placeholder: 'e.g. Model Town ground' }
   ];
 
@@ -1901,6 +1902,13 @@
     const h = +m[1];
     return `${h % 12 || 12}:${m[2]} ${h < 12 ? 'am' : 'pm'}`;
   };
+  // Players report half an hour before the match time ("" until the match time is set).
+  const reportTime = hhmm => {
+    const m = /^(\d{2}):(\d{2})$/.exec(hhmm || '');
+    if (!m) return '';
+    const mins = ((+m[1] * 60 + +m[2] - 30) % 1440 + 1440) % 1440;
+    return fmtClock(`${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`);
+  };
   const dayDiff = iso => Math.round((new Date(`${iso}T00:00:00`) - new Date(`${today()}T00:00:00`)) / 86400000);
 
   // Real matches the admin hasn't finished, soonest first; ones with no date yet come last.
@@ -2004,7 +2012,7 @@
     return `${lineupHead(m, preview ? 'Playing XI · not announced' : 'Playing XI')}
       <div class="sheet-body lu">
         ${preview ? `<div class="finish-box"><span>${icon('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>', 18)}<span><strong>Only you can see this</strong><small>Players see the full squad until you announce the XI.</small></span></span>${announceButton(m)}</div>` : ''}
-        <h3 class="sub first">Batting order <span class="muted">${xi.length} players</span></h3>
+        <h3 class="sub first">Batting order <span class="nf-note">(not finalized)</span> <span class="muted">${xi.length} players</span></h3>
         <ol class="lu-list">${xi.map((p, i) => row(p, i + 1, i < 2 ? 'opener' : '')).join('')}</ol>
         ${twelfth ? `<h3 class="sub">12th man</h3><ol class="lu-list">${row(twelfth, 12, 'twelfth')}</ol>` : ''}
         ${!preview && isAdmin() ? `<p class="lu-admin">${announceButton(m)}</p>` : ''}
@@ -3732,7 +3740,7 @@ ${tabRows.map(r => {
     const DOWN = icon('<path d="m6 9 6 6 6-6"/>', 18);
     const GRIP = icon('<circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/>', 18);
     return `<section class="bat">
-      <h3 class="sub first">Batting order
+      <h3 class="sub first">Batting order <span class="nf-note">(not finalized)</span>
         ${edit && state.battingOrder[d.id] ? `<button class="chip small-chip" data-action="bat-reset" data-day="${esc(d.id)}">Reset</button>` : ''}</h3>
       ${edit ? '<p class="muted bat-hint">Drag a player by the handle to any position, or use the arrows.</p>' : ''}
       <ol class="bat-list" data-day="${esc(d.id)}">
@@ -5128,7 +5136,8 @@ ${tabRows.map(r => {
       el.disabled = true;
       el.textContent = 'Creating…';
       try {
-        const details = { opponent: day.opponent, when: formatMatchDate(day.date), venue: day.venue };
+        const details = { opponent: day.opponent, when: [formatMatchDate(day.date), fmtClock(day.time)].filter(Boolean).join(' · '),
+          venue: day.venue, report: reportTime(day.time) };
         showImageDialog(await xiImage(day, details), {
           title: `${day.label} · Playing XI`, alt: `${day.label} Playing XI`, shareTitle: `Red Falcons · ${day.label} Playing XI`,
           fileName: () => `red-falcons-${day.short.toLowerCase()}-playing-xi.png`,

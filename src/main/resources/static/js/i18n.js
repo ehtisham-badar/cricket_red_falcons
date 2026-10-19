@@ -57,6 +57,10 @@
     'Locked in. A prediction can’t be changed.': 'پکی ہو گئی۔ پیشگوئی بدلی نہیں جا سکتی۔',
     'Choose your squad name to vote, predict, answer polls and add photos.': 'ووٹ دینے، پیشگوئی کرنے، پول کا جواب دینے اور تصاویر لگانے کے لیے اپنا اسکواڈ کا نام چنیں۔',
 
+    '(not finalized)': '(حتمی نہیں)',
+
+    'Reporting time': 'رپورٹ کرنے کا وقت',
+
     // weather
     'Clear sky': 'صاف آسمان', 'Mostly clear': 'زیادہ تر صاف', 'Partly cloudy': 'جزوی ابر آلود', 'Overcast': 'ابر آلود', 'Foggy': 'دھند',
     'Drizzle': 'ہلکی بوندا باندی', 'Rain': 'بارش', 'Snow': 'برف باری', 'Rain showers': 'بارش کی بوچھاڑ', 'Thunderstorm': 'آندھی طوفان',

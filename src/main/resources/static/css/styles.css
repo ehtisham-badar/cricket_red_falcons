@@ -1980,3 +1980,4 @@ a.btn { text-decoration: none; }
 .sq-stars li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 12px; border-radius: 12px; border: 1px solid var(--line); }
 .sq-stars span { color: var(--gold); font-weight: 800; white-space: nowrap; }
 .sq-stars small { color: var(--muted); font-weight: 600; }
+.nf-note { font-size: .62em; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--muted); margin-left: 4px; white-space: nowrap; vertical-align: middle; }
