@@ -61,6 +61,8 @@
 
     'Reporting time': 'رپورٹ کرنے کا وقت',
 
+    'News': 'خبریں', 'Matches': 'میچ',
+
     // weather
     'Clear sky': 'صاف آسمان', 'Mostly clear': 'زیادہ تر صاف', 'Partly cloudy': 'جزوی ابر آلود', 'Overcast': 'ابر آلود', 'Foggy': 'دھند',
     'Drizzle': 'ہلکی بوندا باندی', 'Rain': 'بارش', 'Snow': 'برف باری', 'Rain showers': 'بارش کی بوچھاڑ', 'Thunderstorm': 'آندھی طوفان',

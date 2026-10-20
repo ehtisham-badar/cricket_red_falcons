@@ -1981,3 +1981,16 @@ a.btn { text-decoration: none; }
 .sq-stars span { color: var(--gold); font-weight: 800; white-space: nowrap; }
 .sq-stars small { color: var(--muted); font-weight: 600; }
 .nf-note { font-size: .62em; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--muted); margin-left: 4px; white-space: nowrap; vertical-align: middle; }
+
+/* ---- Compact tab bar on phones: a floating pill, labels only on the open tab ---- */
+@media (max-width: 820px) {
+  .tabs { left: 10px; right: 10px; bottom: max(10px, env(safe-area-inset-bottom)); padding: 6px; gap: 2px; border: 1px solid var(--line-2); border-radius: 24px; box-shadow: 0 12px 34px rgba(var(--shadow-rgb), .55); }
+  .tab { flex: 1 1 0; min-width: 0; flex-direction: row; justify-content: center; gap: 6px; min-height: 46px; padding: 0 6px; border-radius: 18px; font-size: 13px; transition: flex-grow .25s var(--ease), background .15s, color .15s; }
+  .tab span { display: none; white-space: nowrap; }
+  .tab.active { flex: 2.4 1 0; padding: 0 10px; }
+  .tab.active span { display: inline; }
+  .tab svg { width: 22px; height: 22px; flex: none; }
+  .view { padding-bottom: 104px; }
+  .toast { bottom: 96px; }
+}
+@media (max-width: 360px) { .tab.active { flex: 2.8 1 0; } .tab { font-size: 12px; } }

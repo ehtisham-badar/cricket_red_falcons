@@ -34,8 +34,21 @@
     { id: 'stats', label: 'Stats', statsTab: true, icon: '<path d="M18 20V10M12 20V4M6 20v-6"/>' },
     { id: 'players', label: 'Team', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>' },
     { id: 'announce', label: 'Announce', staffTab: true, icon: '<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>' },
+    { id: 'polls', label: 'Polls', staffTab: true, icon: '<path d="M3 3v18h18"/><path d="M8 17V9M13 17V5M18 17v-6"/>' },
     { id: 'settings', label: 'Settings', icon: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>' }
   ];
+
+  // The bar shows six entries, not every screen: related screens share one entry and a switch at the top of the page.
+  const SEG_LABEL = { days: 'Days', stats: 'Stats', news: 'News', announce: 'Announcements', polls: 'Polls' };
+  const GROUPS = [
+    { id: 'summary', label: 'Home', tabs: ['summary'] },
+    { id: 'matches', label: 'Matches', tabs: ['days', 'stats'], icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' },
+    { id: 'money', label: 'Money', tabs: ['money'] },
+    { id: 'players', label: 'Team', tabs: ['players'] },
+    { id: 'news', label: 'News', tabs: ['news', 'announce', 'polls'] },
+    { id: 'settings', label: 'Settings', tabs: ['settings'] }
+  ];
+  const lastIn = {};                          // group id -> the screen last open in it
 
   let session = readStore(SESSION_KEY);      // { name, admin, token }
   let tab = 'summary';                        // set from the remembered tab once we know who is signed in
@@ -99,7 +112,6 @@
   let mgrList = null;                         // admin: manager requests and approved managers
   let editedAt = 0;                           // when the admin last changed something on this screen
   let announcements = null;                   // staff: every announcement written, newest first
-  let annSeg = 'ann';                         // which part of the Announce tab is open: 'ann' or 'poll'
   let annDraft = { title: '', body: '', matchId: '', later: false, at: '', action: '' };   // the announcement being written
   let calMonth = null;                        // the month the fixtures calendar shows: { y, m }
   let feed = null;                            // viewers and managers: what the admin has announced, newest first
@@ -1102,13 +1114,9 @@
           ${mine ? `<button class="btn btn-ghost small" data-action="ann-delete" data-id="${esc(a.id)}">Delete</button>` : ''}
         </div></article>`;
     };
-    const openPolls = engage ? engage.polls.filter(x => !x.closed).length : 0;
-    const seg = `<div class="seg-tabs" role="tablist">${[['ann', 'Announcements', 0], ['poll', 'Polls', openPolls]].map(([k, l, n]) =>
-      `<button class="seg-btn ${annSeg === k ? 'on' : ''}" role="tab" aria-selected="${annSeg === k}" data-action="ann-seg" data-seg="${k}">${l}${n ? ` <span>${n}</span>` : ''}</button>`).join('')}</div>`;
     return `
-      ${pageHead(annSeg === 'poll' ? 'Polls' : 'Announcements', annSeg === 'poll' ? 'Ask the team a quick question and see who answered.' : 'Write a message for the team. It shows in everyone’s notifications, and goes to the phones that have notifications on.')}
-      ${seg}
-      ${annSeg === 'poll' ? pollsAdmin() : `<section class="panel ann-composer" id="ann-composer">
+      ${pageHead('Announcements', 'Write a message for the team. It shows in everyone’s notifications, and goes to the phones that have notifications on.')}
+      <section class="panel ann-composer" id="ann-composer">
         <div class="panel-head"><h3>New announcement</h3><p class="muted">Start from a template, or write your own. Pick a match to fill in its details.</p></div>
         <label class="ann-field"><span>About match <small class="muted">(optional)</small></span>
           <select class="field select" data-input="ann-match" data-focus="ann-match">
@@ -1136,7 +1144,11 @@
       <section class="panel">
         <div class="panel-head"><h3>Sent</h3><p class="muted">Duplicate one to reuse it, for example for the next match.</p></div>
         ${announcements === null ? '<p class="muted">Loading…</p>' : announcements.length ? announcements.map(item).join('') : '<p class="muted season-empty">Nothing sent yet.</p>'}
-      </section>`}`;
+      </section>`;
+  }
+
+  function viewPolls() {
+    return `${pageHead('Polls', 'Ask the team a quick question and see who answered.')}${pollsAdmin()}`;
   }
 
   const realMatchesById = id => id ? C.matches(state).find(m => m.id === id && !m.test) : null;
@@ -1518,15 +1530,30 @@
     bell.setAttribute('aria-label', bellCount ? `Notifications, ${bellCount} new` : 'Notifications');
     const shown = t => (!t.staffTab || isStaff()) && (!t.statsTab || statsVisible()) && (!t.daysTab || daysVisible()) && !(archive && t.id === 'settings');
     if (TABS.some(t => t.id === tab && !shown(t))) tab = 'summary';
-    $('#tabs').innerHTML = TABS.filter(shown).map(t =>
-      `<button class="tab ${t.id === tab ? 'active' : ''}" data-action="tab" data-tab="${t.id}" title="${t.label}" aria-label="${t.label}" ${t.id === tab ? 'aria-current="page"' : ''}>
-        ${icon(t.icon)}<span>${t.label}</span></button>`).join('');
+    const tabDef = id => TABS.find(t => t.id === id);
+    const visibleIn = g => g.tabs.filter(id => shown(tabDef(id)));
+    const here = GROUPS.find(g => g.tabs.includes(tab));
+    if (here) lastIn[here.id] = tab;
+    $('#tabs').innerHTML = GROUPS.filter(g => visibleIn(g).length).map(g => {
+      const open = visibleIn(g);
+      const target = open.includes(lastIn[g.id]) ? lastIn[g.id] : open[0];
+      const on = g === here;
+      return `<button class="tab ${on ? 'active' : ''}" data-action="tab" data-tab="${target}" title="${g.label}" aria-label="${g.label}" ${on ? 'aria-current="page"' : ''}>
+        ${icon(g.icon || tabDef(g.tabs[0]).icon)}<span>${g.label}</span></button>`;
+    }).join('');
+    // Related screens share an entry in the bar; this switch moves between them.
+    const groupSeg = () => {
+      const open = here ? visibleIn(here) : [];
+      if (open.length < 2) return '';
+      const openPolls = engage ? engage.polls.filter(x => !x.closed).length : 0;
+      return `<div class="seg-tabs" role="tablist">${open.map(id => `<button class="seg-btn ${id === tab ? 'on' : ''}" role="tab" aria-selected="${id === tab}" data-action="tab" data-tab="${id}">${SEG_LABEL[id]}${id === 'polls' && openPolls ? ` <span>${openPolls}</span>` : ''}</button>`).join('')}</div>`;
+    };
     $('#who-badge').innerHTML = isAdmin()
       ? `<span class="badge badge-admin">${icon('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>', 14)} Admin</span>`
       : `<span class="badge badge-view">${icon('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>', 14)} ${esc(session.name)} · ${isManager() ? 'manager' : 'view only'}</span>`;
 
-    const views = { news: viewNews, summary: viewHome, money: viewMoney, days: viewDays, stats: viewStats, players: viewPlayers, announce: viewAnnounce, settings: viewSettings };
-    $('#view').innerHTML = archiveBar() + (views[tab] || viewHome)();
+    const views = { news: viewNews, summary: viewHome, money: viewMoney, days: viewDays, stats: viewStats, players: viewPlayers, announce: viewAnnounce, polls: viewPolls, settings: viewSettings };
+    $('#view').innerHTML = archiveBar() + groupSeg() + (views[tab] || viewHome)();
     $('#sheet-root').innerHTML = sheet ? renderSheet() : '';
     document.body.classList.toggle('sheet-open', !!sheet);
     markSettingsNav();
@@ -4243,7 +4270,6 @@ ${tabRows.map(r => {
       }
       render();
     },
-    'ann-seg'(el) { annSeg = el.dataset.seg === 'poll' ? 'poll' : 'ann'; render(); },
     'ann-action-clear'() { annDraft.action = ''; render(); },
     'ann-clear'() { annDraft = { title: '', body: '', matchId: '', later: false, at: '', action: '' }; render(); },
     async 'ann-send'() {
