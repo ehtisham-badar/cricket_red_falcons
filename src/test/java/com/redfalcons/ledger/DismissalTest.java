@@ -58,5 +58,14 @@ class DismissalTest {
         send("PUT", "/api/ledger", ledger(stats, "0,3,0,2"), admin);
         send("PUT", "/api/ledger", ledger(stats, null), admin);
         assertThat(send("GET", "/api/ledger", null, admin).body()).contains("\"extras\":\"0,3,0,2\"");
+
+        // "Share the expenses with the 12th man" is kept per match, and a save that doesn't mention it keeps it.
+        String shared = ledger(stats, null).replace("\"finished\":true", "\"finished\":true,\"twelfthShares\":true");
+        send("PUT", "/api/ledger", shared, admin);
+        assertThat(send("GET", "/api/ledger", null, admin).body()).contains("\"twelfthShares\":true");
+        send("PUT", "/api/ledger", ledger(stats, null), admin);
+        assertThat(send("GET", "/api/ledger", null, admin).body()).contains("\"twelfthShares\":true");
+        send("PUT", "/api/ledger", ledger(stats, null).replace("\"finished\":true", "\"finished\":true,\"twelfthShares\":false"), admin);
+        assertThat(send("GET", "/api/ledger", null, admin).body()).contains("\"twelfthShares\":false");
     }
 }

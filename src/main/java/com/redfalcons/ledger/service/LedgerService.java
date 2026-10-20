@@ -329,12 +329,14 @@ public class LedgerService {
         Map<String, Boolean> storedAnnounced = new HashMap<>();
         Map<String, String> storedResult = new HashMap<>();
         Map<String, String> storedExtras = new HashMap<>();
+        Map<String, Boolean> storedShares = new HashMap<>();
         matches.findAll().forEach(m -> {
             storedTest.put(m.getId(), m.isTest());
             storedAnnounced.put(m.getId(), m.isAnnounced());
             storedTime.put(m.getId(), m.getTime());
             storedResult.put(m.getId(), m.getResult());
             storedExtras.put(m.getId(), m.getOurExtras());
+            storedShares.put(m.getId(), m.isTwelfthShares());
         });
         List<MatchDay> newMatches = new ArrayList<>();
         Set<String> matchIds = new LinkedHashSet<>();
@@ -348,6 +350,7 @@ public class LedgerService {
                     m.announced() != null ? m.announced() : storedAnnounced.getOrDefault(m.id(), false),
                     m.result() != null ? cleanResult(m.result()) : storedResult.getOrDefault(m.id(), ""));
             day.setOurExtras(m.extras() != null ? cleanExtras(m.extras()) : storedExtras.getOrDefault(m.id(), ""));
+            day.setTwelfthShares(m.twelfthShares() != null ? m.twelfthShares() : storedShares.getOrDefault(m.id(), false));
             newMatches.add(day);
         }
 
@@ -631,7 +634,7 @@ public class LedgerService {
     private List<MatchDto> storedMatches() {
         return matches.findAll(BY_POSITION).stream()
                 .map(m -> new MatchDto(m.getId(), m.getDate(), m.getOpponent(), m.getVenue(), m.isFinished(), m.isTest(), m.getTime(),
-                        m.isAnnounced(), m.getResult(), null, m.getOurExtras())).toList();
+                        m.isAnnounced(), m.getResult(), null, m.getOurExtras(), m.isTwelfthShares())).toList();
     }
 
     /**
@@ -649,7 +652,7 @@ public class LedgerService {
                 int[] n = st.numbers();
                 played = st.isOut() || n[0] > 0 || n[1] + n[2] + n[3] + n[4] + n[5] > 0 || n[6] > 0 || n[13] + n[14] > 0;
             }
-            return new MatchDto(m.id(), m.date(), m.opponent(), m.venue(), m.finished(), m.test(), m.time(), m.announced(), m.result(), played, m.extras());
+            return new MatchDto(m.id(), m.date(), m.opponent(), m.venue(), m.finished(), m.test(), m.time(), m.announced(), m.result(), played, m.extras(), m.twelfthShares());
         }).toList();
     }
 

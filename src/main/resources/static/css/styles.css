@@ -2044,3 +2044,7 @@ a.btn { text-decoration: none; }
 .seg-tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
 .seg-tabs::-webkit-scrollbar { display: none; }
 .seg-tabs .seg-btn { flex: none; white-space: nowrap; padding: 0 14px; }
+
+/* ---- Include the 12th man in a match's expenses ---- */
+.twelfth-opt { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 0 0 14px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line); background: rgba(var(--hi-rgb), .03); }
+.twelfth-opt > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }

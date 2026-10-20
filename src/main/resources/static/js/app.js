@@ -450,7 +450,7 @@
     // (m1–m5); keep those that hold any attendance, expenses or 12th man.
     let matches;
     if (Array.isArray(d.matches)) {
-      matches = d.matches.filter(m => m && m.id).map(m => ({ id: m.id, date: m.date || '', opponent: m.opponent || '', venue: m.venue || '', time: /^([01]\d|2[0-3]):[0-5]\d$/.test(m.time || '') ? m.time : '', test: m.test === true, finished: m.test !== true && m.finished === true, announced: m.announced === true, twelfthPlayed: m.twelfthPlayed === true, result: ['win', 'loss', 'tie'].includes(m.result) ? m.result : '', extras: /^\d+,\d+,\d+,\d+$/.test(m.extras || '') ? m.extras : '' }));
+      matches = d.matches.filter(m => m && m.id).map(m => ({ id: m.id, date: m.date || '', opponent: m.opponent || '', venue: m.venue || '', time: /^([01]\d|2[0-3]):[0-5]\d$/.test(m.time || '') ? m.time : '', test: m.test === true, finished: m.test !== true && m.finished === true, announced: m.announced === true, twelfthPlayed: m.twelfthPlayed === true, result: ['win', 'loss', 'tie'].includes(m.result) ? m.result : '', extras: /^\d+,\d+,\d+,\d+$/.test(m.extras || '') ? m.extras : '', twelfthShares: m.twelfthShares === true }));
     } else {
       const used = id => players.some(p => p.att[id]) || (expenses[id] || []).length || (d.twelfth || {})[id];
       // These were charged as soon as they were marked, so they count as finished.
@@ -4130,7 +4130,11 @@ ${tabRows.map(r => {
         ${isMatch ? leagueLine(d, s) : ''}
         ${twelfthId ? `<p class="twelfth-line">12th man: <strong>${esc(playerName(twelfthId))}</strong> · ${C.twelfthPlays(state, d.id)
           ? 'batted or bowled, so the costs are split among all 12'
+          : d.twelfthShares ? 'shares the expenses (but not the league fee) because you included him'
           : 'not charged — only if he bats or bowls does he share the costs (÷12)'}</p>` : ''}
+        ${isMatch && !d.test && twelfthId && isAdmin() ? `<div class="twelfth-opt"><span><strong>Share the expenses with the 12th man</strong>
+          <small class="muted">${d.twelfthShares ? `Expenses like water are split among ${s.expPayers} players, including ${esc(playerName(twelfthId))}.` : 'Off: the expenses are split among the players who played.'}</small></span>
+          <button class="switch ${d.twelfthShares ? 'on' : ''}" role="switch" aria-checked="${!!d.twelfthShares}" data-action="twelfth-shares" data-id="${esc(d.id)}" aria-label="Share the expenses with the 12th man"><span></span></button></div>` : ''}
         ${isMatch && s.n > 0 ? battingSection(d) : ''}
         <h3 class="sub first">Expenses <span class="muted">${fmt(s.amount)}</span></h3>
         ${expenseRows(d)}
@@ -4848,7 +4852,7 @@ ${tabRows.map(r => {
       const tour = C.tournamentStats(state, stats);
       const parts = [];
       if (tour.fee > 0) parts.push(`League ${fmt(tour.perMatch)} ÷ ${s.payers} = ${fmt(C.round2(tour.perMatch / s.payers))} each`);
-      if (s.amount > 0) parts.push(`expenses ${fmt(s.amount)} ÷ ${s.n} = ${fmt(s.share)} each`);
+      if (s.amount > 0) parts.push(`expenses ${fmt(s.amount)} ÷ ${s.expPayers} = ${fmt(s.share)} each`);
       const ok = await confirmDialog(`Finish ${d.label}?`,
         `${parts.length ? parts.join(', and ') + ' — charged' : 'Charged'} to the ${s.payers} who played${state.twelfth[d.id] ? (C.twelfthPlays(state, d.id) ? ' (the 12th man batted or bowled, so he’s included)' : ' (not the 12th man — he only fielded)') : ''}. Balances update straight away; you can reopen it if needed.`,
         'Finish & charge');
@@ -5179,6 +5183,14 @@ ${tabRows.map(r => {
       // A scoring shot is a ball faced, so live scoring only needs one tap.
       if (['ones', 'twos', 'threes', 'fours', 'sixes'].includes(k)) e.balls = Math.max(0, e.balls + d);
       commit();
+    },
+    'twelfth-shares'(el) {
+      if (!isAdmin()) return;
+      const m = state.matches.find(x => x.id === el.dataset.id);
+      if (!m) return;
+      m.twelfthShares = !m.twelfthShares;
+      commit();
+      toast(m.twelfthShares ? 'The 12th man now shares this match’s expenses.' : 'The 12th man no longer shares this match’s expenses.');
     },
     'extras-step'(el) {
       if (!isAdmin()) return;

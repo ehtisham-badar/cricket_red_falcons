@@ -64,7 +64,7 @@ public record LedgerDto(
     /** {@code announced}: the admin announced the Playing XI (null on save keeps the stored choice). {@code result}: win, loss, tie or "" (null keeps the stored one). */
     /** {@code twelfthPlayed} (read-only): the 12th man batted or bowled, so he shares the match's costs. */
     public record MatchDto(String id, String date, String opponent, String venue, Boolean finished, Boolean test, String time,
-                           Boolean announced, String result, Boolean twelfthPlayed, String extras) {
+                           Boolean announced, String result, Boolean twelfthPlayed, String extras, Boolean twelfthShares) {
     }
 
     /**

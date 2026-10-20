@@ -46,6 +46,10 @@ public class MatchDay {
     @Column(name = "our_extras", length = 24)
     private String ourExtras;
 
+    /** The admin chose to share this match's expenses with the 12th man too (the XI always shares). Null means no. */
+    @Column(name = "twelfth_shares")
+    private Boolean twelfthShares;
+
     protected MatchDay() {
     }
 
@@ -71,6 +75,8 @@ public class MatchDay {
     public boolean isFinished() { return Boolean.TRUE.equals(finished); }
     public boolean isTest() { return Boolean.TRUE.equals(test); }
     public String getTime() { return time == null ? "" : time; }
+    public boolean isTwelfthShares() { return Boolean.TRUE.equals(twelfthShares); }
+    public void setTwelfthShares(boolean v) { this.twelfthShares = v; }
     public String getOurExtras() { return ourExtras == null ? "" : ourExtras; }
     public void setOurExtras(String v) { this.ourExtras = v; }
     public String getResult() { return result == null ? "" : result; }

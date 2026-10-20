@@ -24,7 +24,7 @@
       const n = isTest ? ++test : ++real;
       return {
         id: m.id, label: (isTest ? 'Test ' : 'Match ') + n, short: (isTest ? 'TM' : 'M') + n, type: 'match', test: isTest,
-        date: m.date || '', time: m.time || '', opponent: m.opponent || '', venue: m.venue || '', finished: !isTest && m.finished === true, announced: m.announced === true, extras: m.extras || '', twelfthPlayed: m.twelfthPlayed === true, result: m.result || ''
+        date: m.date || '', time: m.time || '', opponent: m.opponent || '', venue: m.venue || '', finished: !isTest && m.finished === true, announced: m.announced === true, extras: m.extras || '', twelfthShares: m.twelfthShares === true, twelfthPlayed: m.twelfthPlayed === true, result: m.result || ''
       };
     });
   }
@@ -93,12 +93,22 @@
     return !!(state.twelfth && state.twelfth[dayId] === player.id && twelfthPlays(state, dayId));
   }
 
-  // n is who attended (the XI for a match); payers is who shares the cost (the XI, plus a 12th man who played).
+  // Who shares a day's expenses: whoever pays, plus the 12th man when the admin chose to include him for that match.
+  function expPays(state, player, dayId) {
+    if (pays(state, player, dayId)) return true;
+    const m = (state.matches || []).find(x => x.id === dayId);
+    return !!(m && m.twelfthShares && state.twelfth && state.twelfth[dayId] === player.id);
+  }
+
+  // n is who attended (the XI for a match); payers is who shares the league fee (the XI, plus a 12th man who played);
+  // expPayers is who shares the expenses (the same, plus the 12th man when the admin includes him).
+  
   function dayStats(state, day) {
     const n = state.players.filter(p => p.att && p.att[day.id]).length;
     const payers = state.players.filter(p => pays(state, p, day.id)).length;
+    const expPayers = state.players.filter(p => expPays(state, p, day.id)).length;
     const amount = dayAmount(state, day.id);
-    return { n, payers, amount, share: split(amount, payers, state.settings.roundUp) };
+    return { n, payers, expPayers, amount, share: split(amount, expPayers, state.settings.roundUp) };
   }
 
   function allStats(state) {
@@ -195,9 +205,9 @@
     days(state).forEach(d => {
       if (!isCharged(d)) return;
       const s = stats[d.id];
-      if (pays(state, player, d.id) && s.amount > 0) {
+      if (expPays(state, player, d.id) && s.amount > 0) {
         cost += s.share;
-        lines.push({ type: d.type, day: d, text: d.label + ': ' + fmt(s.amount) + ' ÷ ' + s.payers + ' = ' + fmt(s.share) });
+        lines.push({ type: d.type, day: d, text: d.label + ': ' + fmt(s.amount) + ' ÷ ' + s.expPayers + ' = ' + fmt(s.share) });
       }
       dayExpenses(state, d.id).forEach(e => {
         const amt = num(e.amount);
@@ -314,7 +324,7 @@
 
   function warnings(state) {
     const stats = allStats(state);
-    const out = days(state).filter(d => isCharged(d) && stats[d.id].amount > 0 && stats[d.id].payers === 0).map(d => d.label);
+    const out = days(state).filter(d => isCharged(d) && stats[d.id].amount > 0 && stats[d.id].expPayers === 0).map(d => d.label);
     const tour = tournamentStats(state, stats);
     if (tour.fee > 0 && tour.n === 0 && tour.unplayed > 0) out.push('Tournament fee');
     return out;
@@ -340,7 +350,7 @@
   }
 
   const api = {
-    matches, leagueMatchCount, days, num, isCharged, pays, twelfthPlays,
+    matches, leagueMatchCount, days, num, isCharged, pays, expPays, twelfthPlays,
     BALLS_PER_OVER, STAT_KEYS, statOf, runsOf, shotsOf, strikeRate, oversOf, economy, batted, extrasOf, concededOf, bowled, leagueStats, round2, inTournament, paidTotal, dayExpenses, dayAmount, dayStats, allStats,
     tournamentStats, advanceShare, advancePerPlayer, advanceDue, playerCalc, totals, warnings, money, signedMoney, netLabel
   };
