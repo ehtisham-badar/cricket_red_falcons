@@ -865,7 +865,8 @@
 
   async function loadHpl() {
     try { hpl = await api('GET', '/api/hpl'); } catch { hpl = hpl || { available: false }; }
-    if (tab === 'news') render();
+    if (tab === 'summary' || tab === 'news') render();
+    if (sheet && sheet.type === 'hpl-match') render();
   }
 
   // Crickslab's square team logos suit this small size; our crest for Red Falcons.
@@ -880,7 +881,7 @@
       const src = hplLogo(name, remote);
       return src ? `<img class="hpl-logo" src="${esc(src)}" alt="" width="${size}" height="${size}" loading="lazy">` : `<span class="hpl-logo ph" style="width:${size}px;height:${size}px">${esc((name || '?').slice(0, 2))}</span>`;
     };
-    const seg = [['table', 'Table'], ['results', 'Results'], ['leaders', 'Leaders']].map(([id, label]) =>
+    const seg = [['table', 'Table'], ['results', 'Fixtures'], ['leaders', 'Leaders']].map(([id, label]) =>
       `<button class="seg-btn ${hplView === id ? 'on' : ''}" data-action="hpl-view" data-id="${id}">${label}</button>`).join('');
     let body = '';
     if (hplView === 'table') {
@@ -893,22 +894,28 @@
             <td><span class="hpl-form">${(r.form || []).slice(-5).map(f => `<i class="f-${esc(String(f).toLowerCase())}">${esc(f)}</i>`).join('') || '—'}</span></td></tr>`).join('')}</tbody>
         </table></div>` : '<p class="muted">The table appears once matches are played.</p>';
     } else if (hplView === 'results') {
-      const list = hpl.results || [];
-      body = list.length ? `<div class="hpl-results">${list.map(m => {
+      const all = hpl.results || [];
+      const card = m => {
         const when = m.start ? new Date(m.start).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '';
         const won = t => m.result && m.result.toUpperCase().startsWith((t.name || '').toUpperCase());
         const side = t => `<div class="hpl-side hpl-open ${won(t) ? 'won' : ''} ${isUs(t.name) ? 'us' : ''}" data-action="hpl-team" data-team="${esc(t.name)}" data-logo="${esc(t.logo || '')}" title="See the squad">
             ${logo(t.name, t.logo, 34)}<strong>${esc(titleCase(t.name))}</strong>
             <span class="hpl-score">${t.runs == null ? '—' : `${t.runs}/${t.wickets}`}<small>${t.overs ? `(${esc(t.overs)} ov)` : ''}</small></span></div>`;
+        const done = !m.live && (/complete/i.test(m.status) || !!m.result);
         return `<article class="hpl-match">
           <header><span class="day-kind">${esc(m.title)}</span>${m.live ? '<span class="hpl-live">LIVE</span>' : `<span class="muted">${esc(m.status)}</span>`}</header>
           <p class="muted hpl-when">${esc([when, m.ground].filter(Boolean).join(' · '))}</p>
           ${(m.teams || []).map(side).join('')}
           ${m.result ? `<p class="hpl-result">${esc(m.result)}</p>` : ''}
           <footer>${m.playerOfMatch ? `<span>${icon('<circle cx="12" cy="8" r="6"/><path d="M15.5 13.5 17 22l-5-3-5 3 1.5-8.5"/>', 14)} Player of the match: <strong>${esc(m.playerOfMatch)}</strong></span>` : '<span></span>'}
-            ${m.summaryUrl ? `<a href="${esc(m.summaryUrl)}" target="_blank" rel="noopener">Full scorecard ↗</a>` : ''}</footer>
+            <button class="btn btn-ghost small" data-action="hpl-match" data-id="${esc(m.id)}">${done ? 'Full scorecard' : 'Match details'}</button></footer>
         </article>`;
-      }).join('')}</div>` : '<p class="muted">No results yet.</p>';
+      };
+      const isDone = m => !m.live && (/complete/i.test(m.status) || !!m.result);
+      const coming = all.filter(m => !isDone(m)).sort((a, b) => String(a.start).localeCompare(String(b.start)));
+      const finished = all.filter(isDone);
+      const group = (title, list) => list.length ? `<h4 class="fx-group">${title} <span>${list.length}</span></h4><div class="hpl-results">${list.map(card).join('')}</div>` : '';
+      body = all.length ? `${group('Live & upcoming', coming)}${group('Results', finished)}` : '<p class="muted">No fixtures yet.</p>';
     } else {
       const col = (title, list) => `<div class="hpl-lead"><h4>${title}</h4>${(list || []).length ? `<ol>${list.map(l => `<li class="${isUs(l.team) ? 'us' : ''}">
           <span><strong>${esc(l.name)}</strong><small>${esc(titleCase(l.team))}</small></span><b>${esc(l.value)}</b></li>`).join('')}</ol>` : '<p class="muted">—</p>'}</div>`;
@@ -927,6 +934,55 @@
       ${body}
       <p class="hpl-source">From <a href="${esc(hpl.source)}" target="_blank" rel="noopener">Crickslab</a>${ago != null ? ` · updated ${ago < 1 ? 'just now' : ago === 1 ? '1 min ago' : ago + ' min ago'}` : ''}</p>
     </section>`;
+  }
+
+  // A league match inside the app: the scoreboard from the league feed, and (when the Red Falcons played) our own
+  // batting, bowling and fielding tables from the stats we record. Nothing here opens another website.
+  function sheetHplMatch() {
+    const m = (hpl && hpl.results || []).find(x => String(x.id) === String(sheet.id));
+    if (!m) return '';
+    const teams = m.teams || [];
+    const us = teams.find(t => isUs(t.name));
+    const other = teams.find(t => !isUs(t.name)) || teams[1];
+    const done = !m.live && (/complete/i.test(m.status) || !!m.result);
+    const when = m.start ? new Date(m.start).toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' }) : '';
+    const logoOf = (t, size) => {
+      const src = hplLogo(t.name, t.logo);
+      return src ? `<img class="hpl-logo" src="${esc(src)}" alt="" width="${size}" height="${size}">` : `<span class="hpl-logo ph" style="width:${size}px;height:${size}px">${esc((t.name || '?').slice(0, 2))}</span>`;
+    };
+    const won = t => m.result && m.result.toUpperCase().startsWith((t.name || '').toUpperCase());
+    const board = teams.map(t => `<div class="sc-side ${won(t) ? 'won' : ''} ${isUs(t.name) ? 'us' : ''}">${logoOf(t, 44)}
+        <span class="sc-side-name"><strong>${esc(titleCase(t.name))}</strong>${won(t) ? '<small>Winner</small>' : ''}</span>
+        <span class="sc-side-score">${t.runs == null ? '—' : `${t.runs}/${t.wickets}`}<small>${t.overs ? `(${esc(t.overs)} ov)` : ''}</small></span></div>`).join('');
+    // The same match in our own records: matched on the opponent's name.
+    const ours = us && other ? C.matches(state).find(x => !x.test && teamKey(x.opponent) && (teamKey(x.opponent) === teamKey(other.name) || teamKey(other.name).includes(teamKey(x.opponent)) || teamKey(x.opponent).includes(teamKey(other.name)))) : null;
+    let own = '';
+    if (us) {
+      const src = ours && scorecardSource(ours);
+      const real = src && !src.sample;
+      if (ours && real && statsVisible() && statsMatchVisible(ours)) {
+        own = `<div class="sc"><p class="sc-from">Red Falcons batting, bowling and fielding — from our own match records (${esc(ours.label)}).</p>${ourInnings(ours, src)}</div>`;
+      } else if (ours && real) {
+        own = '<p class="muted sc-note">Our batting and bowling details haven’t been shared with players yet.</p>';
+      } else {
+        own = `<p class="muted sc-note">Our batting and bowling tables appear here once the stats for this match are added${ours ? '' : ' — set the opponent’s name on the match in Days so it can be matched'}.</p>`;
+      }
+    } else {
+      own = '<p class="muted sc-note">This is the score summary from the league. Batting and bowling tables are kept only for the Red Falcons’ own matches.</p>';
+    }
+    return `<header class="sheet-head">
+        <div><span class="day-kind">${esc(m.title)} ${m.live ? '<span class="hpl-live">LIVE</span>' : ''}</span>
+          <h2>${teams.map(t => esc(titleCase(t.name))).join(' v ')}</h2>
+          <p class="muted">${esc([when, m.ground].filter(Boolean).join(' · '))}</p></div>
+        <button class="icon-btn" data-action="close-sheet" aria-label="Close">${X_ICON}</button>
+      </header>
+      <div class="sheet-body sc">
+        <div class="sc-board">${board}</div>
+        ${m.result ? `<p class="hpl-result sc-result">${esc(m.result)}</p>` : `<p class="muted center">${m.live ? 'The match is in progress.' : done ? '' : 'Not played yet.'}</p>`}
+        ${m.playerOfMatch ? `<p class="sc-pom">${icon('<circle cx="12" cy="8" r="6"/><path d="M15.5 13.5 17 22l-5-3-5 3 1.5-8.5"/>', 16)} Player of the match: <strong>${esc(m.playerOfMatch)}</strong></p>` : ''}
+        ${own}
+        <div class="sc-teams">${teams.map(t => `<button class="btn btn-ghost small" data-action="hpl-team" data-team="${esc(t.name)}" data-logo="${esc(t.logo || '')}">${esc(titleCase(t.name))} squad</button>`).join('')}</div>
+      </div>`;
   }
 
   // ---------- HPL team squads: tap a team to see its players ----------
@@ -1086,9 +1142,8 @@
       <h3 class="news-title">${esc(n.title)}</h3>
       <div class="news-body">${newsBody(n.body)}</div>
     </article>`;
-    return `${pageHead('News', 'League rules, fixtures and team updates.',
+    return `${pageHead('News', 'League rules and team updates.',
         admin && !newsDraft ? `<button class="btn btn-primary" data-action="news-new">${icon('<path d="M12 5v14M5 12h14"/>', 18)} Add news</button>` : '')}
-      ${hplPanel()}
       ${admin && newsDraft && !newsDraft.id ? newsEditor() : ''}
       <div class="news-feed">
         ${news === null ? '<p class="muted">Loading…</p>' : posts.length ? posts.map(n => admin && newsDraft && newsDraft.id === n.id ? newsEditor() : card(n)).join('')
@@ -2058,20 +2113,9 @@
       </div>`;
   }
 
-  // A scorecard in the usual cricket layout: batting, bowling and fielding for the Red Falcons.
-  function sheetScorecard() {
-    const m = C.matches(state).find(x => x.id === sheet.id);
-    if (!m) return '';
-    const src = scorecardSource(m);
+  // The Red Falcons' own batting, bowling and fielding tables for a match, from the stats we record.
+  function ourInnings(m, src) {
     const name = p => `${esc(p.name)}${isCaptain(p) ? ' (c)' : ''}${isKeeper(p) ? ' †' : ''}`;
-    const head = `<header class="sheet-head">
-        <div>${opponentLogo(m)}<span class="day-kind">Scorecard</span><h2>Red Falcons v ${m.opponent ? esc(m.opponent) : 'TBC'}</h2>
-          <p class="muted">${esc(matchInfo(m)) || m.label} ${resultChip(m)}</p></div>
-        <button class="icon-btn" data-action="close-sheet" aria-label="Close">${X_ICON}</button>
-      </header>`;
-    if (!src) {
-      return `${head}<div class="sheet-body"><p class="muted center">The scorecard appears here once the match stats are added.</p></div>`;
-    }
     const tw = findPlayer(state.twelfth[src.id]);
     const order = battingOrderOf(src.id).concat(tw && C.twelfthPlays(state, src.id) ? [tw] : []);
     const rows = order.map(p => ({ p, e: C.statOf(state, src.id, p.id) }));
@@ -2086,9 +2130,7 @@
       <td class="sc-main">${C.runsOf(r.e)}</td><td>${r.e.balls}</td><td>${r.e.fours}</td><td>${r.e.sixes}</td><td>${SR(C.runsOf(r.e), r.e.balls)}</td></tr>`).join('');
     const bowlRows = bowlers.map(r => `<tr><td class="sc-name"><strong>${name(r.p)}</strong></td>
       <td>${C.oversOf(r.e.bowlBalls)}</td><td>${C.concededOf(r.e)}</td><td class="sc-main">${r.e.wickets}</td><td>${ECON(C.concededOf(r.e), r.e.bowlBalls)}</td><td>${r.e.wides}</td><td>${r.e.noBalls}</td></tr>`).join('');
-    return `${head}
-      <div class="sheet-body sc">
-        ${src.sample ? `<p class="sc-sample">Sample scorecard, taken from ${src.sample.label}. It is replaced by ${m.label}’s own stats once they are added.</p>` : ''}
+    return `
         <div class="sc-title"><h3>Red Falcons innings</h3><strong>${runs}/${outs} <small>(${C.oversOf(balls)} ov)</small></strong></div>
         <div class="table-wrap"><table class="sc-table">
           <thead><tr><th class="sc-name">Batter</th><th>R</th><th>B</th><th>4s</th><th>6s</th><th>SR</th></tr></thead>
@@ -2104,6 +2146,26 @@
         </table></div>
         ${catchers.length ? `<p class="sc-dnb"><strong>Catches:</strong> ${catchers.map(r => `${name(r.p)} (${r.e.catches})`).join(', ')}</p>` : ''}
         <p class="muted sc-note">Totals are the batters’ runs. The opposition’s innings, extras and fall of wickets aren’t recorded.</p>
+    `;
+  }
+
+  // A scorecard in the usual cricket layout: batting, bowling and fielding for the Red Falcons.
+  function sheetScorecard() {
+    const m = C.matches(state).find(x => x.id === sheet.id);
+    if (!m) return '';
+    const src = scorecardSource(m);
+    const head = `<header class="sheet-head">
+        <div>${opponentLogo(m)}<span class="day-kind">Scorecard</span><h2>Red Falcons v ${m.opponent ? esc(m.opponent) : 'TBC'}</h2>
+          <p class="muted">${esc(matchInfo(m)) || m.label} ${resultChip(m)}</p></div>
+        <button class="icon-btn" data-action="close-sheet" aria-label="Close">${X_ICON}</button>
+      </header>`;
+    if (!src) {
+      return `${head}<div class="sheet-body"><p class="muted center">The scorecard appears here once the match stats are added.</p></div>`;
+    }
+    return `${head}
+      <div class="sheet-body sc">
+        ${src.sample ? `<p class="sc-sample">Sample scorecard, taken from ${src.sample.label}. It is replaced by ${m.label}’s own stats once they are added.</p>` : ''}
+        ${ourInnings(m, src)}
       </div>`;
   }
 
@@ -2253,7 +2315,7 @@
     const group = (title, list) => list.length ? `<h4 class="fx-group">${title} <span>${list.length}</span></h4><ul class="fx-list">${list.map(row).join('')}</ul>` : '';
     return `<section class="panel fx-panel">
       <div class="fx-top">
-        <span class="fx-kicker">${icon('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>', 14)} Fixtures ${hiddenNote('showFixtures')}</span>
+        <span class="fx-kicker">${icon('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>', 14)} Our fixtures ${hiddenNote('showFixtures')}</span>
         <strong class="fx-heading">${esc(leagueName())}</strong>
       </div>
       ${group('Upcoming', open)}${group('Played', done)}
@@ -2404,6 +2466,7 @@
       ${moneyGlance()}
       ${pollsPanel()}
       ${fixturesPanel()}
+      ${hplPanel()}
       ${galleryStrip()}`;
   }
 
@@ -3708,6 +3771,7 @@ ${tabRows.map(r => {
     if (sheet.type === 'profile-form') body = sheetProfileForm();
     if (sheet.type === 'predictions') body = sheetPredictions();
     if (sheet.type === 'hpl-team') body = sheetHplTeam();
+    if (sheet.type === 'hpl-match') body = sheetHplMatch();
     if (!body) { sheet = null; return ''; }
     return `<div class="sheet-backdrop" data-action="close-sheet"></div>
       <div class="sheet" role="dialog" aria-modal="true">${body}</div>`;
@@ -4845,6 +4909,7 @@ ${tabRows.map(r => {
       await prompt.userChoice.catch(() => null);
       render();
     },
+    'hpl-match'(el) { sheet = { type: 'hpl-match', id: el.dataset.id }; render(); },
     'hpl-view'(el) { hplView = el.dataset.id; render(); },
     'hpl-team'(el) {
       sheet = { type: 'hpl-team', team: el.dataset.team, logo: el.dataset.logo };
