@@ -39,7 +39,7 @@ public record LedgerDto(
                             Map<String, Boolean> att, List<PaymentDto> payments, String phone,
                             String battingHand, String bowlingArm, String bowlingStyle,
                             Boolean keeper, Boolean captain, Boolean viceCaptain, String jersey, String photoAt,
-                            String jerseyName, String profileAt) {
+                            String jerseyName, String profileAt, String shirtSize, String kitAt) {
     }
 
     public record PaymentDto(String id, String date, String amount, String method, String note) {

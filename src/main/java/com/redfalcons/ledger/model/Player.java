@@ -55,6 +55,14 @@ public class Player {
     @Column(name = "jersey_name", length = 24)
     private String jerseyName;
 
+    /** Shirt size from the size chart (XS … 3XL), or empty. */
+    @Column(name = "shirt_size", length = 4)
+    private String shirtSize;
+
+    /** When the player last saved their kit details (size, jersey name and number), or null. */
+    @Column(name = "kit_saved_at", length = 40)
+    private String kitSavedAt;
+
     /** When the player last pressed Save on their own profile (ISO instant), or null. */
     @Column(name = "profile_saved_at", length = 40)
     private String profileSavedAt;
@@ -107,6 +115,10 @@ public class Player {
     public boolean isKeeper() { return Boolean.TRUE.equals(keeper); }
     public boolean isCaptain() { return Boolean.TRUE.equals(captain); }
     public boolean isViceCaptain() { return Boolean.TRUE.equals(viceCaptain); }
+    public String getShirtSize() { return shirtSize == null ? "" : shirtSize; }
+    public void setShirtSize(String v) { this.shirtSize = v; }
+    public String getKitSavedAt() { return kitSavedAt == null ? "" : kitSavedAt; }
+    public void setKitSavedAt(String v) { this.kitSavedAt = v; }
     public String getJerseyName() { return jerseyName == null ? "" : jerseyName; }
     public void setJerseyName(String v) { this.jerseyName = v; }
     public String getProfileSavedAt() { return profileSavedAt == null ? "" : profileSavedAt; }

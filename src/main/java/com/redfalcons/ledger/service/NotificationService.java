@@ -73,7 +73,7 @@ public class NotificationService {
         }
         String match = matchId == null ? "" : matchId.trim();
         AppNotification n = repo.save(AppNotification.announcement(AdminAuth.randomToken().substring(0, 16), authorId, author, t, b,
-                match.isEmpty() ? null : match, publish, now.toString(), "profile".equals(action) ? "profile" : null));
+                match.isEmpty() ? null : match, publish, now.toString(), "profile".equals(action) || "kit".equals(action) ? action : null));
         prune();
         // Straight away: phones with notifications on hear it now. A scheduled one is pushed when its time comes.
         if (publish == null) push.send(t, b, null);

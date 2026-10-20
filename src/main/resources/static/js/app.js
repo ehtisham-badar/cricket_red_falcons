@@ -35,17 +35,18 @@
     { id: 'players', label: 'Team', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>' },
     { id: 'announce', label: 'Announce', staffTab: true, icon: '<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>' },
     { id: 'polls', label: 'Polls', staffTab: true, icon: '<path d="M3 3v18h18"/><path d="M8 17V9M13 17V5M18 17v-6"/>' },
+    { id: 'kit', label: 'Kit sizes', adminTab: true, icon: '<path d="M20.4 3.6 16 2l-4 3-4-3-4.4 1.6L2 8l3 2v10h14V10l3-2z"/>' },
     { id: 'settings', label: 'Settings', icon: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>' }
   ];
 
   // The bar shows six entries, not every screen: related screens share one entry and a switch at the top of the page.
-  const SEG_LABEL = { days: 'Days', stats: 'Stats', news: 'News', announce: 'Announcements', polls: 'Polls' };
+  const SEG_LABEL = { days: 'Days', stats: 'Stats', news: 'News', announce: 'Announcements', polls: 'Polls', kit: 'Kit' };
   const GROUPS = [
     { id: 'summary', label: 'Home', tabs: ['summary'] },
     { id: 'matches', label: 'Matches', tabs: ['days', 'stats'], icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' },
     { id: 'money', label: 'Money', tabs: ['money'] },
     { id: 'players', label: 'Team', tabs: ['players'] },
-    { id: 'news', label: 'News', tabs: ['news', 'announce', 'polls'] },
+    { id: 'news', label: 'News', tabs: ['news', 'announce', 'polls', 'kit'] },
     { id: 'settings', label: 'Settings', tabs: ['settings'] }
   ];
   const lastIn = {};                          // group id -> the screen last open in it
@@ -439,7 +440,7 @@
         battingHand: p.battingHand === 'left' || p.battingHand === 'right' ? p.battingHand : '',
         bowlingArm: p.bowlingArm === 'left' || p.bowlingArm === 'right' ? p.bowlingArm : '',
         bowlingStyle: p.bowlingStyle || '', keeper: p.keeper === true, captain: p.captain === true, viceCaptain: p.viceCaptain === true,
-        jersey: p.jersey == null ? '' : String(p.jersey).replace(/\D/g, '').slice(0, 3), photoAt: p.photoAt || '', jerseyName: p.jerseyName || '', profileAt: p.profileAt || ''
+        jersey: p.jersey == null ? '' : String(p.jersey).replace(/\D/g, '').slice(0, 3), photoAt: p.photoAt || '', jerseyName: p.jerseyName || '', profileAt: p.profileAt || '', shirtSize: p.shirtSize || '', kitAt: p.kitAt || ''
       };
     });
     const ids = new Set(players.map(p => p.id));
@@ -851,6 +852,7 @@
     { id: 'report', label: 'Report time', title: 'Report time', make: m => m ? `Please report for ${m.label}${m.venue ? ` at ${m.venue}` : ''} by __ (time).${m.time ? ` Kick-off is ${fmtClock(m.time)}.` : ''}` : 'Please report at __ (time).', at: () => '' },
     { id: 'xi', label: 'XI announced', title: 'Playing XI announced', make: m => m ? `The playing XI for ${m.label}${m.opponent ? ` vs ${m.opponent}` : ''} is out. Check the app.` : 'The playing XI is out. Check the app.', at: () => '' },
     { id: 'profile', label: 'Update profile', title: 'Update your profile', make: () => 'Please update your profile: add your photo, jersey name and number, and your batting and bowling details. Tap here to fill it in.', at: () => '', action: 'profile' },
+    { id: 'kit', label: 'Shirt sizes', title: 'Choose your shirt size', make: () => 'Please choose your shirt size from the chart and add your jersey name and number. Tap here to fill it in.', at: () => '', action: 'kit' },
     { id: 'update', label: 'Match update', title: 'Match update', make: m => m ? `Update for ${m.label}: ` : 'Match update: ', at: () => '' }
   ];
 
@@ -1162,6 +1164,7 @@
         <div class="note-head"><strong>${esc(a.title)}</strong>
           <small><span class="ann-status ${a.status}">${a.status === 'scheduled' ? 'Scheduled' : 'Sent'}</span> ${when(a)} · by ${esc(a.author || 'Admin')}</small></div>
         <p class="note-detail">${esc(a.body)}</p>
+        ${a.action === 'kit' ? `<span class="ann-chip">Shirt sizes · ${state.players.filter(pl => pl.kitAt && pl.kitAt >= a.createdAt).length} of ${state.players.length} answered</span>` : ''}
         ${a.action === 'profile' ? `<span class="ann-chip">Profile request · ${state.players.filter(pl => pl.profileAt && pl.profileAt >= a.createdAt).length} of ${state.players.length} done</span>` : ''}
         ${m ? `<span class="ann-chip">${m.label}${m.opponent ? ` · vs ${esc(m.opponent)}` : ''}</span>` : ''}
         <div class="note-actions">
@@ -1184,6 +1187,8 @@
           <input class="field" type="text" maxlength="80" value="${esc(d.title)}" placeholder="e.g. Match reminder" data-input="ann-title" data-focus="ann-title"></label>
         <label class="ann-field"><span>Message <small class="muted" id="ann-count">${d.body.length}/300</small></span>
           <textarea class="field" rows="4" maxlength="300" placeholder="What should the team know?" data-input="ann-body" data-focus="ann-body">${esc(d.body)}</textarea></label>
+        ${d.action === 'kit' ? `<p class="ann-action-note">${icon('<path d="M20.4 3.6 16 2l-4 3-4-3-4.4 1.6L2 8l3 2v10h14V10l3-2z"/>', 16)} <span>Players who tap this open the shirt sheet: the size chart, jersey name and number. You see every answer under Kit sizes and get a notification as each one saves.</span>
+          <button class="chip" data-action="ann-action-clear" title="Send as a plain message">Plain message</button></p>` : ''}
         ${d.action === 'profile' ? `<p class="ann-action-note">${icon(PERSON_PATH, 16)} <span>Players who tap this open the profile editor (photo, jersey, batting and bowling). You get a notification as each one saves.</span>
           <button class="chip" data-action="ann-action-clear" title="Send as a plain message">Plain message</button></p>` : ''}
         <div class="ann-when">
@@ -1199,6 +1204,34 @@
       <section class="panel">
         <div class="panel-head"><h3>Sent</h3><p class="muted">Duplicate one to reuse it, for example for the next match.</p></div>
         ${announcements === null ? '<p class="muted">Loading…</p>' : announcements.length ? announcements.map(item).join('') : '<p class="muted season-empty">Nothing sent yet.</p>'}
+      </section>`;
+  }
+
+  // The admin's kit order: every player's shirt size, jersey name and number, with totals per size.
+  function viewKit() {
+    const list = state.players.filter(C.inTournament);
+    const counts = SIZE_CHART.map(([sz, c, l]) => ({ sz, c, l, n: list.filter(p => p.shirtSize === sz).length }));
+    const answered = list.filter(p => p.shirtSize).length;
+    const rows = list.map((p, i) => `<tr>
+        <td class="sticky">${i + 1}</td>
+        <td class="sticky sticky-2 name-cell"><button class="pl-name" data-action="open-profile" data-id="${esc(p.id)}">${esc(p.name)}</button></td>
+        <td><select class="field select kit-sel" data-input="shirt-size-set" data-id="${esc(p.id)}" aria-label="Shirt size for ${esc(p.name)}">
+          <option value="">—</option>${SIZE_CHART.map(([sz]) => `<option value="${sz}" ${p.shirtSize === sz ? 'selected' : ''}>${sz}</option>`).join('')}</select></td>
+        <td><input class="field" type="text" maxlength="24" value="${esc(p.jerseyName)}" data-input="p-jersey-name" data-id="${esc(p.id)}" data-focus="kjn-${esc(p.id)}" aria-label="Jersey name for ${esc(p.name)}"></td>
+        <td><input class="field kit-num" type="text" inputmode="numeric" maxlength="3" value="${esc(p.jersey)}" data-input="p-jersey" data-id="${esc(p.id)}" data-focus="kjx-${esc(p.id)}" aria-label="Jersey number for ${esc(p.name)}"></td>
+        <td>${p.kitAt ? `<span class="prof-tag ok">${icon('<path d="M20 6 9 17l-5-5"/>', 13)} Answered</span>` : p.shirtSize ? '<span class="prof-tag todo">Set by you</span>' : '<span class="prof-tag todo">Waiting</span>'}</td></tr>`).join('');
+    return `${pageHead('Kit sizes', 'Shirt sizes, jersey names and numbers for the order.',
+        `<div class="share-row"><button class="btn btn-gold" data-action="kit-ask">${icon('<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/>', 18)} Ask players for their sizes</button>
+          <button class="btn btn-ghost" data-action="kit-copy">${COPY_ICON} Copy the list</button></div>`)}
+      <section class="panel">
+        <div class="panel-head"><h3>Size chart</h3><p class="muted">Chest × Length. ${answered} of ${list.length} players have a size.</p></div>
+        <div class="size-totals">${counts.map(x => `<div class="size-tot ${x.n ? 'has' : ''}"><strong>${x.sz}</strong><small>${x.c} × ${x.l}</small><b>${x.n}</b></div>`).join('')}</div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><h3>Players</h3><p class="muted">You can fill in or change anyone’s details here. Players choose their own from the announcement.</p></div>
+        ${list.length ? `<div class="table-wrap"><table class="sheet-table kit-table">
+          <thead><tr><th class="sticky">#</th><th class="sticky sticky-2">Player</th><th>Size</th><th>Jersey name</th><th>No.</th><th>Status</th></tr></thead>
+          <tbody>${rows}</tbody></table></div>` : '<p class="muted">No players yet.</p>'}
       </section>`;
   }
 
@@ -1246,6 +1279,7 @@
           return `<article class="note-card ${n.kind === 'announcement' || n.kind === 'notice' ? 'is-ann' : ''}"><div class="note-head"><strong>${esc(n.title)}</strong>
             <small>${n.kind === 'announcement' && n.author ? `${esc(n.author)} · ` : ''}${ago(n.createdAt)}</small></div>
             <p class="note-detail">${esc(n.body)}</p>
+            ${n.action === 'kit' ? `<button class="btn btn-gold small" data-action="open-kit-form">${icon('<path d="M20.4 3.6 16 2l-4 3-4-3-4.4 1.6L2 8l3 2v10h14V10l3-2z"/>', 16)} Choose my shirt size</button>` : ''}
             ${n.action === 'profile' ? `<button class="btn btn-gold small" data-action="open-profile-form">${icon(PERSON_PATH, 16)} Update my profile</button>` : ''}
             ${m && matchVisible(m) ? `<span class="ann-chip">${m.label}${m.opponent ? ` · vs ${esc(m.opponent)}` : ''}</span>` : ''}</article>`;
         }).join('')
@@ -1583,7 +1617,7 @@
     bell.hidden = false;
     bell.dataset.count = bellCount;
     bell.setAttribute('aria-label', bellCount ? `Notifications, ${bellCount} new` : 'Notifications');
-    const shown = t => (!t.staffTab || isStaff()) && (!t.statsTab || statsVisible()) && (!t.daysTab || daysVisible()) && !(archive && t.id === 'settings');
+    const shown = t => (!t.adminTab || realAdmin()) && (!t.staffTab || isStaff()) && (!t.statsTab || statsVisible()) && (!t.daysTab || daysVisible()) && !(archive && t.id === 'settings');
     if (TABS.some(t => t.id === tab && !shown(t))) tab = 'summary';
     const tabDef = id => TABS.find(t => t.id === id);
     const visibleIn = g => g.tabs.filter(id => shown(tabDef(id)));
@@ -1607,7 +1641,7 @@
       ? `<span class="badge badge-admin">${icon('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>', 14)} Admin</span>`
       : `<span class="badge badge-view">${icon('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>', 14)} ${esc(session.name)} · ${isManager() ? 'manager' : 'view only'}</span>`;
 
-    const views = { news: viewNews, summary: viewHome, money: viewMoney, days: viewDays, stats: viewStats, players: viewPlayers, announce: viewAnnounce, polls: viewPolls, settings: viewSettings };
+    const views = { news: viewNews, summary: viewHome, money: viewMoney, days: viewDays, stats: viewStats, players: viewPlayers, announce: viewAnnounce, polls: viewPolls, kit: viewKit, settings: viewSettings };
     $('#view').innerHTML = archiveBar() + groupSeg() + (views[tab] || viewHome)();
     $('#sheet-root').innerHTML = sheet ? renderSheet() : '';
     document.body.classList.toggle('sheet-open', !!sheet);
@@ -2456,6 +2490,13 @@
         items.push(item(icon(PERSON_PATH, 22), 'Update your profile', 'Add a photo, jersey name and number, and batting and bowling details.', '<button class="btn btn-gold" data-action="open-profile-form">Update now</button>'));
       }
     }
+    if (!realAdmin() && feed) {
+      const me = myPlayer();
+      const req = feed.find(n => n.action === 'kit');
+      if (req && !(me && me.kitAt && me.kitAt >= req.createdAt)) {
+        items.push(item(icon('<path d="M20.4 3.6 16 2l-4 3-4-3-4.4 1.6L2 8l3 2v10h14V10l3-2z"/>', 22), 'Choose your shirt size', 'Pick your size from the chart and add your jersey name and number.', '<button class="btn btn-gold" data-action="open-kit-form">Choose now</button>'));
+      }
+    }
     const canPush = push.ready && push.supported && push.enabled && !push.subscribed && push.permission !== 'denied' && !(isIOS() && !isInstalled()) && !readStore(PUSH_PROMPT_KEY);
     if (canPush) {
       items.push(item(BELL_ICON, 'Never miss the team news', 'Get a notification when the Playing XI is announced or the team posts an update.',
@@ -3138,6 +3179,52 @@
       </div>`;
   }
 
+  // ---------- shirt sizes (opened from the "Choose your shirt size" announcement) ----------
+  const SIZE_CHART = [['XS', 18, 26], ['S', 19, 27], ['M', 20, 28], ['L', 21, 29], ['XL', 22, 30], ['2XL', 23, 31], ['3XL', 24, 32]];
+  let kForm = null;   // { id, size, jerseyName, jersey }
+  const kitFormFor = p => ({ id: p ? p.id : '', size: p ? p.shirtSize || '' : '', jerseyName: p ? p.jerseyName || '' : '', jersey: p ? p.jersey || '' : '' });
+  function openKitForm() {
+    kForm = kitFormFor(myPlayer());
+    sheet = { type: 'kit-form' };
+    render();
+  }
+
+  function sheetKitForm() {
+    if (!kForm) return '';
+    const me = findPlayer(kForm.id);
+    const typed = norm(session && session.name);
+    const words = typed.split(' ').filter(Boolean);
+    const near = state.players.filter(p => words.some(w => norm(p.name).split(/[\s()]+/).includes(w)) || (typed && norm(p.name).includes(typed)));
+    const opt = p => `<option value="${esc(p.id)}" ${me && me.id === p.id ? 'selected' : ''}>${esc(p.name)}</option>`;
+    const rest = state.players.filter(p => !near.includes(p));
+    const chooser = `<select class="field select" data-input="pf-who" aria-label="Choose your name">
+      ${me ? '' : '<option value="">Choose your name…</option>'}
+      ${near.length ? `<optgroup label="Matching “${esc(session.name)}”">${near.map(opt).join('')}</optgroup>` : ''}
+      <optgroup label="${near.length ? 'Everyone in the squad' : 'The squad'}">${rest.map(opt).join('')}</optgroup></select>`;
+    const head = `<header class="sheet-head">
+        <div><span class="day-kind">Kit</span><h2>Shirt size and jersey</h2>
+          <p class="muted">Pick your size from the chart, then add the name and number for your jersey.</p></div>
+        <button class="icon-btn" data-action="close-sheet" aria-label="Close">${X_ICON}</button>
+      </header>`;
+    if (!me) {
+      return `${head}<div class="sheet-body pf"><div class="pf-who"><strong>Which player are you?</strong>
+        <p class="muted">${typed ? `We couldn’t tell which squad player “${esc(session.name)}” is. ` : ''}Pick your name from the squad first.</p>${chooser}</div></div>`;
+    }
+    return `${head}
+      <div class="sheet-body pf">
+        <div class="pf-who inline"><span>Ordering for <strong>${esc(me.name)}</strong></span>
+          <label class="pf-notyou">Not you? Choose from the squad ${chooser}</label></div>
+        <h3 class="sub first">Size chart <span class="muted">Chest × Length</span></h3>
+        <div class="size-grid" role="radiogroup" aria-label="Shirt size">${SIZE_CHART.map(([sz, c, l]) => `<button type="button" class="size-opt ${kForm.size === sz ? 'on' : ''}" role="radio" aria-checked="${kForm.size === sz}" data-action="kit-size" data-size="${sz}">
+            <strong>${sz}</strong><small>${c} × ${l}</small></button>`).join('')}</div>
+        <div class="form-grid">
+          <label><span>Name on your jersey</span><input class="field" type="text" maxlength="24" value="${esc(kForm.jerseyName)}" placeholder="e.g. BABAR" data-input="kit-jerseyName" data-focus="kit-jname" autocomplete="off"></label>
+          <label><span>Jersey number</span><input class="field" type="text" inputmode="numeric" maxlength="3" value="${esc(kForm.jersey)}" placeholder="e.g. 56" data-input="kit-jersey" data-focus="kit-jnum" autocomplete="off"></label>
+        </div>
+        <button class="btn btn-gold btn-block" data-action="kit-form-save" ${kForm.size ? '' : 'disabled'}>${icon('<path d="M20 6 9 17l-5-5"/>', 18)} ${kForm.size ? 'Save' : 'Pick a size first'}</button>
+      </div>`;
+  }
+
   // ---------- profile form (opened from the "Update your profile" announcement) ----------
   let pForm = null;   // the draft: { id, name, jerseyName, jersey, bat, arm, style }; id '' until they say who they are
   const formFor = p => ({ id: p ? p.id : '', name: p ? p.name : '', jerseyName: p ? p.jerseyName || '' : '', jersey: p ? p.jersey || '' : '',
@@ -3153,7 +3240,7 @@
     const p = findPlayer(id);
     if (!p) return;
     writeStore(ME_KEY, p.id);
-    pForm = formFor(p);
+    if (sheet && sheet.type === 'kit-form') kForm = kitFormFor(p); else pForm = formFor(p);
     refetchForViewer();
     refreshPush();
     loadEngage();
@@ -3405,7 +3492,7 @@
     live.players.forEach(lp => {
       const p = findPlayer(lp.id);
       if (!p) return;
-      ['name', 'battingHand', 'bowlingArm', 'bowlingStyle', 'photoAt', 'jersey', 'jerseyName', 'profileAt'].forEach(k => { if (p[k] !== lp[k]) { p[k] = lp[k]; changed = true; } });
+      ['name', 'battingHand', 'bowlingArm', 'bowlingStyle', 'photoAt', 'jersey', 'jerseyName', 'profileAt', 'shirtSize', 'kitAt'].forEach(k => { if (p[k] !== lp[k]) { p[k] = lp[k]; changed = true; } });
     });
     if (changed) render();
   }
@@ -3734,7 +3821,8 @@ ${tabRows.map(r => {
             ${pick('me-arm', 'Bowling arm', 'bowlingArm', [['', 'Not set'], ['right', 'Right-arm'], ['left', 'Left-arm']])}
             ${pick('me-style', 'Bowling type', 'bowlingStyle', BOWL_STYLES.map(s => [s, s || 'Not set']))}
           </div>
-          <button class="btn btn-ghost" data-action="open-profile-form">Jersey name and number, and send to admin</button>`
+          <div class="settings-actions"><button class="btn btn-ghost" data-action="open-profile-form">Jersey name and number, and send to admin</button>
+            <button class="btn btn-ghost" data-action="open-kit-form">Shirt size</button></div>`
           : ''}
       </section>` : '';
 
@@ -3824,6 +3912,7 @@ ${tabRows.map(r => {
     if (sheet.type === 'feed') body = sheetFeed();
     if (sheet.type === 'photo') body = sheetPhoto();
     if (sheet.type === 'profile-form') body = sheetProfileForm();
+    if (sheet.type === 'kit-form') body = sheetKitForm();
     if (sheet.type === 'predictions') body = sheetPredictions();
     if (sheet.type === 'hpl-team') body = sheetHplTeam();
     if (sheet.type === 'hpl-match') body = sheetHplMatch();
@@ -4485,6 +4574,33 @@ ${tabRows.map(r => {
       } catch (e) { toast(e.message || 'Could not save the notes.'); }
     },
     'open-profile-form'() { openProfileForm(); },
+    'open-kit-form'() { openKitForm(); },
+    'kit-size'(el) { if (kForm) { kForm.size = el.dataset.size; render(); } },
+    async 'kit-form-save'() {
+      const me = kForm && findPlayer(kForm.id);
+      if (!me || !kForm.size) return;
+      try {
+        await api('PUT', `/api/players/${encodeURIComponent(me.id)}/profile`, { shirtSize: kForm.size, jersey: kForm.jersey, jerseyName: kForm.jerseyName, kit: true });
+        Object.assign(me, { shirtSize: kForm.size, jersey: kForm.jersey.replace(/\D/g, '').slice(0, 3), jerseyName: kForm.jerseyName.trim().slice(0, 24), kitAt: new Date().toISOString() });
+        kForm = null;
+        sheet = null;
+        render();
+        toast('Thanks! Your size and jersey details are saved and the admin has been told.');
+      } catch (e) { toast(e.message || 'Could not save that.'); }
+    },
+    'kit-ask'() {
+      const x = ANN_TEMPLATES.find(y => y.id === 'kit');
+      annDraft = { title: x.title, body: x.make(), matchId: '', later: false, at: '', action: 'kit' };
+      tab = 'announce';
+      render();
+      toast('Review the message, then press Send.');
+    },
+    async 'kit-copy'() {
+      const list = state.players.filter(C.inTournament);
+      const lines = list.map((p, i) => `${i + 1}. ${p.name} — ${p.shirtSize || 'no size'}${p.jerseyName || p.jersey ? ` — ${p.jerseyName || ''}${p.jersey ? ` #${p.jersey}` : ''}`.replace('—  #', '— #') : ''}`);
+      const counts = SIZE_CHART.map(([sz]) => [sz, list.filter(p => p.shirtSize === sz).length]).filter(x => x[1]);
+      copyText(`Red Falcons shirt sizes\n${lines.join('\n')}\n\nTotals: ${counts.map(([sz, n]) => `${sz} × ${n}`).join(', ') || '—'}`);
+    },
     'ask-profile'() {
       const x = ANN_TEMPLATES.find(y => y.id === 'profile');
       annDraft = { title: x.title, body: x.make(), matchId: '', later: false, at: '', action: 'profile' };
@@ -5330,6 +5446,7 @@ ${tabRows.map(r => {
     'p-bat'(el) { const p = findPlayer(el.dataset.id); if (p) p.battingHand = el.value; },
     'p-bowl-arm'(el) { const p = findPlayer(el.dataset.id); if (p) p.bowlingArm = el.value; },
     'p-bowl-style'(el) { const p = findPlayer(el.dataset.id); if (p) p.bowlingStyle = el.value; },
+    'shirt-size-set'(el) { const p = findPlayer(el.dataset.id); if (p) p.shirtSize = el.value; },
     'p-jersey-name'(el) { const p = findPlayer(el.dataset.id); if (p) p.jerseyName = el.value.slice(0, 24); },
     'p-jersey'(el) { el.value = el.value.replace(/\D/g, '').slice(0, 3); const p = findPlayer(el.dataset.id); if (p) p.jersey = el.value; },
     'training-desc'(el) { const t = state.trainings.find(x => x.id === el.dataset.id); if (t) t.desc = el.value; },
@@ -5400,6 +5517,12 @@ ${tabRows.map(r => {
         else if (k === 'ann-body') { annDraft.body = el.value; const c = $('#ann-count'); if (c) c.textContent = `${el.value.length}/300`; }
         else if (k === 'ann-at') annDraft.at = el.value;
         else if (k === 'ann-match') { annDraft.matchId = el.value; render(); }
+        return;
+      }
+      if (el.dataset && /^kit-/.test(el.dataset.input || '')) {
+        const k = el.dataset.input.slice(4);
+        if (k === 'jersey') el.value = el.value.replace(/\D/g, '').slice(0, 3);
+        if (kForm) kForm[k] = el.value;
         return;
       }
       if (el.dataset && /^pf-/.test(el.dataset.input || '')) {

@@ -65,6 +65,9 @@
 
     'Fixtures': 'میچوں کا شیڈول', 'Our fixtures': 'ہمارے میچ', 'Full scorecard': 'مکمل اسکور کارڈ', 'Match details': 'میچ کی تفصیل', 'Live & upcoming': 'جاری اور آنے والے', 'Results': 'نتائج', 'Table': 'ٹیبل', 'Leaders': 'نمایاں کھلاڑی',
 
+    'Kit sizes': 'کٹ کے سائز', 'Shirt size': 'شرٹ کا سائز', 'Shirt sizes': 'شرٹ کے سائز', 'Choose your shirt size': 'اپنی شرٹ کا سائز چنیں', 'Choose my shirt size': 'میری شرٹ کا سائز چنیں', 'Choose now': 'ابھی چنیں',
+    'Shirt size and jersey': 'شرٹ کا سائز اور جرسی', 'Size chart': 'سائز چارٹ', 'Ask players for their sizes': 'کھلاڑیوں سے سائز پوچھیں', 'Copy the list': 'فہرست کاپی کریں', 'Chest × Length': 'سینہ × لمبائی',
+
     // weather
     'Clear sky': 'صاف آسمان', 'Mostly clear': 'زیادہ تر صاف', 'Partly cloudy': 'جزوی ابر آلود', 'Overcast': 'ابر آلود', 'Foggy': 'دھند',
     'Drizzle': 'ہلکی بوندا باندی', 'Rain': 'بارش', 'Snow': 'برف باری', 'Rain showers': 'بارش کی بوچھاڑ', 'Thunderstorm': 'آندھی طوفان',

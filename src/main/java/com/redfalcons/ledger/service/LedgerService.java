@@ -127,7 +127,9 @@ public class LedgerService {
                     hide ? List.of() : p.payments(), null, p.battingHand(), p.bowlingArm(), p.bowlingStyle(),
                     p.keeper(), p.captain(), p.viceCaptain(), p.jersey(), p.photoAt(), p.jerseyName(),
                     // Who has updated their profile is for the admin; players only learn about their own.
-                    p.id().equals(viewerId) ? p.profileAt() : "");
+                    p.id().equals(viewerId) ? p.profileAt() : "",
+                    // Shirt sizes and whether someone has answered are for the admin; players see only their own.
+                    p.id().equals(viewerId) ? p.shirtSize() : "", p.id().equals(viewerId) ? p.kitAt() : "");
         }).toList();
         return new LedgerDto(full.app(), full.version(), full.savedAt(), ps, full.amounts(), full.trainings(), full.expenses(),
                 full.tournament(), st, full.twelfth(), full.battingOrder(), full.matches(),
@@ -152,7 +154,8 @@ public class LedgerService {
                     return new PlayerDto(p.getId(), p.getName(), p.getRole(), sum(paid.stream().map(PaymentDto::amount)),
                             p.isInTournament(), att, paid, p.getPhone(), p.getBattingHand(), p.getBowlingArm(),
                             p.getBowlingStyle(), p.isKeeper(), p.isCaptain(), p.isViceCaptain(), p.getJersey(),
-                            photoAt.getOrDefault(p.getId(), ""), p.getJerseyName(), p.getProfileSavedAt());
+                            photoAt.getOrDefault(p.getId(), ""), p.getJerseyName(), p.getProfileSavedAt(),
+                            p.getShirtSize(), p.getKitSavedAt());
                 })
                 .toList();
 
@@ -202,7 +205,7 @@ public class LedgerService {
     /** A player's own cricket details (batting hand, bowling arm and style); the rest of the profile is untouched. */
     @Transactional
     public boolean updateProfile(String playerId, String battingHand, String bowlingArm, String bowlingStyle,
-                                 String jerseyNumber, String jerseyName, String fullName, boolean submit) {
+                                 String jerseyNumber, String jerseyName, String fullName, String shirtSize, boolean submit, boolean kit) {
         Player p = players.findById(playerId).orElse(null);
         if (p == null) return false;
         // A field left out keeps what is stored.
@@ -217,6 +220,17 @@ public class LedgerService {
         p.setProfile(nz(battingHand), nz(bowlingArm), nz(bowlingStyle), p.isKeeper(), p.isCaptain(), p.isViceCaptain(),
                 jerseyNumber != null ? jersey(jerseyNumber) : p.getJersey());
         if (jerseyName != null) p.setJerseyName(clip(jerseyName, 24).trim());
+        if (shirtSize != null) {
+            String sz = shirtSize.trim().toUpperCase();
+            if (!SHIRT_SIZES.contains(sz)) throw new IllegalArgumentException("Pick a size from the chart.");
+            p.setShirtSize(sz);
+        }
+        if (kit) {
+            p.setKitSavedAt(Instant.now().toString());
+            String jn = p.getJerseyName(), no = p.getJersey();
+            notifications.adminNotice("Kit details", p.getName() + " chose " + (p.getShirtSize().isEmpty() ? "no size yet" : "size " + p.getShirtSize())
+                    + (jn.isEmpty() && no.isEmpty() ? "." : ", jersey " + jn + (no.isEmpty() ? "" : " #" + no) + "."));
+        }
         String oldName = p.getName();
         if (fullName != null) {
             String n = fullName.trim().replaceAll("\\s+", " ");
@@ -357,6 +371,8 @@ public class LedgerService {
                     p.isViceCaptain(), p.getJersey());
             copy.setJerseyName(p.getJerseyName());
             copy.setProfileSavedAt(p.getProfileSavedAt());
+            copy.setShirtSize(p.getShirtSize());
+            copy.setKitSavedAt(p.getKitSavedAt());
             storedProfiles.put(p.getId(), copy);
         });
 
@@ -394,6 +410,9 @@ public class LedgerService {
             }
             row.setJerseyName(p.jerseyName() != null ? clip(p.jerseyName(), 24) : kept != null ? kept.getJerseyName() : "");
             row.setProfileSavedAt(kept != null ? kept.getProfileSavedAt() : "");
+            row.setShirtSize(p.shirtSize() != null ? (SHIRT_SIZES.contains(p.shirtSize().trim().toUpperCase()) ? p.shirtSize().trim().toUpperCase() : "")
+                    : kept != null ? kept.getShirtSize() : "");
+            row.setKitSavedAt(kept != null ? kept.getKitSavedAt() : "");
             newPlayers.add(row);
         }
 
@@ -598,6 +617,9 @@ public class LedgerService {
         }
         return n[0] + n[1] + n[2] + n[3] == 0 ? "" : n[0] + "," + n[1] + "," + n[2] + "," + n[3];
     }
+
+    /** The shirt size chart: XS 18×26 … 3XL 24×32 (chest × length). */
+    public static final Set<String> SHIRT_SIZES = Set.of("", "XS", "S", "M", "L", "XL", "2XL", "3XL");
 
     private static final Set<String> DISMISSALS = Set.of("bowled", "caught", "lbw", "runout", "stumped", "hitwicket", "retired", "other");
 

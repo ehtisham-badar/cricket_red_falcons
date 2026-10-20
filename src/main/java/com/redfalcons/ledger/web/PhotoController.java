@@ -72,7 +72,7 @@ public class PhotoController {
         return ResponseEntity.ok(Map.of("photoAt", ""));
     }
 
-    public record ProfileBody(String battingHand, String bowlingArm, String bowlingStyle, String jersey, String jerseyName, String name, Boolean submit) {
+    public record ProfileBody(String battingHand, String bowlingArm, String bowlingStyle, String jersey, String jerseyName, String name, String shirtSize, Boolean submit, Boolean kit) {
     }
 
     /** A player's own batting hand, bowling arm and style. The admin may set them for anyone. */
@@ -84,8 +84,9 @@ public class PhotoController {
         if (!allowed(id, token, viewer)) return forbidden();
         try {
             ledger.updateProfile(id, body == null ? null : body.battingHand(), body == null ? null : body.bowlingArm(),
-                    body == null ? null : body.bowlingStyle(), body == null ? null : body.jersey(), body == null ? null : body.jerseyName(), body == null ? null : body.name(),
-                    body != null && Boolean.TRUE.equals(body.submit()) && !auth.isValidToken(token));
+                    body == null ? null : body.bowlingStyle(), body == null ? null : body.jersey(), body == null ? null : body.jerseyName(), body == null ? null : body.name(), body == null ? null : body.shirtSize(),
+                    body != null && Boolean.TRUE.equals(body.submit()) && !auth.isValidToken(token),
+                    body != null && Boolean.TRUE.equals(body.kit()) && !auth.isValidToken(token));
         } catch (IllegalArgumentException e) {
             return bad(e.getMessage());
         }
