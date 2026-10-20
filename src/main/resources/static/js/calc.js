@@ -24,7 +24,7 @@
       const n = isTest ? ++test : ++real;
       return {
         id: m.id, label: (isTest ? 'Test ' : 'Match ') + n, short: (isTest ? 'TM' : 'M') + n, type: 'match', test: isTest,
-        date: m.date || '', time: m.time || '', opponent: m.opponent || '', venue: m.venue || '', finished: !isTest && m.finished === true, announced: m.announced === true, twelfthPlayed: m.twelfthPlayed === true, result: m.result || ''
+        date: m.date || '', time: m.time || '', opponent: m.opponent || '', venue: m.venue || '', finished: !isTest && m.finished === true, announced: m.announced === true, extras: m.extras || '', twelfthPlayed: m.twelfthPlayed === true, result: m.result || ''
       };
     });
   }
@@ -254,6 +254,13 @@
     const e = (state.stats && state.stats[matchId] && state.stats[matchId][playerId]) || {};
     const out = { out: !!e.out };
     STAT_KEYS.forEach(k => { out[k] = Math.max(0, parseInt(e[k], 10) || 0); });
+    // How a batter got out: the kind, the bowler and fielder (free text), and the team score and over at that wicket.
+    out.dismissal = typeof e.dismissal === 'string' ? e.dismissal : '';
+    out.bowler = typeof e.bowler === 'string' ? e.bowler : '';
+    out.fielder = typeof e.fielder === 'string' ? e.fielder : '';
+    const fow = parseInt(e.fowScore, 10);
+    out.fowScore = Number.isFinite(fow) && fow >= 0 ? fow : null;
+    out.fowOver = typeof e.fowOver === 'string' ? e.fowOver : '';
     return out;
   }
 

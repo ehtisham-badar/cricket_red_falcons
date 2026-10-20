@@ -314,23 +314,27 @@ public class LedgerService {
         Map<String, String> storedTime = new HashMap<>();
         Map<String, Boolean> storedAnnounced = new HashMap<>();
         Map<String, String> storedResult = new HashMap<>();
+        Map<String, String> storedExtras = new HashMap<>();
         matches.findAll().forEach(m -> {
             storedTest.put(m.getId(), m.isTest());
             storedAnnounced.put(m.getId(), m.isAnnounced());
             storedTime.put(m.getId(), m.getTime());
             storedResult.put(m.getId(), m.getResult());
+            storedExtras.put(m.getId(), m.getOurExtras());
         });
         List<MatchDay> newMatches = new ArrayList<>();
         Set<String> matchIds = new LinkedHashSet<>();
         for (MatchDto m : matchIn) {
             if (m == null || blank(m.id()) || trainingIds.contains(m.id()) || !matchIds.add(m.id())) continue;
-            newMatches.add(new MatchDay(m.id(), newMatches.size(), isoDate(m.date()), clip(m.opponent(), 80), clip(m.venue(), 80),
+            MatchDay day = new MatchDay(m.id(), newMatches.size(), isoDate(m.date()), clip(m.opponent(), 80), clip(m.venue(), 80),
                     // A test match never charges anyone, so it can't be finished.
                     Boolean.TRUE.equals(m.finished()) && !(m.test() != null ? m.test() : storedTest.getOrDefault(m.id(), false)),
                     m.test() != null ? m.test() : storedTest.getOrDefault(m.id(), false),
                     m.time() != null ? clockTime(m.time()) : storedTime.getOrDefault(m.id(), ""),
                     m.announced() != null ? m.announced() : storedAnnounced.getOrDefault(m.id(), false),
-                    m.result() != null ? cleanResult(m.result()) : storedResult.getOrDefault(m.id(), "")));
+                    m.result() != null ? cleanResult(m.result()) : storedResult.getOrDefault(m.id(), ""));
+            day.setOurExtras(m.extras() != null ? cleanExtras(m.extras()) : storedExtras.getOrDefault(m.id(), ""));
+            newMatches.add(day);
         }
 
         Set<String> validDays = new HashSet<>(trainingIds);
@@ -469,6 +473,14 @@ public class LedgerService {
                 boolean out = Boolean.TRUE.equals(st.out());
                 if (out || Arrays.stream(n).anyMatch(v -> v > 0)) {
                     MatchStat row = new MatchStat(match, playerId, n, out);
+                    // How a batter got out only means something for a dismissed batter.
+                    String how = st.dismissal() == null ? "" : st.dismissal().trim().toLowerCase();
+                    Integer fow = st.fowScore() == null ? null : count(st.fowScore());
+                    if (out && DISMISSALS.contains(how)) {
+                        row.setHow(how, clip(st.bowler(), 40).trim(), clip(st.fielder(), 40).trim(), fow, clip(st.fowOver(), 8).trim());
+                    } else if (out) {
+                        row.setHow("", "", "", fow, clip(st.fowOver(), 8).trim());
+                    }
                     newStats.put(row.getId(), row);
                 }
             });
@@ -562,7 +574,8 @@ public class LedgerService {
         stats.findAll().forEach(x -> {
             int[] n = x.numbers();
             out.computeIfAbsent(x.getMatchId(), k -> new LinkedHashMap<>()).put(x.getPlayerId(),
-                    new StatDto(n[0], n[1], n[2], n[3], n[4], n[5], x.isOut(), n[6], n[7], n[8], n[9], n[10], n[11], n[12], n[13], n[14]));
+                    new StatDto(n[0], n[1], n[2], n[3], n[4], n[5], x.isOut(), n[6], n[7], n[8], n[9], n[10], n[11], n[12], n[13], n[14],
+                            x.getDismissal(), x.getDismissedBy(), x.getFielder(), x.getFowScore(), x.getFowOver()));
         });
         return out;
     }
@@ -570,6 +583,23 @@ public class LedgerService {
     private static int count(Integer v) {
         return v == null ? 0 : Math.max(0, Math.min(STAT_MAX, v));
     }
+
+    /** Four counts (byes, leg byes, wides, no-balls) as "b,lb,w,nb", or "" when none or malformed. */
+    private static String cleanExtras(String v) {
+        String[] parts = (v == null ? "" : v).split(",", -1);
+        if (parts.length != 4) return "";
+        int[] n = new int[4];
+        for (int i = 0; i < 4; i++) {
+            try {
+                n[i] = Math.max(0, Math.min(STAT_MAX, Integer.parseInt(parts[i].trim())));
+            } catch (NumberFormatException e) {
+                return "";
+            }
+        }
+        return n[0] + n[1] + n[2] + n[3] == 0 ? "" : n[0] + "," + n[1] + "," + n[2] + "," + n[3];
+    }
+
+    private static final Set<String> DISMISSALS = Set.of("bowled", "caught", "lbw", "runout", "stumped", "hitwicket", "retired", "other");
 
     private static String cleanResult(String r) {
         String v = r == null ? "" : r.trim().toLowerCase();
@@ -579,7 +609,7 @@ public class LedgerService {
     private List<MatchDto> storedMatches() {
         return matches.findAll(BY_POSITION).stream()
                 .map(m -> new MatchDto(m.getId(), m.getDate(), m.getOpponent(), m.getVenue(), m.isFinished(), m.isTest(), m.getTime(),
-                        m.isAnnounced(), m.getResult(), null)).toList();
+                        m.isAnnounced(), m.getResult(), null, m.getOurExtras())).toList();
     }
 
     /**
@@ -597,7 +627,7 @@ public class LedgerService {
                 int[] n = st.numbers();
                 played = st.isOut() || n[0] > 0 || n[1] + n[2] + n[3] + n[4] + n[5] > 0 || n[6] > 0 || n[13] + n[14] > 0;
             }
-            return new MatchDto(m.id(), m.date(), m.opponent(), m.venue(), m.finished(), m.test(), m.time(), m.announced(), m.result(), played);
+            return new MatchDto(m.id(), m.date(), m.opponent(), m.venue(), m.finished(), m.test(), m.time(), m.announced(), m.result(), played, m.extras());
         }).toList();
     }
 

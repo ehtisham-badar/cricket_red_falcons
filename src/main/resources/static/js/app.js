@@ -449,7 +449,7 @@
     // (m1–m5); keep those that hold any attendance, expenses or 12th man.
     let matches;
     if (Array.isArray(d.matches)) {
-      matches = d.matches.filter(m => m && m.id).map(m => ({ id: m.id, date: m.date || '', opponent: m.opponent || '', venue: m.venue || '', time: /^([01]\d|2[0-3]):[0-5]\d$/.test(m.time || '') ? m.time : '', test: m.test === true, finished: m.test !== true && m.finished === true, announced: m.announced === true, twelfthPlayed: m.twelfthPlayed === true, result: ['win', 'loss', 'tie'].includes(m.result) ? m.result : '' }));
+      matches = d.matches.filter(m => m && m.id).map(m => ({ id: m.id, date: m.date || '', opponent: m.opponent || '', venue: m.venue || '', time: /^([01]\d|2[0-3]):[0-5]\d$/.test(m.time || '') ? m.time : '', test: m.test === true, finished: m.test !== true && m.finished === true, announced: m.announced === true, twelfthPlayed: m.twelfthPlayed === true, result: ['win', 'loss', 'tie'].includes(m.result) ? m.result : '', extras: /^\d+,\d+,\d+,\d+$/.test(m.extras || '') ? m.extras : '' }));
     } else {
       const used = id => players.some(p => p.att[id]) || (expenses[id] || []).length || (d.twelfth || {})[id];
       // These were charged as soon as they were marked, so they count as finished.
@@ -2113,6 +2113,30 @@
       </div>`;
   }
 
+  // How each of our batters got out, in the usual scorecard words.
+  const HOW_OUT = [['', 'How out…'], ['bowled', 'Bowled'], ['caught', 'Caught'], ['lbw', 'LBW'], ['runout', 'Run out'], ['stumped', 'Stumped'],
+    ['hitwicket', 'Hit wicket'], ['retired', 'Retired'], ['other', 'Other']];
+  function dismissalText(e) {
+    if (!e.out) return 'not out';
+    const b = (e.bowler || '').trim(), f = (e.fielder || '').trim();
+    switch (e.dismissal) {
+      case 'bowled': return b ? `b ${b}` : 'bowled';
+      case 'caught': return f && b && f.toLowerCase() === b.toLowerCase() ? `c & b ${b}` : `c ${f || 'sub'}${b ? ` b ${b}` : ''}`;
+      case 'lbw': return b ? `lbw b ${b}` : 'lbw';
+      case 'runout': return f ? `run out (${f})` : 'run out';
+      case 'stumped': return `st ${f || 'keeper'}${b ? ` b ${b}` : ''}`;
+      case 'hitwicket': return b ? `hit wicket b ${b}` : 'hit wicket';
+      case 'retired': return 'retired';
+      default: return 'out';
+    }
+  }
+  // Extras the opposition gave in our innings: byes, leg byes, wides, no-balls.
+  const extrasOfMatch = m => {
+    const n = String((m && m.extras) || '').split(',').map(x => parseInt(x, 10) || 0);
+    const [b, lb, w, nb] = [n[0] || 0, n[1] || 0, n[2] || 0, n[3] || 0];
+    return { b, lb, w, nb, total: b + lb + w + nb, any: !!(m && m.extras) };
+  };
+
   // The Red Falcons' own batting, bowling and fielding tables for a match, from the stats we record.
   function ourInnings(m, src) {
     const name = p => `${esc(p.name)}${isCaptain(p) ? ' (c)' : ''}${isKeeper(p) ? ' †' : ''}`;
@@ -2126,26 +2150,31 @@
     const outs = batters.filter(r => r.e.out).length;
     const bowlers = rows.filter(r => C.bowled(r.e));
     const catchers = rows.filter(r => r.e.catches > 0);
-    const batRows = batters.map(r => `<tr><td class="sc-name"><strong>${name(r.p)}</strong><small>${r.e.out ? 'out' : 'not out'}</small></td>
+    const matchRow = C.matches(state).find(x => x.id === src.id);
+    const ex = extrasOfMatch(matchRow);
+    const fall = batters.filter(r => r.e.out && r.e.fowScore != null).sort((a, b) => a.e.fowScore - b.e.fowScore)
+      .map((r, i) => `${i + 1}-${r.e.fowScore} (${esc(r.p.name)}${r.e.fowOver ? `, ${esc(r.e.fowOver)} ov` : ''})`);
+    const batRows = batters.map(r => `<tr><td class="sc-name"><strong>${name(r.p)}</strong><small>${esc(dismissalText(r.e))}</small></td>
       <td class="sc-main">${C.runsOf(r.e)}</td><td>${r.e.balls}</td><td>${r.e.fours}</td><td>${r.e.sixes}</td><td>${SR(C.runsOf(r.e), r.e.balls)}</td></tr>`).join('');
     const bowlRows = bowlers.map(r => `<tr><td class="sc-name"><strong>${name(r.p)}</strong></td>
       <td>${C.oversOf(r.e.bowlBalls)}</td><td>${C.concededOf(r.e)}</td><td class="sc-main">${r.e.wickets}</td><td>${ECON(C.concededOf(r.e), r.e.bowlBalls)}</td><td>${r.e.wides}</td><td>${r.e.noBalls}</td></tr>`).join('');
     return `
-        <div class="sc-title"><h3>Red Falcons innings</h3><strong>${runs}/${outs} <small>(${C.oversOf(balls)} ov)</small></strong></div>
+        <div class="sc-title"><h3>Red Falcons innings</h3><strong>${runs + ex.total}/${outs} <small>(${C.oversOf(balls)} ov)</small></strong></div>
         <div class="table-wrap"><table class="sc-table">
           <thead><tr><th class="sc-name">Batter</th><th>R</th><th>B</th><th>4s</th><th>6s</th><th>SR</th></tr></thead>
           <tbody>${batRows || '<tr><td colspan="6" class="muted">Nobody batted.</td></tr>'}
-            <tr class="sc-extras"><td class="sc-name">Extras</td><td colspan="5">not recorded</td></tr>
-            <tr class="sc-total"><td class="sc-name">Total</td><td class="sc-main">${runs}</td><td colspan="4">${outs} wkts · ${C.oversOf(balls)} overs</td></tr></tbody>
+            <tr class="sc-extras"><td class="sc-name">Extras</td><td class="sc-main">${ex.any ? ex.total : '—'}</td><td colspan="4">${ex.any ? `(b ${ex.b}, lb ${ex.lb}, w ${ex.w}, nb ${ex.nb})` : 'not recorded'}</td></tr>
+            <tr class="sc-total"><td class="sc-name">Total</td><td class="sc-main">${runs + ex.total}</td><td colspan="4">${outs} wkts · ${C.oversOf(balls)} overs</td></tr></tbody>
         </table></div>
         ${dnb.length ? `<p class="sc-dnb"><strong>Did not bat:</strong> ${dnb.map(name).join(', ')}</p>` : ''}
+        ${fall.length ? `<p class="sc-dnb"><strong>Fall of wickets:</strong> ${fall.join(', ')}</p>` : ''}
         <div class="sc-title"><h3>Red Falcons bowling</h3></div>
         <div class="table-wrap"><table class="sc-table">
           <thead><tr><th class="sc-name">Bowler</th><th>O</th><th>R</th><th>W</th><th>Econ</th><th>Wd</th><th>NB</th></tr></thead>
           <tbody>${bowlRows || '<tr><td colspan="7" class="muted">No bowling recorded.</td></tr>'}</tbody>
         </table></div>
         ${catchers.length ? `<p class="sc-dnb"><strong>Catches:</strong> ${catchers.map(r => `${name(r.p)} (${r.e.catches})`).join(', ')}</p>` : ''}
-        <p class="muted sc-note">Totals are the batters’ runs. The opposition’s innings, extras and fall of wickets aren’t recorded.</p>
+        <p class="muted sc-note">${ex.any ? 'Total is the batters’ runs plus extras.' : 'Total is the batters’ runs; extras haven’t been entered.'} The opposition’s batting isn’t recorded here.</p>
     `;
   }
 
@@ -2661,6 +2690,20 @@
     </div>`;
   }
 
+  // Out: how, who bowled, who caught, and where the team score stood — for the traditional scorecard.
+  function howOutEditor(m, pid, e) {
+    const key = k => `data-input="stat-how" data-m="${esc(m)}" data-p="${esc(pid)}" data-k="${k}" data-focus="how-${esc(m)}-${esc(pid)}-${k}"`;
+    const needsBowler = ['bowled', 'caught', 'lbw', 'stumped', 'hitwicket'].includes(e.dismissal);
+    const needsFielder = ['caught', 'runout', 'stumped'].includes(e.dismissal);
+    return `<div class="st-how">
+      <select class="field select" ${key('dismissal')} aria-label="How out">${HOW_OUT.map(([v, l]) => `<option value="${v}" ${e.dismissal === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      ${needsBowler ? `<input class="field" type="text" maxlength="40" placeholder="Bowler" value="${esc(e.bowler)}" ${key('bowler')} aria-label="Bowler" autocomplete="off">` : ''}
+      ${needsFielder ? `<input class="field" type="text" maxlength="40" placeholder="${e.dismissal === 'stumped' ? 'Keeper' : 'Fielder'}" value="${esc(e.fielder)}" ${key('fielder')} aria-label="Fielder" autocomplete="off">` : ''}
+      <span class="st-fow"><input class="field" type="text" inputmode="numeric" maxlength="3" placeholder="Score" value="${e.fowScore == null ? '' : e.fowScore}" ${key('fowScore')} aria-label="Team score when out">
+        <input class="field" type="text" maxlength="8" placeholder="Over" value="${esc(e.fowOver)}" ${key('fowOver')} aria-label="Over when out"></span>
+    </div>`;
+  }
+
   function statCard(d, p, pos, twelfthMan) {
     const e = C.statOf(state, d.id, p.id);
     const runs = C.runsOf(e);
@@ -2682,6 +2725,7 @@
           <button class="tog st-out ${e.out ? 'on' : ''} ${isAdmin() ? '' : 'ro'}" data-action="stat-out" data-m="${esc(d.id)}" data-p="${esc(p.id)}" aria-pressed="${e.out}" ${isAdmin() ? '' : 'disabled'}>${e.out ? 'Out' : 'Not out'}</button></div>
         <div class="st-steps">${st('balls', 'Balls')}${st('ones', '1s')}${st('twos', '2s')}${st('threes', '3s')}${st('fours', '4s')}${st('sixes', '6s')}</div>
         ${tooFew ? '<p class="st-warn">More scoring shots than balls faced.</p>' : ''}
+        ${e.out && isAdmin() ? howOutEditor(d.id, p.id, e) : ''}
       </div>
       <div class="st-group bowl">
         <div class="st-title"><span>Bowling</span><strong>${C.oversOf(e.bowlBalls)} ov · ${e.wickets}/${C.concededOf(e)} · Econ ${ECON(C.concededOf(e), e.bowlBalls)}</strong></div>
@@ -2707,6 +2751,16 @@
     writeStore(STATS_FOLD_KEY, f);
   }
 
+  // Extras the opposition gave in our innings, for the scorecard total.
+  function extrasEditor(d) {
+    const ex = extrasOfMatch(state.matches.find(x => x.id === d.id));
+    const ctl = (k, label, n) => `<span class="ex-ctl"><span>${label}</span>
+      <button type="button" data-action="extras-step" data-m="${esc(d.id)}" data-k="${k}" data-d="-1" aria-label="${label} minus one" ${n > 0 ? '' : 'disabled'}>−</button><b>${n}</b>
+      <button type="button" data-action="extras-step" data-m="${esc(d.id)}" data-k="${k}" data-d="1" aria-label="${label} plus one">+</button></span>`;
+    return `<div class="st-extras"><strong>Extras in our innings <small class="muted">(given by the opposition) · total ${ex.total}</small></strong>
+      <div>${ctl('b', 'Byes', ex.b)}${ctl('lb', 'Leg byes', ex.lb)}${ctl('w', 'Wides', ex.w)}${ctl('nb', 'No-balls', ex.nb)}</div></div>`;
+  }
+
   function matchStatsView(d) {
     const xi = battingOrderOf(d.id);
     const twelfth = findPlayer(state.twelfth[d.id]);
@@ -2727,6 +2781,7 @@
         <div><span>Bowling</span><strong>${sum('wickets')}/${conceded}</strong><small>${C.oversOf(sum('bowlBalls'))} of 20 ov · Econ ${ECON(conceded, sum('bowlBalls'))} · Extras ${sum('wides') + sum('noBalls')} (${sum('wides')} wd, ${sum('noBalls')} nb)</small></div>
         <div><span>Fielding</span><strong>${sum('catches')} ct</strong><small>${sum('drops')} dropped · ${sum('misfields')} misfields · ${sum('goodFielding')} good</small></div>
       </div>
+      ${isAdmin() ? extrasEditor(d) : ''}
       ${isAdmin() ? `<div class="st-tools"><p class="muted st-hint">Tapping + on a 1, 2, 3, 4 or 6 also adds a ball faced. A bowler’s balls are legal balls; wides and no-balls count as extras in runs conceded.</p>
         <button class="btn btn-ghost" data-action="random-stats" data-id="${esc(d.id)}">${DICE_ICON} Random stats</button></div>` : ''}
       <div class="st-list-tools">
@@ -5009,10 +5064,20 @@ ${tabRows.map(r => {
       if (['ones', 'twos', 'threes', 'fours', 'sixes'].includes(k)) e.balls = Math.max(0, e.balls + d);
       commit();
     },
+    'extras-step'(el) {
+      if (!isAdmin()) return;
+      const m = state.matches.find(x => x.id === el.dataset.m);
+      if (!m) return;
+      const ex = extrasOfMatch(m);
+      ex[el.dataset.k] = Math.max(0, Math.min(999, ex[el.dataset.k] + Number(el.dataset.d)));
+      m.extras = ex.b + ex.lb + ex.w + ex.nb ? `${ex.b},${ex.lb},${ex.w},${ex.nb}` : '';
+      commit();
+    },
     'stat-out'(el) {
       if (!isAdmin()) return;
       const e = statEntry(el.dataset.m, el.dataset.p);
       e.out = !e.out;
+      if (!e.out) Object.assign(e, { dismissal: '', bowler: '', fielder: '', fowScore: null, fowOver: '' });
       commit();
     },
     'set-theme'(el) {
@@ -5273,6 +5338,16 @@ ${tabRows.map(r => {
     'exp-paidby'(el) { const e = findExpense(el); if (e) e.paidBy = el.value; },
     'tournament-fee'(el) { el.value = cleanNumber(el.value); state.tournament.fee = el.value; },
     'tournament-name'(el) { state.tournament.name = el.value; },
+    'stat-how'(el) {
+      const e = statEntry(el.dataset.m, el.dataset.p);
+      const k = el.dataset.k;
+      if (k === 'fowScore') {
+        el.value = el.value.replace(/\D/g, '').slice(0, 3);
+        e.fowScore = el.value === '' ? null : parseInt(el.value, 10);
+      } else {
+        e[k] = el.value.slice(0, k === 'fowOver' ? 8 : 40);
+      }
+    },
     stat(el) {
       el.value = el.value.replace(/\D/g, '').slice(0, 3);
       statEntry(el.dataset.m, el.dataset.p)[el.dataset.k] = parseInt(el.value, 10) || 0;

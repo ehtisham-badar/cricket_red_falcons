@@ -64,7 +64,7 @@ public record LedgerDto(
     /** {@code announced}: the admin announced the Playing XI (null on save keeps the stored choice). {@code result}: win, loss, tie or "" (null keeps the stored one). */
     /** {@code twelfthPlayed} (read-only): the 12th man batted or bowled, so he shares the match's costs. */
     public record MatchDto(String id, String date, String opponent, String venue, Boolean finished, Boolean test, String time,
-                           Boolean announced, String result, Boolean twelfthPlayed) {
+                           Boolean announced, String result, Boolean twelfthPlayed, String extras) {
     }
 
     /**
@@ -74,7 +74,8 @@ public record LedgerDto(
     public record StatDto(Integer balls, Integer ones, Integer twos, Integer threes, Integer fours, Integer sixes, Boolean out,
                           Integer bowlBalls, Integer bowlRuns, Integer wickets,
                           Integer catches, Integer drops, Integer misfields, Integer goodFielding,
-                          Integer wides, Integer noBalls) {
+                          Integer wides, Integer noBalls,
+                          String dismissal, String bowler, String fielder, Integer fowScore, String fowOver) {
     }
 
     public record TrainingDto(String id, String desc) {

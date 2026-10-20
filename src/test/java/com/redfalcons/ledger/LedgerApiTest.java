@@ -67,7 +67,7 @@ class LedgerApiTest {
                 // Payment account details stay null until the admin sets them.
                 .contains("\"payBank\":null,\"payTitle\":null,\"payAccount\":null")
                 .contains("\"desc\":\"Nets\"")
-                .contains("\"matches\":[{\"id\":\"m1\",\"date\":\"2026-10-24\",\"opponent\":\"Lahore Lions\",\"venue\":\"\",\"finished\":true,\"test\":false,\"time\":\"\",\"announced\":false,\"result\":\"\",\"twelfthPlayed\":false},{\"id\":\"m2\",\"date\":\"\",\"opponent\":\"\",\"venue\":\"\",\"finished\":false,\"test\":false,\"time\":\"\",\"announced\":false,\"result\":\"\",\"twelfthPlayed\":false}]");
+                .contains("\"matches\":[{\"id\":\"m1\",\"date\":\"2026-10-24\",\"opponent\":\"Lahore Lions\",\"venue\":\"\",\"finished\":true,\"test\":false,\"time\":\"\",\"announced\":false,\"result\":\"\",\"twelfthPlayed\":false,\"extras\":\"\"},{\"id\":\"m2\",\"date\":\"\",\"opponent\":\"\",\"venue\":\"\",\"finished\":false,\"test\":false,\"time\":\"\",\"announced\":false,\"result\":\"\",\"twelfthPlayed\":false,\"extras\":\"\"}]");
 
         // A version 2 file (amounts only) is read as one fund-paid expense per day.
         assertThat(loaded).contains("\"t1\":[{\"id\":\"legacy-t1\",\"item\":\"Amount spent\",\"amount\":\"1500\",\"paidBy\":\"\"}]");
@@ -171,7 +171,7 @@ class LedgerApiTest {
                 """;
         assertThat(send("PUT", "/api/ledger", withStats, token).statusCode()).isEqualTo(200);
         String statsJson = "\"stats\":{\"m1\":{\"p1\":{\"balls\":18,\"ones\":5,\"twos\":0,\"threes\":0,\"fours\":3,\"sixes\":1,\"out\":true,"
-                + "\"bowlBalls\":10,\"bowlRuns\":14,\"wickets\":2,\"catches\":1,\"drops\":0,\"misfields\":0,\"goodFielding\":0,\"wides\":2,\"noBalls\":1}}}";
+                + "\"bowlBalls\":10,\"bowlRuns\":14,\"wickets\":2,\"catches\":1,\"drops\":0,\"misfields\":0,\"goodFielding\":0,\"wides\":2,\"noBalls\":1,\"dismissal\":\"\",\"bowler\":\"\",\"fielder\":\"\",\"fowScore\":null,\"fowOver\":\"\"}}}";
         assertThat(send("GET", "/api/ledger", null, token).body()).contains(statsJson).doesNotContain("ghost");
         assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"stats\":{}");
         assertThat(send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{\"m1\":true}}]}", token).statusCode()).isEqualTo(200);
@@ -218,7 +218,7 @@ class LedgerApiTest {
         assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"id\":\"mA\"").contains("\"announced\":true");
         assertThat(send("PUT", "/api/ledger", "{\"players\":[],\"matches\":[{\"id\":\"mA\"}]}", token).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"announced\":true");
-        assertThat(send("PUT", "/api/ledger", "{\"players\":[],\"matches\":[{\"id\":\"mA\",\"announced\":false,\"result\":\"\",\"twelfthPlayed\":false}]}", token).statusCode()).isEqualTo(200);
+        assertThat(send("PUT", "/api/ledger", "{\"players\":[],\"matches\":[{\"id\":\"mA\",\"announced\":false,\"result\":\"\",\"twelfthPlayed\":false,\"extras\":\"\"}]}", token).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"announced\":false");
 
         // A 12th man who only fields isn't flagged; once he bats or bowls, every viewer is told (stats or not).

@@ -2008,3 +2008,16 @@ a.btn { text-decoration: none; }
 .sc-pom { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0 0 14px; color: var(--muted); }
 .sc-from { margin: 14px 0 0; font-weight: 700; color: var(--gold-light); }
 .sc-teams { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+
+/* ---- Traditional scorecard: how out, extras, fall of wickets ---- */
+.st-how { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.st-how .field { flex: 1 1 130px; min-width: 0; }
+.st-fow { display: flex; gap: 8px; flex: 1 1 160px; }
+.st-fow .field { flex: 1; }
+.st-extras { margin: 0 0 14px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line); background: rgba(var(--hi-rgb), .03); }
+.st-extras > div { display: flex; flex-wrap: wrap; gap: 10px 18px; margin-top: 10px; }
+.ex-ctl { display: inline-flex; align-items: center; gap: 6px; }
+.ex-ctl > span { min-width: 58px; color: var(--muted); font-size: 13px; }
+.ex-ctl button { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line-2); background: rgba(var(--hi-rgb), .06); color: var(--text); cursor: pointer; font-size: 16px; line-height: 1; }
+.ex-ctl button:disabled { opacity: .35; cursor: default; }
+.ex-ctl b { min-width: 22px; text-align: center; }

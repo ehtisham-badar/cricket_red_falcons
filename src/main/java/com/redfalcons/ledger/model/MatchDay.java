@@ -42,6 +42,10 @@ public class MatchDay {
     @Column(name = "match_result", length = 8)
     private String result;
 
+    /** Extras the opposition gave in our innings: "byes,legByes,wides,noBalls"; null/empty until entered. */
+    @Column(name = "our_extras", length = 24)
+    private String ourExtras;
+
     protected MatchDay() {
     }
 
@@ -67,6 +71,8 @@ public class MatchDay {
     public boolean isFinished() { return Boolean.TRUE.equals(finished); }
     public boolean isTest() { return Boolean.TRUE.equals(test); }
     public String getTime() { return time == null ? "" : time; }
+    public String getOurExtras() { return ourExtras == null ? "" : ourExtras; }
+    public void setOurExtras(String v) { this.ourExtras = v; }
     public String getResult() { return result == null ? "" : result; }
     public boolean isAnnounced() { return Boolean.TRUE.equals(announced); }
 }

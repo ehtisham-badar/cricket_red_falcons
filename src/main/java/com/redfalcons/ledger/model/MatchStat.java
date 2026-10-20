@@ -37,6 +37,20 @@ public class MatchStat {
     @Column(name = "no_balls")
     private Integer noBalls;
 
+    /** How a dismissed batter got out: bowled, caught, lbw, runout, stumped, hitwicket, retired, other, or empty. */
+    @Column(length = 12)
+    private String dismissal;
+    /** Names are free text because the bowler and fielder are usually from the other team. */
+    @Column(name = "dismissed_by", length = 40)
+    private String dismissedBy;
+    @Column(length = 40)
+    private String fielder;
+    /** The team score when this batter was out, and the over, for the fall of wickets. */
+    @Column(name = "fow_score")
+    private Integer fowScore;
+    @Column(name = "fow_over", length = 8)
+    private String fowOver;
+
     private int catches;
     private int drops;
     private int misfields;
@@ -65,4 +79,18 @@ public class MatchStat {
                 wides == null ? 0 : wides, noBalls == null ? 0 : noBalls };
     }
     public boolean isOut() { return out; }
+
+    public void setHow(String dismissal, String dismissedBy, String fielder, Integer fowScore, String fowOver) {
+        this.dismissal = dismissal;
+        this.dismissedBy = dismissedBy;
+        this.fielder = fielder;
+        this.fowScore = fowScore;
+        this.fowOver = fowOver;
+    }
+
+    public String getDismissal() { return dismissal == null ? "" : dismissal; }
+    public String getDismissedBy() { return dismissedBy == null ? "" : dismissedBy; }
+    public String getFielder() { return fielder == null ? "" : fielder; }
+    public Integer getFowScore() { return fowScore; }
+    public String getFowOver() { return fowOver == null ? "" : fowOver; }
 }
