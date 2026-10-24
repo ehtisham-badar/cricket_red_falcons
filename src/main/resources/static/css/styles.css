@@ -2082,3 +2082,12 @@ a.btn { text-decoration: none; }
 /* ---- Include the 12th man in a match's expenses ---- */
 .twelfth-opt { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 0 0 14px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line); background: rgba(var(--hi-rgb), .03); }
 .twelfth-opt > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+/* Player card: what has been used so far, and what is left of their money */
+.so-far { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0; }
+.so-far > div { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line); background: rgba(var(--hi-rgb), .03); }
+.so-far span { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
+.so-far strong { font-size: 20px; font-variant-numeric: tabular-nums; }
+.so-far small { color: var(--muted); font-size: 12px; }
+.so-far .pos strong { color: var(--pos); }
+.so-far .neg strong { color: var(--neg, var(--red-soft)); }

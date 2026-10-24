@@ -134,7 +134,8 @@
     const perMatch = fee / leagueMatchCount(state);
     const squad = state.players.filter(inTournament);
     const charges = {};
-    state.players.forEach(p => { charges[p.id] = { amount: 0, exact: 0, parts: [] }; });
+    // played: the part from matches already played (the rest is an advance share of matches still to come).
+    state.players.forEach(p => { charges[p.id] = { amount: 0, exact: 0, played: 0, parts: [] }; });
     const played = all.filter(m => m.finished && stats[m.id] && stats[m.id].payers > 0);
     const unplayed = leagueMatchCount(state) - played.length;
     if (!(fee > 0)) return { perMatch, unplayed, charges };
@@ -144,6 +145,7 @@
       if (!n) return;
       state.players.filter(p => pays(state, p, m.id)).forEach(p => {
         charges[p.id].exact += perMatch / n;
+        charges[p.id].played += perMatch / n;
         charges[p.id].parts.push({ label: m.label, amount: perMatch, n, share: perMatch / n });
       });
     });
@@ -239,7 +241,12 @@
     credit = round2(credit);
     const paid = paidTotal(player);
     const net = round2(paid + credit - cost);
-    return { cost, paid, credit, net, lines, creditLines };
+    // usedSoFar: only what has happened (matches played, trainings, expenses), without the advance share of
+    // league matches still to come; left is what remains of their money after that (paid back if they leave).
+    const upcoming = league ? Math.max(league.amount - round2(league.played), 0) : 0;
+    const usedSoFar = round2(Math.max(cost - upcoming, 0));
+    const left = round2(paid + credit - usedSoFar);
+    return { cost, paid, credit, net, usedSoFar, left, lines, creditLines };
   }
 
   function totals(state, fmt) {

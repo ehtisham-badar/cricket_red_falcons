@@ -2439,7 +2439,7 @@
               <tr><th class="sticky">#</th><th class="sticky sticky-2">Player</th>
                 ${sheetDays.map(d => `<th class="day-col ${d.type}" title="${esc(d.label)}${d.desc ? ' — ' + esc(d.desc) : ''}">${d.short}<small>${!C.isCharged(d) ? 'pending' : stats[d.id].n > 0 && stats[d.id].common > 0 ? fmt(stats[d.id].share) : '—'}</small></th>`).join('')}
                 <th class="day-col tour" title="League fee for the matches each player played">League<small>${tour.fee > 0 ? fmt(tour.perMatch) + '/match' : '—'}</small></th>
-                <th>Cost</th><th>Paid</th><th title="Items bought for the team">Bought</th><th class="spent-col" title="Paid + bought: everything this player has put in">Spent</th><th>Balance</th></tr>
+                <th>Cost</th><th>Paid</th><th title="Items bought for the team">Bought</th><th class="spent-col" title="What the matches played, trainings and expenses have cost so far — without the share of league matches still to come">Used so far</th><th class="spent-col" title="Paid + bought − used so far: what is left of their money (paid back if they leave)">Left</th><th>Balance</th></tr>
             </thead>
             <tbody>
               ${state.players.map((p, i) => {
@@ -2449,13 +2449,13 @@
                   ${sheetDays.map(d => `<td class="dot-cell">${p.att[d.id] ? `<span class="dot ${d.type}" title="${d.type === 'match' ? 'Played' : 'Arrived'}"></span>` : isTwelfth(p, d) ? '<span class="dot twelfth" title="12th man"></span>' : '<span class="dot-empty"></span>'}</td>`).join('')}
                   <td class="league-cell">${tour.charges[p.id].amount > 0 ? fmt(tour.charges[p.id].amount) : '—'}</td>
                   ${seesMoneyOf(p) ? `<td>${fmt(c.cost)}</td><td>${fmt(c.paid)}</td><td>${c.credit > 0 ? fmt(c.credit) : '—'}</td>
-                  <td class="spent-col">${c.paid + c.credit > 0 ? fmt(C.round2(c.paid + c.credit)) : '—'}</td>
-                  <td class="${netClass(c.net)} strong">${fmtNet(c.net)}</td>` : '<td>—</td><td>—</td><td>—</td><td class="spent-col">—</td><td class="zero">Private</td>'}</tr>`;
+                  <td class="spent-col">${c.usedSoFar > 0 ? fmt(c.usedSoFar) : '—'}</td><td class="spent-col ${netClass(c.left)}">${fmtNet(c.left)}</td>
+                  <td class="${netClass(c.net)} strong">${fmtNet(c.net)}</td>` : '<td>—</td><td>—</td><td>—</td><td class="spent-col">—</td><td class="spent-col">—</td><td class="zero">Private</td>'}</tr>`;
               }).join('')}
             </tbody>
             <tfoot><tr><td class="sticky"></td><td class="sticky sticky-2">Attended</td>
               ${sheetDays.map(d => `<td>${stats[d.id].n}</td>`).join('')}<td>${fmt(Object.values(tour.charges).reduce((x, c) => x + c.amount, 0))}</td>
-              <td>${fmt(t.spent)}</td><td>${ownOnly() ? '—' : fmt(t.collected)}</td><td>${t.fronted > 0 ? fmt(t.fronted) : '—'}</td><td class="spent-col">${ownOnly() ? '—' : fmt(C.round2(t.collected + t.fronted))}</td><td></td></tr></tfoot>
+              <td>${fmt(t.spent)}</td><td>${ownOnly() ? '—' : fmt(t.collected)}</td><td>${t.fronted > 0 ? fmt(t.fronted) : '—'}</td>${(() => { if (ownOnly()) return '<td class="spent-col">—</td><td class="spent-col">—</td>'; const cs = state.players.map(p => C.playerCalc(state, p, stats, fmt, tour)); const used = C.round2(cs.reduce((x, c) => x + c.usedSoFar, 0)); const left = C.round2(cs.reduce((x, c) => x + c.left, 0)); return `<td class="spent-col">${fmt(used)}</td><td class="spent-col">${fmtNet(left)}</td>`; })()}<td></td></tr></tfoot>
           </table>
         </div>
       </section>` : '';
@@ -4301,6 +4301,10 @@ ${tabRows.map(r => {
           <strong>${fmtNet(c.net)}</strong>
           <small>${sumLine}</small>
         </div>
+        ${c.usedSoFar < c.cost ? `<div class="so-far">
+          <div><span>Used so far</span><strong>${fmt(c.usedSoFar)}</strong><small>Matches played, trainings and expenses</small></div>
+          <div class="${netClass(c.left)}"><span>${c.left >= 0 ? 'Left of their money' : 'Short so far'}</span><strong>${fmtNet(c.left)}</strong><small>${c.left > 0 ? 'Paid back if they leave now' : c.left < 0 ? 'Owed even without future matches' : 'All used'}</small></div>
+        </div>` : ''}
         ${advanceStatus(p, c.net)}` : '<p class="private-note">Balances are private — you can only see your own.</p>'}
         ${admin ? `<div class="share-row">
           <button class="btn btn-whatsapp" data-action="share-player" data-id="${esc(p.id)}">${WA_ICON} ${c.net < 0 ? 'Send reminder' : 'Send on WhatsApp'}</button>
