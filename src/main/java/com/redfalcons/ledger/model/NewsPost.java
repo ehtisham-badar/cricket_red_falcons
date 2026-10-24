@@ -46,6 +46,11 @@ public class NewsPost {
         this.updatedAt = now;
     }
 
+    /** Pinning isn't an edit, so it leaves updatedAt alone. */
+    public void setPinned(boolean pinned) {
+        this.pinned = pinned;
+    }
+
     public String getId() { return id; }
     public String getTitle() { return title; }
     public String getTag() { return tag; }

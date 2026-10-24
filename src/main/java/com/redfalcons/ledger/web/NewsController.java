@@ -60,6 +60,19 @@ public class NewsController {
         }
     }
 
+    public record Pin(Boolean pinned) {
+    }
+
+    /** Pin or unpin a post without marking it edited. */
+    @PutMapping("/{id}/pin")
+    public ResponseEntity<?> pin(@RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token,
+                                 @PathVariable String id, @RequestBody Pin body) {
+        if (!auth.isValidToken(token)) return forbidden();
+        return news.pin(id, Boolean.TRUE.equals(body.pinned()))
+                .<ResponseEntity<?>>map(p -> ResponseEntity.ok(Row.of(p)))
+                .orElse(ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "No such news post.")));
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<?> delete(@RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token,
                                     @PathVariable String id) {

@@ -72,6 +72,14 @@ public class NewsService {
     }
 
     @Transactional
+    public Optional<NewsPost> pin(String id, boolean pinned) {
+        return posts.findById(id).map(p -> {
+            p.setPinned(pinned);
+            return p;
+        });
+    }
+
+    @Transactional
     public Optional<NewsPost> update(String id, String title, String tag, String body, boolean pinned) {
         return posts.findById(id).map(p -> {
             p.edit(clean(title, 120, true), clean(tag, 30, false), clean(body, 8000, true), pinned, Instant.now().toString());

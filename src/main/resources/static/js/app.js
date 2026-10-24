@@ -1141,6 +1141,8 @@
           <span class="muted">${esc(fmtWhen(n.createdAt))}${n.updatedAt && n.updatedAt.slice(0, 16) !== n.createdAt.slice(0, 16) ? ' · edited' : ''}</span>
         </div>
         ${admin ? `<span class="news-admin">
+          <button class="btn btn-ghost small news-pin-btn ${n.pinned ? 'on' : ''}" data-action="news-pin" data-id="${esc(n.id)}" aria-pressed="${n.pinned}"
+            title="${n.pinned ? 'Unpin: stop keeping this at the top' : 'Pin to the top'}">${icon('<path d="M12 17v5"/><path d="M9 10.76V6h6v4.76l2 3.24H7z"/><path d="M8 6h8"/>', 16)} ${n.pinned ? 'Unpin' : 'Pin'}</button>
           <button class="btn btn-ghost small" data-action="news-edit" data-id="${esc(n.id)}">Edit</button>
           <button class="icon-btn danger" data-action="news-delete" data-id="${esc(n.id)}" aria-label="Delete ${esc(n.title)}">${X_ICON}</button>
         </span>` : ''}
@@ -5175,6 +5177,19 @@ ${tabRows.map(r => {
       render();
     },
     'news-cancel'() { newsDraft = null; render(); },
+    async 'news-pin'(el) {
+      const n = (news || []).find(x => x.id === el.dataset.id);
+      if (!n || !isAdmin()) return;
+      el.disabled = true;
+      try {
+        await api('PUT', '/api/news/' + encodeURIComponent(n.id) + '/pin', { pinned: !n.pinned });
+        toast(n.pinned ? 'Unpinned.' : 'Pinned to the top.');
+        await loadNews();
+      } catch (e) {
+        toast(e.message || 'Could not change that.');
+        el.disabled = false;
+      }
+    },
     async 'news-save'(el) {
       if (!isAdmin() || !newsDraft) return;
       const d = newsDraft;

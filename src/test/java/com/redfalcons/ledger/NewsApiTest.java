@@ -55,6 +55,16 @@ class NewsApiTest {
         String after = send("GET", "/api/news", null, null).body();
         assertThat(after.indexOf("HPL – Official Cricket Rules")).isLessThan(after.indexOf("Kit collection"));
 
+        // Unpinning only flips the pin: no "edited" time, and only the admin can do it.
+        assertThat(send("PUT", "/api/news/" + rulesId + "/pin", "{\"pinned\":false}", null).statusCode()).isEqualTo(403);
+        String unpinned = send("PUT", "/api/news/" + rulesId + "/pin", "{\"pinned\":false}", token).body();
+        assertThat(unpinned).contains("\"pinned\":false").contains("Each bowler can bowl a maximum of 4 overs");
+        assertThat(unpinned.replaceAll(".*\"createdAt\":\"([^\"]+)\".*", "$1"))
+                .isEqualTo(unpinned.replaceAll(".*\"updatedAt\":\"([^\"]+)\".*", "$1"));
+        String reordered = send("GET", "/api/news", null, null).body();
+        assertThat(reordered.indexOf("Kit collection")).isLessThan(reordered.indexOf("HPL – Official Cricket Rules"));
+        assertThat(send("PUT", "/api/news/nope/pin", "{\"pinned\":true}", token).statusCode()).isEqualTo(404);
+
         assertThat(send("PUT", "/api/news/" + newId, "{\"title\":\"Kit collection moved\",\"tag\":\"Team\",\"body\":\"Saturday 5 pm.\",\"pinned\":true}", token).body())
                 .contains("Kit collection moved").contains("\"pinned\":true");
         assertThat(send("DELETE", "/api/news/" + rulesId, null, token).statusCode()).isEqualTo(200);
