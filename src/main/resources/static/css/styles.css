@@ -1013,6 +1013,7 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
 
 /* League fee by matches played */
 .sheet-table td.league-cell { color: var(--gold-light); font-weight: 700; }
+.sheet-table .spent-col { font-weight: 700; background: rgba(var(--gold-rgb), .06); }
 .amount.league-each strong { font-size: 15px; color: var(--gold-light); }
 .league-line { margin: 0 0 14px; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--line); background: rgba(var(--hi-rgb), .03); color: var(--muted); font-size: 14px; }
 .league-line strong { color: var(--gold-light); }

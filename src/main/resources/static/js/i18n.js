@@ -102,7 +102,7 @@
     'Tap a player for the full breakdown.': 'مکمل تفصیل کے لیے کھلاڑی پر ٹیپ کریں۔',
     'Share as image': 'تصویر کے طور پر شیئر کریں', 'Collected': 'جمع شدہ', 'Total spent': 'کل خرچ', 'spent': 'خرچ',
     'Still owed to management': 'انتظامیہ کو ابھی ادا کرنا باقی', 'Still owed to you': 'آپ کو ابھی ملنا باقی', 'To be paid back': 'واپس ادا کرنا ہے',
-    'You pay back': 'آپ نے واپس ادا کرنا ہے', 'Settled': 'حساب برابر', 'Paid': 'ادا شدہ', 'Cost': 'لاگت', 'Bought': 'خریدا',
+    'You pay back': 'آپ نے واپس ادا کرنا ہے', 'Settled': 'حساب برابر', 'Paid': 'ادا شدہ', 'Cost': 'لاگت', 'Bought': 'خریدا', 'Spent': 'خرچ کیا',
     'Paid in by players': 'کھلاڑیوں کی ادائیگیاں', 'Payments to management': 'انتظامیہ کو ادائیگیاں', '+ Add payment to management': '+ انتظامیہ کو ادائیگی شامل کریں',
     'I have paid management': 'میں نے انتظامیہ کو ادا کر دیا', 'In my account': 'میرے اکاؤنٹ میں', 'Items bought for the team': 'ٹیم کے لیے خریدی گئی چیزیں',
     'Expenses': 'اخراجات', 'Expenses & attendance': 'اخراجات اور حاضری', 'Expenses and payments': 'اخراجات اور ادائیگیاں',
