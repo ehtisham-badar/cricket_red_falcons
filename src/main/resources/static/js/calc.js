@@ -243,7 +243,8 @@
     const net = round2(paid + credit - cost);
     // usedSoFar: only what has happened (matches played, trainings, expenses), without the advance share of
     // league matches still to come; left is what remains of their money after that (paid back if they leave).
-    const upcoming = league ? Math.max(league.amount - round2(league.played), 0) : 0;
+    const playedPart = league ? (state.settings.roundUp ? Math.round(league.played) : round2(league.played)) : 0;
+    const upcoming = league ? Math.max(league.amount - playedPart, 0) : 0;
     const usedSoFar = round2(Math.max(cost - upcoming, 0));
     const left = round2(paid + credit - usedSoFar);
     return { cost, paid, credit, net, usedSoFar, left, lines, creditLines };
