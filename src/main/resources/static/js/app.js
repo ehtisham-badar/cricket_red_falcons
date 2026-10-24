@@ -2190,7 +2190,9 @@
     const catchers = rows.filter(r => r.e.catches > 0);
     const matchRow = C.matches(state).find(x => x.id === src.id);
     const ex = extrasOfMatch(matchRow);
-    const fall = batters.filter(r => r.e.out && r.e.fowScore != null).sort((a, b) => a.e.fowScore - b.e.fowScore)
+    // Wickets at the same score go in the order they fell: "1.0" before "1.2".
+    const ballOf = o => { const m = /^(\d+)(?:\.(\d))?$/.exec(String(o || '').trim()); return m ? +m[1] * C.BALLS_PER_OVER + (+m[2] || 0) : Infinity; };
+    const fall = batters.filter(r => r.e.out && r.e.fowScore != null).sort((a, b) => a.e.fowScore - b.e.fowScore || ballOf(a.e.fowOver) - ballOf(b.e.fowOver))
       .map((r, i) => `${i + 1}-${r.e.fowScore} (${esc(r.p.name)}${r.e.fowOver ? `, ${esc(r.e.fowOver)} ov` : ''})`);
     const batRows = batters.map(r => `<tr><td class="sc-name"><strong>${name(r.p)}</strong><small>${esc(dismissalText(r.e))}</small></td>
       <td class="sc-main">${C.runsOf(r.e)}</td><td>${r.e.balls}</td><td>${r.e.fours}</td><td>${r.e.sixes}</td><td>${SR(C.runsOf(r.e), r.e.balls)}</td></tr>`).join('');
