@@ -3059,13 +3059,6 @@
     return `<section class="panel polls-panel"><div class="panel-head"><h3>Quick polls</h3><p class="muted">Tap an answer. Results show once you have voted.</p></div>${list.map(pollCard).join('')}</section>`;
   }
 
-  function leaguePanel() {
-    const board = engage ? engage.leaderboard.filter(r => findPlayer(r.playerId)) : [];
-    if (!board.length) return '';
-    return `<section class="panel board-panel"><div class="panel-head"><h3>Prediction league</h3><p class="muted">One point for every match winner you guessed right.</p></div>
-      <ol class="board">${board.slice(0, 5).map((r, i) => { const p = findPlayer(r.playerId); return `<li class="${i === 0 ? 'top' : ''}"><span class="board-n">${i + 1}</span>${avatar(p, 36)}<span class="board-name">${esc(p.name)}</span><span class="board-pts"><b>${r.points}</b><small>of ${r.played}</small></span></li>`; }).join('')}</ol></section>`;
-  }
-
   // For the admin and managers on the Announce tab: ask a poll, then close or delete it.
   function pollsAdmin() {
     const mine = p => realAdmin() || p.authorId === myManagerId;
@@ -3617,25 +3610,6 @@
       </div>`;
   }
 
-  // Who has saved their own profile yet. Players press "Update profile" here; the admin sees who is still missing.
-  function profilesPanel() {
-    if (archive || !realAdmin() || !state.players.length) return '';
-    const done = state.players.filter(p => p.profileAt);
-    const todo = state.players.filter(p => !p.profileAt);
-    const pct = Math.round(done.length * 100 / state.players.length);
-    const row = p => `<li class="pu-row">${avatar(p, 34)}
-        <button class="pl-name" data-action="open-profile" data-id="${esc(p.id)}">${esc(p.name)}</button>
-        <span class="prof-tag todo">Not updated</span></li>`;
-    return `<section class="panel pu-panel">
-      <div class="panel-head"><h3>Profiles</h3>
-        <p class="muted">${done.length} of ${state.players.length} players have updated their profile. Tap a name to see it.</p></div>
-      <span class="eg-bar pu-bar"><i style="width:${pct}%"></i></span>
-      ${todo.length ? `<h4 class="pu-sub">Not updated yet <span>${todo.length}</span></h4><ul class="pu-list">${todo.map(row).join('')}</ul>` : '<p class="muted pu-all">Everyone has updated their profile. 🎉</p>'}
-      ${realAdmin() && todo.length ? `<div class="eg-actions"><button class="btn btn-ghost small" data-action="ask-profile">${icon('<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/>', 16)} Ask everyone to update</button></div>` : ''}
-      ${done.length ? `<h4 class="pu-sub">Updated <span>${done.length}</span></h4><ul class="pu-list done">${done.map(p => `<li class="pu-row">${avatar(p, 34)}<button class="pl-name" data-action="open-profile" data-id="${esc(p.id)}">${esc(p.name)}</button><span class="prof-tag ok">${icon('<path d="M20 6 9 17l-5-5"/>', 13)} Updated ${ago(p.profileAt)}</span></li>`).join('')}</ul>` : ''}
-    </section>`;
-  }
-
   function viewPlayers() {
     const admin = isAdmin();
     const tag = p => !realAdmin() ? '' : p.profileAt ? `<span class="pl-dot ok" title="Profile updated" aria-label="Profile updated">${icon('<path d="M20 6 9 17l-5-5"/>', 11)}</span>` : `<span class="pl-dot todo" title="Profile not updated yet" aria-label="Profile not updated yet"></span>`;
@@ -3653,8 +3627,6 @@
     return `
       ${pageHead('Team', `${state.players.length} in the squad`, admin && state.players.length ? `<div class="share-row">
           <button class="btn btn-gold" data-action="share-squad">${IMAGE_ICON} Send squad list to management</button></div>` : '')}
-      ${profilesPanel()}
-      ${leaguePanel()}
       <div class="players-layout">
         <section class="panel">
           <div class="player-head"><span>Sr.</span><span>Name</span><span>Role</span><span>Tournament</span></div>
@@ -4674,13 +4646,6 @@ ${tabRows.map(r => {
       const lines = list.map((p, i) => `${i + 1}. ${p.name} — ${p.shirtSize || 'no size'}${p.jerseyName || p.jersey ? ` — ${p.jerseyName || ''}${p.jersey ? ` #${p.jersey}` : ''}`.replace('—  #', '— #') : ''}`);
       const counts = SIZE_CHART.map(([sz]) => [sz, list.filter(p => p.shirtSize === sz).length]).filter(x => x[1]);
       copyText(`Red Falcons shirt sizes\n${lines.join('\n')}\n\nTotals: ${counts.map(([sz, n]) => `${sz} × ${n}`).join(', ') || '—'}`);
-    },
-    'ask-profile'() {
-      const x = ANN_TEMPLATES.find(y => y.id === 'profile');
-      annDraft = { title: x.title, body: x.make(), matchId: '', later: false, at: '', action: 'profile' };
-      tab = 'announce';
-      render();
-      toast('Review the message, then press Send.');
     },
     async 'profile-form-save'() {
       const me = pForm && findPlayer(pForm.id);
