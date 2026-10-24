@@ -3,6 +3,8 @@
 // Model on top of the original spec:
 //  - Each day has a list of expenses ({ id, item, amount, paidBy }). A day's amount is their sum.
 //    paidBy '' means the team fund paid it; otherwise it is the id of the player who paid out of pocket.
+//  - An expense can be narrowed to chosen players (sharedBy: [ids], e.g. a breakfast only some had); only they
+//    split it, whether or not they played. Without sharedBy it's split among everyone who played.
 //  - A player who paid for an expense gets that amount credited to their balance.
 //  - The series-wide league (tournament) fee is a fee per match (fee ÷ the league's match count, 5 unless
 //    set). Each match's part is split among the players who played it (the 12th man isn't marked as playing,
@@ -74,6 +76,13 @@
     return round2(dayExpenses(state, dayId).reduce((s, e) => s + num(e.amount), 0));
   }
 
+  // The players an expense is narrowed to, or null when everyone who played shares it.
+  function sharedOf(state, e) {
+    if (!e.sharedBy || !e.sharedBy.length) return null;
+    const ids = e.sharedBy.filter(id => state.players.some(p => p.id === id));
+    return ids.length ? ids : null;
+  }
+
   // The 12th man shares a match's costs once he bats or bowls in it; fielding as a substitute doesn't count.
   // Without his stats (they may be hidden from viewers) the server's twelfthPlayed flag on the match says so.
   function twelfthPlays(state, dayId) {
@@ -108,7 +117,9 @@
     const payers = state.players.filter(p => pays(state, p, day.id)).length;
     const expPayers = state.players.filter(p => expPays(state, p, day.id)).length;
     const amount = dayAmount(state, day.id);
-    return { n, payers, expPayers, amount, share: split(amount, expPayers, state.settings.roundUp) };
+    // common: the expenses everyone who played shares; the rest go only to the players chosen for them.
+    const common = round2(dayExpenses(state, day.id).filter(e => !sharedOf(state, e)).reduce((t, e) => t + num(e.amount), 0));
+    return { n, payers, expPayers, amount, common, share: split(common, expPayers, state.settings.roundUp) };
   }
 
   function allStats(state) {
@@ -205,12 +216,18 @@
     days(state).forEach(d => {
       if (!isCharged(d)) return;
       const s = stats[d.id];
-      if (expPays(state, player, d.id) && s.amount > 0) {
+      if (expPays(state, player, d.id) && s.common > 0) {
         cost += s.share;
-        lines.push({ type: d.type, day: d, text: d.label + ': ' + fmt(s.amount) + ' ÷ ' + s.expPayers + ' = ' + fmt(s.share) });
+        lines.push({ type: d.type, day: d, text: d.label + ': ' + fmt(s.common) + ' ÷ ' + s.expPayers + ' = ' + fmt(s.share) });
       }
       dayExpenses(state, d.id).forEach(e => {
         const amt = num(e.amount);
+        const only = sharedOf(state, e);
+        if (only && only.includes(player.id) && amt > 0) {
+          const each = split(amt, only.length, state.settings.roundUp);
+          cost += each;
+          lines.push({ type: d.type, day: d, text: (e.item || 'Expense') + ' (' + d.label + '): ' + fmt(amt) + ' ÷ ' + only.length + ' = ' + fmt(each) });
+        }
         if (e.paidBy === player.id && amt > 0) {
           credit += amt;
           creditLines.push({ type: d.type, day: d, text: (e.item || 'Expense') + ' (' + d.label + '): ' + fmt(amt) });
@@ -351,7 +368,7 @@
 
   const api = {
     matches, leagueMatchCount, days, num, isCharged, pays, expPays, twelfthPlays,
-    BALLS_PER_OVER, STAT_KEYS, statOf, runsOf, shotsOf, strikeRate, oversOf, economy, batted, extrasOf, concededOf, bowled, leagueStats, round2, inTournament, paidTotal, dayExpenses, dayAmount, dayStats, allStats,
+    BALLS_PER_OVER, STAT_KEYS, statOf, runsOf, shotsOf, strikeRate, oversOf, economy, batted, extrasOf, concededOf, bowled, leagueStats, round2, inTournament, paidTotal, dayExpenses, dayAmount, sharedOf, dayStats, allStats,
     tournamentStats, advanceShare, advancePerPlayer, advanceDue, playerCalc, totals, warnings, money, signedMoney, netLabel
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

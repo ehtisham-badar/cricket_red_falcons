@@ -169,12 +169,13 @@ public class LedgerService {
         Map<String, List<ExpenseDto>> expenseMap = new LinkedHashMap<>();
         expenses.findAll(BY_POSITION).forEach(e -> expenseMap
                 .computeIfAbsent(e.getDayId(), k -> new ArrayList<>())
-                .add(new ExpenseDto(e.getId(), e.getItem(), e.getAmount(), e.getPaidBy())));
+                .add(new ExpenseDto(e.getId(), e.getItem(), e.getAmount(), e.getPaidBy(),
+                        e.getSharedBy().isEmpty() ? List.of() : List.of(e.getSharedBy().split(",")))));
         // Data saved before expenses existed: show each day's amount as one fund-paid item.
         legacyAmounts.findAll().forEach(a -> {
             if (!a.getAmount().isEmpty() && !expenseMap.containsKey(a.getDayId())) {
                 expenseMap.put(a.getDayId(), List.of(
-                        new ExpenseDto("legacy-" + a.getDayId(), LEGACY_ITEM, a.getAmount(), "")));
+                        new ExpenseDto("legacy-" + a.getDayId(), LEGACY_ITEM, a.getAmount(), "", List.of())));
             }
         });
 
@@ -427,8 +428,11 @@ public class LedgerService {
             for (ExpenseDto e : list) {
                 if (e == null || blank(e.id()) || !expenseIds.add(e.id())) continue;
                 String paidBy = playerIds.contains(nz(e.paidBy())) ? e.paidBy() : "";
+                // Only real players, each once; nobody left means everyone who played shares it.
+                String sharedBy = String.join(",", e.sharedBy() == null ? List.of()
+                        : e.sharedBy().stream().filter(playerIds::contains).distinct().toList());
                 newExpenses.add(new Expense(e.id(), day, newExpenses.size(), nz(e.item()).trim(),
-                        numeric(e.amount()), paidBy));
+                        numeric(e.amount()), paidBy, sharedBy));
             }
         });
 
@@ -693,7 +697,7 @@ public class LedgerService {
         if (amounts == null) return out;
         amounts.forEach((day, amount) -> {
             if (!numeric(amount).isEmpty()) {
-                out.put(day, List.of(new ExpenseDto("legacy-" + day, LEGACY_ITEM, amount, "")));
+                out.put(day, List.of(new ExpenseDto("legacy-" + day, LEGACY_ITEM, amount, "", List.of())));
             }
         });
         return out;

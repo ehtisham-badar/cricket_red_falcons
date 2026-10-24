@@ -405,7 +405,8 @@
       const out = {};
       Object.keys(d.expenses).forEach(day => {
         out[day] = (d.expenses[day] || []).map(e => ({
-          id: e.id || rid(), item: e.item || '', amount: e.amount == null ? '' : String(e.amount), paidBy: e.paidBy || ''
+          id: e.id || rid(), item: e.item || '', amount: e.amount == null ? '' : String(e.amount), paidBy: e.paidBy || '',
+          sharedBy: Array.isArray(e.sharedBy) ? e.sharedBy.filter(Boolean) : []
         }));
       });
       return out;
@@ -445,7 +446,10 @@
     });
     const ids = new Set(players.map(p => p.id));
     const expenses = expensesFrom(d);
-    Object.values(expenses).forEach(list => list.forEach(e => { if (!ids.has(e.paidBy)) e.paidBy = ''; }));
+    Object.values(expenses).forEach(list => list.forEach(e => {
+      if (!ids.has(e.paidBy)) e.paidBy = '';
+      e.sharedBy = (e.sharedBy || []).filter(id => ids.has(id));
+    }));
     // Matches added so far. Files from before matches were added one by one had five fixed ones
     // (m1–m5); keep those that hold any attendance, expenses or 12th man.
     let matches;
@@ -2431,7 +2435,7 @@
           <table class="sheet-table">
             <thead>
               <tr><th class="sticky">#</th><th class="sticky sticky-2">Player</th>
-                ${sheetDays.map(d => `<th class="day-col ${d.type}" title="${esc(d.label)}${d.desc ? ' — ' + esc(d.desc) : ''}">${d.short}<small>${!C.isCharged(d) ? 'pending' : stats[d.id].n > 0 && stats[d.id].amount > 0 ? fmt(stats[d.id].share) : '—'}</small></th>`).join('')}
+                ${sheetDays.map(d => `<th class="day-col ${d.type}" title="${esc(d.label)}${d.desc ? ' — ' + esc(d.desc) : ''}">${d.short}<small>${!C.isCharged(d) ? 'pending' : stats[d.id].n > 0 && stats[d.id].common > 0 ? fmt(stats[d.id].share) : '—'}</small></th>`).join('')}
                 <th class="day-col tour" title="League fee for the matches each player played">League<small>${tour.fee > 0 ? fmt(tour.perMatch) + '/match' : '—'}</small></th>
                 <th>Cost</th><th>Paid</th><th title="Items bought for the team">Bought</th><th>Balance</th></tr>
             </thead>
@@ -2610,7 +2614,7 @@
       const s = stats[d.id];
       const items = C.dayExpenses(state, d.id).filter(e => e.item || C.num(e.amount) > 0);
       const count = d.type === 'match' ? `${s.n} / ${max} played${state.twelfth[d.id] ? ' + 12th' : ''}` : `${s.n} arrived`;
-      const share = s.n > 0 && s.amount > 0 ? `${fmt(s.share)} each` : '—';
+      const share = s.n > 0 && s.common > 0 ? `${fmt(s.share)} each${s.common < s.amount ? ' + extras' : ''}` : s.amount > s.common ? 'Chosen players' : '—';
       const tour = d.type === 'match' ? C.tournamentStats(state, stats) : null;
       const leagueEach = tour && tour.fee > 0 && s.payers > 0 ? `<div class="amount league-each"><span>League share</span><strong>${fmt(C.round2(tour.perMatch / s.payers))} each</strong></div>` : '';
       const status = d.test ? `<span class="match-status test">${icon('<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/>', 14)} Test match · never charged</span>` : d.type === 'match' ? (d.finished
@@ -2636,6 +2640,8 @@
           : `<p class="desc">${esc(d.desc) || '<span class="muted">No description</span>'}</p>`) : ''}
         <div class="amount"><span>Total spent</span><strong>${s.amount > 0 ? fmt(s.amount) : '—'}</strong></div>
         ${leagueEach}
+        ${admin && d.type === 'match' && !d.test && tour ? (() => { const c = matchCost(d, s, tour); return c.total > 0
+          ? `<div class="amount match-cost-line"><span>Total match cost <small>admin only</small></span><strong>${fmt(c.total)}</strong></div>` : ''; })() : ''}
         ${items.length ? `<ul class="mini-items">${items.slice(0, 3).map(e => `<li><span>${esc(e.item) || 'Item'}<small>${esc(playerName(e.paidBy))}</small></span><span>${fmt(C.num(e.amount))}</span></li>`).join('')}
           ${items.length > 3 ? `<li class="more">+${items.length - 3} more</li>` : ''}</ul>` : '<p class="muted mini-empty">No expenses yet</p>'}
         <div class="day-meta"><span>${count}</span><span class="share">${share}</span></div>
@@ -3940,14 +3946,51 @@ ${tabRows.map(r => {
       ${disabled ? 'disabled' : ''} ${full ? `title="${max} players already played ${d.label}"` : ''} aria-pressed="${on}">${label}</button>`;
   }
 
-  const QUICK_ITEMS = ['Ground fee', 'Balls', 'Water', 'Other'];
+  const QUICK_ITEMS = ['Ground fee', 'Balls', 'Water', 'Breakfast', 'Lunch', 'Other'];
+  let expPicker = null;                      // the expense whose "shared by" player list is open (admin)
+
+  // Who shares an expense, in words: "Everyone who played" or "6 players".
+  function sharedText(e) {
+    const only = C.sharedOf(state, e);
+    return only ? `${only.length} player${only.length === 1 ? '' : 's'}` : 'Everyone who played';
+  }
+
+  // Admin: narrow an expense to the players who had it (a breakfast only some were at); the rest don't pay for it.
+  function expShare(d, e) {
+    const only = C.sharedOf(state, e);
+    const open = expPicker === e.id;
+    const each = only && C.num(e.amount) > 0 ? ` · ${fmt(C.round2(C.num(e.amount) / only.length))} each` : '';
+    const btn = `<button class="exp-share-btn ${only ? 'on' : ''}" data-action="exp-share-open" data-id="${esc(e.id)}" aria-expanded="${open}">
+        ${icon('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>', 15)}
+        Shared by: <strong>${sharedText(e)}</strong>${each}</button>`;
+    if (!open) return `<div class="exp-share">${btn}</div>`;
+    const chosen = new Set(only || []);
+    const xi = state.players.filter(p => C.pays(state, p, d.id));
+    const people = state.players.filter(C.inTournament).concat(state.players.filter(p => !C.inTournament(p) && chosen.has(p.id)));
+    return `<div class="exp-share open">${btn}
+      <div class="exp-pick">
+        <p class="muted">Tap the players who had this. Only they split it${d.type === 'match' ? ', whether or not they played' : ''}; leave everyone off to share it with all who ${d.type === 'match' ? 'played' : 'came'}.</p>
+        <div class="exp-pick-quick">
+          <button class="chip ${!only ? 'on' : ''}" data-action="exp-share-set" data-day="${esc(d.id)}" data-id="${esc(e.id)}" data-who="everyone">Everyone who ${d.type === 'match' ? 'played' : 'came'}</button>
+          ${xi.length ? `<button class="chip" data-action="exp-share-set" data-day="${esc(d.id)}" data-id="${esc(e.id)}" data-who="xi">Start from the ${d.type === 'match' ? 'XI' : 'attendees'} (${xi.length})</button>` : ''}
+        </div>
+        <div class="exp-pick-people">${people.map(p => `<button class="exp-person ${chosen.has(p.id) ? 'on' : ''}" data-action="exp-share-toggle" data-day="${esc(d.id)}" data-id="${esc(e.id)}" data-player="${esc(p.id)}" aria-pressed="${chosen.has(p.id)}">
+          ${chosen.has(p.id) ? icon('<path d="M20 6 9 17l-5-5"/>', 14) : ''}${esc(p.name || 'Unnamed')}${C.pays(state, p, d.id) ? '<i title="Played">•</i>' : ''}</button>`).join('')}</div>
+        <button class="btn btn-ghost small" data-action="exp-share-open" data-id="${esc(e.id)}">Done</button>
+      </div>
+    </div>`;
+  }
 
   function expenseRows(d) {
     const list = C.dayExpenses(state, d.id);
     if (!isAdmin()) {
       if (!list.length) return '<p class="muted">No expenses recorded.</p>';
-      return `<ul class="exp-list">${list.map(e => `<li><span><strong>${esc(e.item) || 'Item'}</strong><small>Paid by ${esc(playerName(e.paidBy))}</small></span>
-        <span class="amt">${fmt(C.num(e.amount))}</span></li>`).join('')}</ul>`;
+      return `<ul class="exp-list">${list.map(e => {
+        const only = C.sharedOf(state, e);
+        return `<li><span><strong>${esc(e.item) || 'Item'}</strong><small>Paid by ${esc(playerName(e.paidBy))}</small>
+          ${only ? `<small class="exp-for">Only for ${only.map(id => esc(playerName(id))).join(', ')} · ${fmt(C.round2(C.num(e.amount) / only.length))} each</small>` : ''}</span>
+        <span class="amt">${fmt(C.num(e.amount))}</span></li>`;
+      }).join('')}</ul>`;
     }
     const payers = state.players.map(p => ({ id: p.id, name: p.name || 'Unnamed' }));
     const rows = list.map(e => `
@@ -3961,6 +4004,7 @@ ${tabRows.map(r => {
           ${payers.map(p => `<option value="${esc(p.id)}" ${p.id === e.paidBy ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
         </select>
         <button class="icon-btn danger" data-action="remove-expense" data-day="${esc(d.id)}" data-id="${esc(e.id)}" aria-label="Remove ${esc(e.item || 'item')}">${X_ICON}</button>
+        ${expShare(d, e)}
       </div>`).join('');
     return `${rows ? `<div class="exp-rows"><div class="exp-head"><span>Item</span><span>Amount</span><span>Paid by</span></div>${rows}</div>` : ''}
       <div class="quick-add"><span class="muted">Add:</span>
@@ -4033,6 +4077,24 @@ ${tabRows.map(r => {
     grip.addEventListener('pointermove', move);
     grip.addEventListener('pointerup', end);
     grip.addEventListener('pointercancel', end);
+  }
+
+  // Admin only: what a match cost the team in all, its part of the league fee plus every expense.
+  function matchCost(d, s, tour) {
+    const league = tour && tour.fee > 0 ? tour.perMatch : 0;
+    return { league, expenses: s.amount, total: C.round2(league + s.amount) };
+  }
+
+  function matchCostBox(d, s) {
+    if (!isAdmin() || d.type !== 'match' || d.test) return '';
+    const c = matchCost(d, s, C.tournamentStats(state));
+    if (!(c.total > 0)) return '';
+    const extra = C.round2(s.amount - s.common);
+    return `<div class="match-cost">
+      <span class="mc-label">${icon('<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>', 18)}<span><strong>Total match cost</strong><small>Only you can see this</small></span></span>
+      <span class="mc-parts">${c.league > 0 ? `<span>League ${fmt(c.league)}</span>` : ''}${s.common > 0 ? `<span>Shared expenses ${fmt(s.common)}</span>` : ''}${extra > 0 ? `<span>Chosen-player extras ${fmt(extra)}</span>` : ''}</span>
+      <strong class="mc-total">${fmt(c.total)}</strong>
+    </div>`;
   }
 
   function leagueLine(d, s) {
@@ -4114,7 +4176,7 @@ ${tabRows.map(r => {
       <div class="counter">
         <div><strong>${isMatch ? `${s.n} / ${max}` : s.n}</strong><span>${isMatch ? 'played' : 'arrived'}</span></div>
         <div><strong>${s.amount > 0 ? fmt(s.amount) : '—'}</strong><span>spent</span></div>
-        <div><strong>${s.n > 0 && s.amount > 0 ? fmt(s.share) : '—'}</strong><span>each</span></div>
+        <div><strong>${s.n > 0 && s.common > 0 ? fmt(s.share) : '—'}</strong><span>${s.common < s.amount ? 'each + extras' : 'each'}</span></div>
       </div>
       <div class="sheet-body">
  ${isMatch && !isAdmin() && canPickXi(d) ? lineupBox(d, s) : ''}
@@ -4128,6 +4190,7 @@ ${tabRows.map(r => {
         ${isMatch && !d.test ? finishBox(d, s) : ''}
         ${d.test ? '<p class="test-note">A generated test match: it never changes anyone’s balance or the league fee.</p>' : ''}
         ${isMatch ? leagueLine(d, s) : ''}
+        ${isMatch ? matchCostBox(d, s) : ''}
         ${twelfthId ? `<p class="twelfth-line">12th man: <strong>${esc(playerName(twelfthId))}</strong> · ${C.twelfthPlays(state, d.id)
           ? 'batted or bowled, so the costs are split among all 12'
           : d.twelfthShares ? 'shares the expenses (but not the league fee) because you included him'
@@ -4852,7 +4915,11 @@ ${tabRows.map(r => {
       const tour = C.tournamentStats(state, stats);
       const parts = [];
       if (tour.fee > 0) parts.push(`League ${fmt(tour.perMatch)} ÷ ${s.payers} = ${fmt(C.round2(tour.perMatch / s.payers))} each`);
-      if (s.amount > 0) parts.push(`expenses ${fmt(s.amount)} ÷ ${s.expPayers} = ${fmt(s.share)} each`);
+      if (s.common > 0) parts.push(`expenses ${fmt(s.common)} ÷ ${s.expPayers} = ${fmt(s.share)} each`);
+      C.dayExpenses(state, d.id).forEach(e => {
+        const only = C.sharedOf(state, e);
+        if (only && C.num(e.amount) > 0) parts.push(`${e.item || 'an expense'} ${fmt(C.num(e.amount))} ÷ ${only.length} chosen players`);
+      });
       const ok = await confirmDialog(`Finish ${d.label}?`,
         `${parts.length ? parts.join(', and ') + ' — charged' : 'Charged'} to the ${s.payers} who played${state.twelfth[d.id] ? (C.twelfthPlays(state, d.id) ? ' (the 12th man batted or bowled, so he’s included)' : ' (not the 12th man — he only fielded)') : ''}. Balances update straight away; you can reopen it if needed.`,
         'Finish & charge');
@@ -5444,6 +5511,21 @@ ${tabRows.map(r => {
       // Jump to the field that still needs filling in.
       const target = document.querySelector(`[data-focus="${e.item ? 'exa' : 'exi'}-${e.id}"]`);
       if (target) target.focus();
+    },
+    'exp-share-open'(el) { if (!isAdmin()) return; expPicker = expPicker === el.dataset.id ? null : el.dataset.id; render(); },
+    'exp-share-toggle'(el) {
+      const e = findExpense(el);
+      if (!e || !isAdmin()) return;
+      const set = new Set(C.sharedOf(state, e) || []);
+      set.has(el.dataset.player) ? set.delete(el.dataset.player) : set.add(el.dataset.player);
+      e.sharedBy = state.players.map(p => p.id).filter(id => set.has(id));
+      commit();
+    },
+    'exp-share-set'(el) {
+      const e = findExpense(el);
+      if (!e || !isAdmin()) return;
+      e.sharedBy = el.dataset.who === 'xi' ? state.players.filter(p => C.pays(state, p, el.dataset.day)).map(p => p.id) : [];
+      commit();
     },
     'remove-expense'(el) {
       const list = state.expenses[el.dataset.day];

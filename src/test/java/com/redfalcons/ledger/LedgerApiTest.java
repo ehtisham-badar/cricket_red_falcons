@@ -70,13 +70,13 @@ class LedgerApiTest {
                 .contains("\"matches\":[{\"id\":\"m1\",\"date\":\"2026-10-24\",\"opponent\":\"Lahore Lions\",\"venue\":\"\",\"finished\":true,\"test\":false,\"time\":\"\",\"announced\":false,\"result\":\"\",\"twelfthPlayed\":false,\"extras\":\"\",\"twelfthShares\":false},{\"id\":\"m2\",\"date\":\"\",\"opponent\":\"\",\"venue\":\"\",\"finished\":false,\"test\":false,\"time\":\"\",\"announced\":false,\"result\":\"\",\"twelfthPlayed\":false,\"extras\":\"\",\"twelfthShares\":false}]");
 
         // A version 2 file (amounts only) is read as one fund-paid expense per day.
-        assertThat(loaded).contains("\"t1\":[{\"id\":\"legacy-t1\",\"item\":\"Amount spent\",\"amount\":\"1500\",\"paidBy\":\"\"}]");
+        assertThat(loaded).contains("\"t1\":[{\"id\":\"legacy-t1\",\"item\":\"Amount spent\",\"amount\":\"1500\",\"paidBy\":\"\",\"sharedBy\":[]}]");
 
         String v3 = """
                 {"players":[{"id":"p1","name":"Babar","paid":"1500","tournament":true,"att":{"t1":true}},
                             {"id":"p2","name":"Rizwan","paid":"2000","tournament":false,"att":{}}],
                  "trainings":[{"id":"t1","desc":""}],
-                 "expenses":{"t1":[{"id":"e1","item":"Water","amount":"500","paidBy":"p2"},
+                 "expenses":{"t1":[{"id":"e1","item":"Water","amount":"500","paidBy":"p2","sharedBy":["p2","ghost","p2"]},
                                    {"id":"e2","item":"Balls","amount":"1000","paidBy":"ghost"}]},
                  "tournament":{"fee":"65000"}}
                 """;
@@ -84,9 +84,10 @@ class LedgerApiTest {
         assertThat(send("GET", "/api/ledger", null, null).body())
                 .contains("\"tournament\":{\"name\":\"\",\"fee\":\"65000\",\"advance\":\"\",\"payments\":[],\"matchCount\":5}")
                 .contains("\"name\":\"Rizwan\",\"role\":\"\",\"paid\":\"2000\",\"tournament\":false")
-                .contains("{\"id\":\"e1\",\"item\":\"Water\",\"amount\":\"500\",\"paidBy\":\"p2\"}")
+                // sharedBy keeps only real players, once each
+                .contains("{\"id\":\"e1\",\"item\":\"Water\",\"amount\":\"500\",\"paidBy\":\"p2\",\"sharedBy\":[\"p2\"]}")
                 // paidBy pointing at an unknown player falls back to the team fund
-                .contains("{\"id\":\"e2\",\"item\":\"Balls\",\"amount\":\"1000\",\"paidBy\":\"\"}")
+                .contains("{\"id\":\"e2\",\"item\":\"Balls\",\"amount\":\"1000\",\"paidBy\":\"\",\"sharedBy\":[]}")
                 .contains("\"amounts\":{\"t1\":\"1500\"}")
                 .doesNotContain("legacy-t1");
 

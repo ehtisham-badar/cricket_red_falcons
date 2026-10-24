@@ -45,7 +45,8 @@ public record LedgerDto(
     public record PaymentDto(String id, String date, String amount, String method, String note) {
     }
 
-    public record ExpenseDto(String id, String item, String amount, String paidBy) {
+    /** {@code sharedBy}: the players who share this expense; empty means everyone who played. */
+    public record ExpenseDto(String id, String item, String amount, String paidBy, List<String> sharedBy) {
     }
 
     /**
