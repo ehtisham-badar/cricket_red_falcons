@@ -302,6 +302,8 @@
       fronted: round2(fronted),
       sentToManagement: sent,
       managementDue: round2(Math.max(tour.fee - sent, 0)),
+      // teamSpent: what the team fund paid for the team itself (day expenses it paid, and orders), apart from management.
+      teamSpent: round2(fundSpent - sent),
       cashInHand: round2(collected - fundSpent),
       payBack: round2(payBack),
       owed: round2(owed)

@@ -2016,7 +2016,7 @@
         <div><span>${admin ? 'I have paid management' : 'Paid to management'}</span><strong class="pos">${fmt(t.sentToManagement)}</strong></div>
         <div><span>Still owed to management</span><strong class="${t.managementDue > 0 ? 'neg' : ''}">${fmt(t.managementDue)}</strong></div>
         <div ${ownOnly() ? 'hidden' : ''}><span>${admin ? 'In my account' : 'With the manager'}</span><strong class="${t.cashInHand < 0 ? 'neg' : ''}">${fmtNet(t.cashInHand).replace(/^\+/, '')}</strong>
-          <small>Collected ${fmt(t.collected)} − sent ${fmt(t.sentToManagement)}${t.daySpent - t.fronted > 0 ? ` − expenses ${fmt(t.daySpent - t.fronted)}` : ''}${t.chargesSpent > 0 ? ` − orders ${fmt(t.chargesSpent)}` : ''}</small></div>
+          <small>Collected ${fmt(t.collected)} − management ${fmt(t.sentToManagement)}${t.teamSpent > 0 ? ` − team expenses ${fmt(t.teamSpent)}` : ''}</small></div>
       </div>
       <h4 class="league-sub">Payments to management</h4>
       ${paymentEditor(MGMT, state.tournament.payments, '+ Add payment to management')}
@@ -2459,9 +2459,9 @@
     const admin = isAdmin();
     const cards = [
       { label: 'Collected', value: fmt(t.collected), cls: '', note: 'Paid in by players' },
-      { label: 'League fee', value: t.tournamentFee > 0 ? fmt(t.tournamentFee) : '—', cls: '', note: tour.fee > 0 ? `${fmt(tour.perMatch)} per match · split among each XI` : 'Not set' },
-      { label: 'Day expenses', value: fmt(t.daySpent), cls: '', note: t.fronted > 0 ? `${fmt(t.fronted)} bought by players` : 'Trainings & matches' },
-      { label: admin ? 'In my account' : 'With the manager', value: fmtNet(t.cashInHand).replace(/^\+/, ''), cls: t.cashInHand < 0 ? 'neg' : '', note: 'Collected − sent to management − expenses' },
+      { label: 'League fee', value: t.tournamentFee > 0 ? fmt(t.tournamentFee) : '—', cls: '', note: tour.fee > 0 ? `${fmt(t.sentToManagement)} sent to management · ${fmt(t.managementDue)} still owed` : 'Not set' },
+      { label: 'Team expenses', value: fmt(t.teamSpent), cls: '', note: [`Days ${fmt(t.daySpent - t.fronted)}`, t.chargesSpent > 0 ? `orders ${fmt(t.chargesSpent)}` : '', t.fronted > 0 ? `+ ${fmt(t.fronted)} bought by players` : ''].filter(Boolean).join(' · ') },
+      { label: admin ? 'In my account' : 'With the manager', value: fmtNet(t.cashInHand).replace(/^\+/, ''), cls: t.cashInHand < 0 ? 'neg' : '', note: `Collected ${fmt(t.collected)} − management ${fmt(t.sentToManagement)} − team expenses ${fmt(t.teamSpent)}` },
       { label: admin ? 'You pay back' : 'To be paid back', value: fmt(t.payBack), cls: 'pos', note: 'Players in credit' },
       { label: admin ? 'Still owed to you' : 'Balance due', value: fmt(t.owed), cls: 'neg', note: 'Players still to pay' }
     ];
