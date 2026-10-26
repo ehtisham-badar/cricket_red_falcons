@@ -2643,10 +2643,48 @@
     </section>`;
   }
 
+  // The top of Home: the crest, a greeting, and how the season is going (record, form, league position).
+  function homeHero() {
+    const hour = new Date().getHours();
+    const hello = hour < 5 ? 'Up late' : hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+    const me = !realAdmin() ? myPlayer() : null;
+    const first = ((me ? me.name : session && session.name) || '').trim().split(/\s+/)[0];
+    const played = C.matches(state).filter(m => !m.test && m.finished && matchVisible(m));
+    const won = played.filter(m => m.result === 'win').length;
+    const lost = played.filter(m => m.result === 'loss').length;
+    const tied = played.filter(m => m.result === 'tie').length;
+    const form = played.filter(m => m.result).slice(-5);
+    const table = hpl && hpl.available ? (hpl.pointsTable || []).filter(r => r.round === (hpl.pointsTable[0] || {}).round) : [];
+    const pos = table.findIndex(r => isUs(r.team));
+    const fig = (value, label, cls = '') => `<div class="hero-fig ${cls}"><strong>${value}</strong><span>${label}</span></div>`;
+    return `<section class="home-hero">
+      <span class="hero-pitch" aria-hidden="true"></span>
+      <span class="hero-mark" aria-hidden="true"></span>
+      <div class="hero-top">
+        <span class="hero-crest"><img src="img/logo.jpeg" alt="Red Falcons crest"></span>
+        <div class="hero-title">
+          <span class="hero-hello">${esc(hello)}${first ? `, ${esc(first)}` : ''}</span>
+          <h2>Red Falcons</h2>
+          <span class="hero-league">${esc(leagueName())} · ${state.players.length} in the squad</span>
+        </div>
+      </div>
+      <div class="hero-strip">
+        ${fig(played.length, played.length === 1 ? 'Match' : 'Matches')}
+        ${fig(won, won === 1 ? 'Win' : 'Wins', 'win')}
+        ${fig(lost, lost === 1 ? 'Loss' : 'Losses', 'loss')}
+        ${tied ? fig(tied, tied === 1 ? 'Tie' : 'Ties') : ''}
+        ${pos >= 0 ? fig(`#${pos + 1}`, `of ${table.length}`, 'pos') : ''}
+      </div>
+      <div class="hero-form"><span>Form</span>${form.length
+        ? form.map(m => `<i class="f-${m.result}" title="${esc(m.label)}${m.opponent ? ' v ' + esc(m.opponent) : ''}">${m.result === 'win' ? 'W' : m.result === 'loss' ? 'L' : 'T'}</i>`).join('')
+        : '<em>The season is just getting started. Fly high, Falcons! 🦅</em>'}</div>
+    </section>`;
+  }
+
   function viewHome() {
     const next = nextMatchCard();
     return `
-      ${pageHead('Home', `${leagueName()} · ${state.players.length} player${state.players.length === 1 ? '' : 's'}`)}
+      ${homeHero()}
       ${todoCard()}
       ${next || `<section class="panel empty-next"><span class="pp-ico">${icon('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>', 22)}</span>
         <div class="pp-text"><strong>No upcoming match yet</strong><small>${isAdmin() ? 'Add one on the Days tab and it shows here with a countdown.' : 'When the next match is added, it shows here with a countdown.'}</small></div></section>`}
