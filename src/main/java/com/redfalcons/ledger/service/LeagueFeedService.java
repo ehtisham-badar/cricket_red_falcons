@@ -1,8 +1,11 @@
 package com.redfalcons.ledger.service;
 
+import com.redfalcons.ledger.model.LeagueSnapshot;
+import com.redfalcons.ledger.repo.LeagueSnapshotRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -13,8 +16,12 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZonedDateTime;
+import java.time.temporal.TemporalAdjusters;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -24,15 +31,19 @@ import java.util.regex.Pattern;
 
 /**
  * The Hundred Premier League as published on Crickslab: points table, results and top players. The server
- * reads the public tournament page (allowed by Crickslab's robots.txt; its /api/ paths are not used) at most
- * once every {@link #REFRESH}, keeps the last good copy, and serves a compact summary to the app.
+ * reads the public tournament page (allowed by Crickslab's robots.txt; its /api/ paths are not used) once a
+ * week, after Saturday's matches ({@link #FETCH_DAY} from {@link #FETCH_FROM}, Pakistan time), stores the copy
+ * in our database and serves every request from it. The admin's refresh button can still fetch at any time.
  */
 @Service
 public class LeagueFeedService {
 
     private static final Logger log = LoggerFactory.getLogger(LeagueFeedService.class);
-    private static final Duration REFRESH = Duration.ofMinutes(15);
-    private static final Duration RETRY_AFTER_ERROR = Duration.ofMinutes(5);
+    private static final DayOfWeek FETCH_DAY = DayOfWeek.SATURDAY;
+    private static final LocalTime FETCH_FROM = LocalTime.of(16, 0);
+    /** On fetch day, while Crickslab still shows the old table, ask again this often (until midnight). */
+    private static final Duration WAIT_FOR_TABLE = Duration.ofHours(1);
+    private static final String ROW = "hpl";
     /** The admin's refresh button doesn't fetch more often than this, to stay polite to Crickslab. */
     private static final Duration MIN_MANUAL_GAP = Duration.ofSeconds(10);
     private static final Pattern CHUNK = Pattern.compile("self\\.__next_f\\.push\\(\\[1,\"(.*?)\"\\]\\)</script>", Pattern.DOTALL);
@@ -41,6 +52,8 @@ public class LeagueFeedService {
 
     private final ObjectMapper json;
     private final String url;
+    /** Null in unit tests that only parse pages. */
+    private final LeagueSnapshotRepository store;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10))
             .followRedirects(HttpClient.Redirect.NORMAL).build();
 
@@ -48,36 +61,63 @@ public class LeagueFeedService {
     private Instant fetchedAt = Instant.EPOCH;
     private Instant lastTry = Instant.EPOCH;
     private boolean refreshing;
-    private final java.util.concurrent.ExecutorService background = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "hpl-feed");
-        t.setDaemon(true);
-        return t;
-    });
+    private boolean loaded;
+    /** The last fetch on fetch day still had last week's table (Crickslab hadn't updated it yet). */
+    private boolean tableUnchanged;
 
-    public LeagueFeedService(ObjectMapper json, @Value("${ledger.hpl-url:}") String url) {
+    public LeagueFeedService(ObjectMapper json, @Value("${ledger.hpl-url:}") String url, LeagueSnapshotRepository store) {
         this.json = json;
         this.url = url == null ? "" : url.trim();
+        this.store = store;
+    }
+
+    /** The stored summary, or an "unavailable" note. Never reaches Crickslab. */
+    public synchronized Map<String, Object> summary() {
+        load();
+        return snapshot();
+    }
+
+    /** The most recent fetch time (Saturday 4 pm Pakistan time) at or before {@code now}. */
+    static Instant lastFetchTime(Instant now) {
+        ZonedDateTime pk = now.atZone(PAKISTAN);
+        ZonedDateTime at = pk.with(TemporalAdjusters.previousOrSame(FETCH_DAY)).with(FETCH_FROM);
+        if (at.isAfter(pk)) at = at.minusWeeks(1);
+        return at.toInstant();
     }
 
     /**
-     * The latest summary, or an "unavailable" note. When the copy is old it is refreshed in the background (the
-     * caller gets the current copy straight away); only the very first request waits for a fetch.
+     * Every 15 minutes: fetch when the stored copy is from before the latest Saturday 4 pm (or there is none),
+     * retrying on errors. On fetch day itself, if Crickslab still shows the old table, ask again every hour
+     * until midnight so the new results are picked up once they are entered.
      */
-    public Map<String, Object> summary() {
+    @Scheduled(initialDelay = 30_000, fixedDelay = 15 * 60_000)
+    public void scheduledRefresh() {
+        if (url.isEmpty()) return;
         Instant now = Instant.now();
-        boolean first;
         synchronized (this) {
-            boolean stale = cached == null || fetchedAt.plus(REFRESH).isBefore(now);
-            boolean mayTry = !refreshing && lastTry.plus(cached == null ? RETRY_AFTER_ERROR.dividedBy(5) : RETRY_AFTER_ERROR).isBefore(now);
-            if (url.isEmpty() || !stale || !mayTry) return snapshot();
+            load();
+            Instant due = lastFetchTime(now);
+            boolean stillFetchDay = now.atZone(PAKISTAN).toLocalDate().equals(due.atZone(PAKISTAN).toLocalDate());
+            boolean go = fetchedAt.isBefore(due) || (stillFetchDay && tableUnchanged && lastTry.plus(WAIT_FOR_TABLE).isBefore(now));
+            if (refreshing || !go) return;
             lastTry = now;
             refreshing = true;
-            first = cached == null;
         }
-        if (first) refresh(); else background.submit(() -> { refresh(); });
-        synchronized (this) {
-            return snapshot();
-        }
+        refresh();
+    }
+
+    /** Reads the stored copy once, after a restart. */
+    private void load() {
+        if (loaded || store == null) return;
+        loaded = true;
+        store.findById(ROW).ifPresent(row -> {
+            try {
+                cached = json.readValue(row.getData(), LinkedHashMap.class);
+                fetchedAt = Instant.parse(row.getFetchedAt());
+            } catch (Exception e) {
+                log.warn("HPL feed: the stored copy could not be read ({}); it will be fetched again.", e.getMessage());
+            }
+        });
     }
 
     /**
@@ -99,12 +139,17 @@ public class LeagueFeedService {
         return out;
     }
 
+    @SuppressWarnings("unchecked")
     private boolean refresh() {
         try {
             Map<String, Object> fresh = parse(fetch());
             synchronized (this) {
+                load();
+                int before = cached == null ? -1 : played((List<Map<String, Object>>) cached.get("pointsTable"));
                 cached = cached == null ? fresh : newest(cached, fresh);
                 fetchedAt = Instant.now();
+                tableUnchanged = played((List<Map<String, Object>>) cached.get("pointsTable")) <= before;
+                if (store != null) store.save(new LeagueSnapshot(ROW, json.writeValueAsString(cached), fetchedAt.toString()));
             }
             return true;
         } catch (Exception e) {

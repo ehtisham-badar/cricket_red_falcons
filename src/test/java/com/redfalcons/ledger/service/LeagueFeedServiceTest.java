@@ -11,9 +11,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /** Reading Crickslab's tournament page: the page streams its data in chunks, which are joined and parsed. */
 class LeagueFeedServiceTest {
 
-    @Test
-    @SuppressWarnings("unchecked")
-    void readsTableResultsAndLeadersFromThePagePayload() throws Exception {
+    /** A tournament page as Crickslab serves it, with one finished match. */
+    private static String page() {
         String props = """
                 {"tournamentUid":"u1","tournamentPointTableData":{"title":"Hundred Premier League","logo":"L","data":[
                   {"round_title":"League Stage","teams":[
@@ -32,8 +31,14 @@ class LeagueFeedServiceTest {
         String body = escaped.substring(1, escaped.length() - 1);
         String html = "<html><script>self.__next_f.push([1,\"" + body.substring(0, 40) + "\"])</script>"
                 + "<script>self.__next_f.push([1,\"" + body.substring(40) + "\"])</script></html>";
+        return html;
+    }
 
-        Map<String, Object> out = new LeagueFeedService(JsonMapper.builder().build(), "https://example").parse(html);
+    @Test
+    @SuppressWarnings("unchecked")
+    void readsTableResultsAndLeadersFromThePagePayload() throws Exception {
+        String html = page();
+        Map<String, Object> out = new LeagueFeedService(JsonMapper.builder().build(), "https://example", null).parse(html);
 
         assertThat(out.get("title")).isEqualTo("Hundred Premier League");
         List<Map<String, Object>> table = (List<Map<String, Object>>) out.get("pointsTable");
@@ -67,5 +72,56 @@ class LeagueFeedServiceTest {
         // And a genuinely newer page does replace the old one.
         Map<String, Object> back = LeagueFeedService.newest(stale, finished);
         assertThat(((List<Map<String, Object>>) back.get("results")).get(0)).containsEntry("status", "Completed");
+    }
+
+    @Test
+    void fetchesFromSaturdayFourPmPakistanTime() {
+        // Sat 31 Oct 2026, 4 pm in Pakistan is 11:00 UTC.
+        java.time.Instant sat4pm = java.time.Instant.parse("2026-10-31T11:00:00Z");
+        assertThat(LeagueFeedService.lastFetchTime(sat4pm)).isEqualTo(sat4pm);
+        assertThat(LeagueFeedService.lastFetchTime(sat4pm.plusSeconds(3600 * 30))).isEqualTo(sat4pm);       // Sunday evening
+        assertThat(LeagueFeedService.lastFetchTime(sat4pm.minusSeconds(60))).isEqualTo(sat4pm.minusSeconds(7 * 86400)); // Saturday 3:59 pm
+    }
+
+    @Test
+    void aFetchedCopyIsStoredAndServedAfterARestartWithoutFetching() throws Exception {
+        com.sun.net.httpserver.HttpServer site = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+        java.util.concurrent.atomic.AtomicInteger hits = new java.util.concurrent.atomic.AtomicInteger();
+        site.createContext("/", ex -> {
+            hits.incrementAndGet();
+            byte[] b = page().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            ex.sendResponseHeaders(200, b.length);
+            ex.getResponseBody().write(b);
+            ex.close();
+        });
+        site.start();
+        String url = "http://127.0.0.1:" + site.getAddress().getPort() + "/";
+        Map<String, com.redfalcons.ledger.model.LeagueSnapshot> rows = new java.util.HashMap<>();
+        com.redfalcons.ledger.repo.LeagueSnapshotRepository store = org.mockito.Mockito.mock(com.redfalcons.ledger.repo.LeagueSnapshotRepository.class);
+        org.mockito.Mockito.when(store.save(org.mockito.ArgumentMatchers.any())).thenAnswer(a -> {
+            com.redfalcons.ledger.model.LeagueSnapshot r = a.getArgument(0);
+            rows.put(r.getId(), r);
+            return r;
+        });
+        org.mockito.Mockito.when(store.findById(org.mockito.ArgumentMatchers.anyString())).thenAnswer(a -> java.util.Optional.ofNullable(rows.get(a.getArgument(0))));
+        try {
+            LeagueFeedService first = new LeagueFeedService(JsonMapper.builder().build(), url, store);
+            // Opening the app never fetches: nothing is stored yet, so there is nothing to show.
+            assertThat(first.summary()).containsEntry("available", false);
+            assertThat(hits.get()).isZero();
+            // The scheduled check finds no copy at all, so it fetches once and stores it.
+            first.scheduledRefresh();
+            assertThat(hits.get()).isEqualTo(1);
+            assertThat(first.summary()).containsEntry("available", true);
+            // Already fetched since the last Saturday 4 pm: the next checks don't fetch again.
+            first.scheduledRefresh();
+            assertThat(hits.get()).isEqualTo(1);
+        } finally {
+            site.stop(0);
+        }
+        // After a restart the stored copy is served straight from the database.
+        LeagueFeedService restarted = new LeagueFeedService(JsonMapper.builder().build(), url, store);
+        assertThat(restarted.summary()).containsEntry("available", true).containsEntry("title", "Hundred Premier League");
+        assertThat(hits.get()).isEqualTo(1);
     }
 }
