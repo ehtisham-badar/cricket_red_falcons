@@ -27,15 +27,20 @@ public class MemberCharge {
     @Column(name = "player_ids", nullable = false, length = 2000)
     private String playerIds = "";
 
+    /** Comma-separated ids of the players on it who have sent the money (a tracker; it doesn't change balances). */
+    @Column(name = "received_ids", length = 2000)
+    private String receivedIds = "";
+
     protected MemberCharge() {
     }
 
-    public MemberCharge(String id, int position, String title, String amount, String playerIds) {
+    public MemberCharge(String id, int position, String title, String amount, String playerIds, String receivedIds) {
         this.id = id;
         this.position = position;
         this.title = title;
         this.amount = amount;
         this.playerIds = playerIds;
+        this.receivedIds = receivedIds;
     }
 
     public String getId() { return id; }
@@ -43,4 +48,5 @@ public class MemberCharge {
     public String getTitle() { return title; }
     public String getAmount() { return amount; }
     public String getPlayerIds() { return playerIds == null ? "" : playerIds; }
+    public String getReceivedIds() { return receivedIds == null ? "" : receivedIds; }
 }

@@ -35,17 +35,18 @@
     { id: 'players', label: 'Team', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>' },
     { id: 'announce', label: 'Announce', staffTab: true, icon: '<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>' },
     { id: 'polls', label: 'Polls', staffTab: true, icon: '<path d="M3 3v18h18"/><path d="M8 17V9M13 17V5M18 17v-6"/>' },
+    { id: 'shirtpay', label: 'Shirt money', adminTab: true, icon: '<path d="M20.4 3.6 16 2l-4 3-4-3-4.4 1.6L2 8l3 2v10h14V10l3-2z"/>' },
     { id: 'kit', label: 'Kit sizes', adminTab: true, icon: '<path d="M20.4 3.6 16 2l-4 3-4-3-4.4 1.6L2 8l3 2v10h14V10l3-2z"/>' },
     { id: 'settings', label: 'Settings', icon: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>' }
   ];
 
   // The bar shows six entries, not every screen: related screens share one entry and a switch at the top of the page.
-  const SEG_LABEL = { days: 'Days', stats: 'Stats', news: 'News', announce: 'Announcements', polls: 'Polls', kit: 'Kit' };
+  const SEG_LABEL = { days: 'Days', stats: 'Stats', news: 'News', announce: 'Announcements', polls: 'Polls', kit: 'Kit', players: 'Squad', shirtpay: 'Shirt money' };
   const GROUPS = [
     { id: 'summary', label: 'Home', tabs: ['summary'] },
     { id: 'matches', label: 'Matches', tabs: ['days', 'stats'], icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' },
     { id: 'money', label: 'Money', tabs: ['money'] },
-    { id: 'players', label: 'Team', tabs: ['players'] },
+    { id: 'players', label: 'Team', tabs: ['players', 'shirtpay'] },
     { id: 'news', label: 'News', tabs: ['news', 'announce', 'polls', 'kit'] },
     { id: 'settings', label: 'Settings', tabs: ['settings'] }
   ];
@@ -483,11 +484,15 @@
         (stats[match] = stats[match] || {})[pid] = { ...C.statOf({ stats: { m: { p: e } } }, 'm', 'p') };
       });
     });
-    // Season-wide charges on chosen players (a shirt order); only known players, each once.
-    const charges = (Array.isArray(d.charges) ? d.charges : []).filter(c => c && c.id).map(c => ({
-      id: c.id, title: c.title || '', amount: c.amount == null ? '' : String(c.amount),
-      players: [...new Set(Array.isArray(c.players) ? c.players : [])].filter(id => ids.has(id))
-    }));
+    // Season-wide charges on chosen players (a shirt order); only known players, each once. received: those of
+    // them who have sent the money.
+    const charges = (Array.isArray(d.charges) ? d.charges : []).filter(c => c && c.id).map(c => {
+      const on = [...new Set(Array.isArray(c.players) ? c.players : [])].filter(id => ids.has(id));
+      return {
+        id: c.id, title: c.title || '', amount: c.amount == null ? '' : String(c.amount), players: on,
+        received: on.filter(id => Array.isArray(c.received) && c.received.includes(id))
+      };
+    });
     return {
       players,
       matches,
@@ -1247,6 +1252,35 @@
       </section>`;
   }
 
+  // The admin's tracker: for each order (a shirt), who on it has sent their money. It doesn't change balances.
+  function viewShirtMoney() {
+    const list = C.charges(state);
+    const head = pageHead('Shirt money', 'Who has sent their money for the order.');
+    if (!list.length) {
+      return `${head}<section class="panel"><p class="muted">No orders yet. Add one (for example a shirt) under Money → Orders &amp; extra charges, and pick the players on it.</p>
+        <button class="btn btn-gold" data-action="tab" data-tab="money">Go to Money</button></section>`;
+    }
+    return head + list.map(x => {
+      const got = new Set(x.received || []);
+      const people = x.players.map(id => findPlayer(id)).filter(Boolean);
+      const amt = C.num(x.amount);
+      const rows = people.map((p, i) => {
+        const on = got.has(p.id);
+        return `<div class="paid-line ${on ? 'on' : ''}">
+          <span class="sr">${i + 1}</span>
+          <span class="pl-namecell">${avatar(p, 30)}<button class="pl-name" data-action="open-profile" data-id="${esc(p.id)}">${esc(p.name) || '<em>Unnamed</em>'}</button></span>
+          <button class="switch ${on ? 'on' : ''}" role="switch" aria-checked="${on}" data-action="charge-received" data-id="${esc(x.id)}" data-player="${esc(p.id)}" aria-label="${esc(p.name)} has sent the money for ${esc(x.title || 'the order')}"><span></span></button>
+          <span class="paid-state">${on ? 'Sent' : 'Not yet'}</span>
+        </div>`;
+      }).join('');
+      return `<section class="panel">
+        <div class="panel-head"><h3>${esc(x.title || 'Order')}${amt > 0 ? ` <span class="muted">${fmt(amt)} each</span>` : ''}</h3>
+          <p class="muted">${got.size} of ${people.length} sent${amt > 0 ? ` · ${fmt(C.round2(amt * got.size))} of ${fmt(C.chargeTotal(state, x))} received` : ''}</p></div>
+        ${rows || '<p class="muted">Nobody is on this order yet. Pick the players under Money → Orders &amp; extra charges.</p>'}
+      </section>`;
+    }).join('');
+  }
+
   function viewPolls() {
     return `${pageHead('Polls', 'Ask the team a quick question and see who answered.')}${pollsAdmin()}`;
   }
@@ -1653,7 +1687,7 @@
       ? `<span class="badge badge-admin">${icon('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>', 14)} Admin</span>`
       : `<span class="badge badge-view">${icon('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>', 14)} ${esc(session.name)} · ${isManager() ? 'manager' : 'view only'}</span>`;
 
-    const views = { news: viewNews, summary: viewHome, money: viewMoney, days: viewDays, stats: viewStats, players: viewPlayers, announce: viewAnnounce, polls: viewPolls, kit: viewKit, settings: viewSettings };
+    const views = { news: viewNews, summary: viewHome, money: viewMoney, days: viewDays, stats: viewStats, players: viewPlayers, announce: viewAnnounce, polls: viewPolls, kit: viewKit, shirtpay: viewShirtMoney, settings: viewSettings };
     $('#view').innerHTML = archiveBar() + groupSeg() + (views[tab] || viewHome)();
     $('#sheet-root').innerHTML = sheet ? renderSheet() : '';
     document.body.classList.toggle('sheet-open', !!sheet);
@@ -5570,7 +5604,7 @@ ${tabRows.map(r => {
     },
     'add-charge'(el) {
       if (!isAdmin()) return;
-      const x = { id: rid(), title: el.dataset.title || '', amount: '', players: [] };
+      const x = { id: rid(), title: el.dataset.title || '', amount: '', players: [], received: [] };
       (state.charges = state.charges || []).push(x);
       chargePicker = x.id;
       commit();
@@ -5584,12 +5618,22 @@ ${tabRows.map(r => {
       const set = new Set(x.players);
       set.has(el.dataset.player) ? set.delete(el.dataset.player) : set.add(el.dataset.player);
       x.players = state.players.map(p => p.id).filter(id => set.has(id));
+      x.received = (x.received || []).filter(id => set.has(id));
       commit();
     },
     'charge-set'(el) {
       const x = findCharge(el);
       if (!x || !isAdmin()) return;
       x.players = el.dataset.who === 'squad' ? state.players.filter(C.inTournament).map(p => p.id) : [];
+      x.received = (x.received || []).filter(id => x.players.includes(id));
+      commit();
+    },
+    'charge-received'(el) {
+      const x = findCharge(el);
+      if (!x || !isAdmin() || !x.players.includes(el.dataset.player)) return;
+      const set = new Set(x.received || []);
+      set.has(el.dataset.player) ? set.delete(el.dataset.player) : set.add(el.dataset.player);
+      x.received = x.players.filter(id => set.has(id));
       commit();
     },
     async 'remove-charge'(el) {

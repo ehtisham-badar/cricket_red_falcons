@@ -44,8 +44,11 @@ public record LedgerDto(
                             String jerseyName, String profileAt, String shirtSize, String kitAt) {
     }
 
-    /** A charge on chosen players only (a shirt order): each of {@code players} is charged {@code amount}. */
-    public record ChargeDto(String id, String title, String amount, List<String> players) {
+    /**
+     * A charge on chosen players only (a shirt order): each of {@code players} is charged {@code amount}.
+     * {@code received}: those of them who have sent the money (null on save means none).
+     */
+    public record ChargeDto(String id, String title, String amount, List<String> players, List<String> received) {
     }
 
     public record PaymentDto(String id, String date, String amount, String method, String note) {

@@ -208,8 +208,7 @@ public class LedgerService {
 
     private List<ChargeDto> storedCharges() {
         return charges.findAll(BY_POSITION).stream()
-                .map(c -> new ChargeDto(c.getId(), c.getTitle(), c.getAmount(),
-                        c.getPlayerIds().isEmpty() ? List.of() : List.of(c.getPlayerIds().split(","))))
+                .map(c -> new ChargeDto(c.getId(), c.getTitle(), c.getAmount(), idList(c.getPlayerIds()), idList(c.getReceivedIds())))
                 .toList();
     }
 
@@ -456,10 +455,12 @@ public class LedgerService {
         Set<String> chargeIds = new HashSet<>();
         for (ChargeDto c : chargeIn) {
             if (c == null || blank(c.id()) || !chargeIds.add(c.id())) continue;
-            String who = String.join(",", c.players() == null ? List.of()
-                    : c.players().stream().filter(playerIds::contains).distinct().toList());
+            List<String> on = c.players() == null ? List.of() : c.players().stream().filter(playerIds::contains).distinct().toList();
+            // Only players on the charge can have sent money for it.
+            String received = String.join(",", c.received() == null ? List.of() : c.received().stream().filter(on::contains).distinct().toList());
+            String who = String.join(",", on);
             if (who.length() > 2000) throw new IllegalArgumentException("Too many players on one charge.");
-            newCharges.add(new MemberCharge(c.id(), newCharges.size(), clip(c.title(), 80), numeric(c.amount()), who));
+            newCharges.add(new MemberCharge(c.id(), newCharges.size(), clip(c.title(), 80), numeric(c.amount()), who, received));
         }
 
         Map<String, String> oldExpenseAmounts = new HashMap<>();
@@ -708,6 +709,10 @@ public class LedgerService {
         BigDecimal total = amounts.filter(a -> a != null && !a.isEmpty()).map(BigDecimal::new)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         return total.signum() == 0 ? "" : total.stripTrailingZeros().toPlainString();
+    }
+
+    private static List<String> idList(String csv) {
+        return csv.isEmpty() ? List.of() : List.of(csv.split(","));
     }
 
     private static String isoDate(String s) {
