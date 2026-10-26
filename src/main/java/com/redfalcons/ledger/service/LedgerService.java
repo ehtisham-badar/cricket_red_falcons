@@ -137,9 +137,12 @@ public class LedgerService {
                     // Shirt sizes and whether someone has answered are for the admin; players see only their own.
                     p.id().equals(viewerId) ? p.shirtSize() : "", p.id().equals(viewerId) ? p.kitAt() : "");
         }).toList();
+        // Who has sent money for an order is payment news too: with "own", a viewer only learns about themselves.
+        List<ChargeDto> cs = full.charges() == null ? null : full.charges().stream().map(c -> !ownOnly || c.received() == null ? c
+                : new ChargeDto(c.id(), c.title(), c.amount(), c.players(), c.received().stream().filter(id -> id.equals(viewerId)).toList())).toList();
         return new LedgerDto(full.app(), full.version(), full.savedAt(), ps, full.amounts(), full.trainings(), full.expenses(),
                 full.tournament(), st, full.twelfth(), full.battingOrder(), full.matches(),
-                showStats && full.stats() != null ? full.stats() : Map.of(), full.charges());
+                showStats && full.stats() != null ? full.stats() : Map.of(), cs);
     }
 
     /** The full ledger, as the admin sees it. */

@@ -2622,6 +2622,27 @@
       </div>${open}</section>`;
   }
 
+  // A player's own orders (a shirt): what each costs them and whether the admin has marked their money as sent.
+  function myOrdersCard() {
+    if (realAdmin()) return '';
+    const me = myPlayer();
+    const mine = me ? C.charges(state).filter(x => x.players.includes(me.id) && C.num(x.amount) > 0) : [];
+    if (!mine.length) return '';
+    const due = mine.filter(x => !(x.received || []).includes(me.id));
+    const rows = mine.map(x => {
+      const sent = (x.received || []).includes(me.id);
+      return `<div class="order-line ${sent ? 'on' : ''}"><span><strong>${esc(x.title || 'Order')}</strong><small>${fmt(C.num(x.amount))}</small></span>
+        <span class="prof-tag ${sent ? 'ok' : 'todo'}">${sent ? `${icon('<path d="M20 6 9 17l-5-5"/>', 13)} Sent` : 'Not sent yet'}</span></div>`;
+    }).join('');
+    return `<section class="panel order-card">
+      <div class="order-top"><span class="pp-ico">${icon('<path d="M20.4 3.6 16 2l-4 3-4-3-4.4 1.6L2 8l3 2v10h14V10l3-2z"/>', 22)}</span>
+        <div class="pp-text"><strong>Your order${mine.length === 1 ? '' : 's'}</strong>
+          <small>${due.length ? `${fmt(C.round2(due.reduce((s, x) => s + C.num(x.amount), 0)))} to send` : 'All sent. Thank you!'}</small></div></div>
+      ${rows}
+      ${due.length && payTo().length ? `<small class="pay-to-line">Pay to ${payTo().map(f => esc(f.value)).join(' · ')}</small>` : ''}
+    </section>`;
+  }
+
   function viewHome() {
     const next = nextMatchCard();
     return `
@@ -2630,6 +2651,7 @@
       ${next || `<section class="panel empty-next"><span class="pp-ico">${icon('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>', 22)}</span>
         <div class="pp-text"><strong>No upcoming match yet</strong><small>${isAdmin() ? 'Add one on the Days tab and it shows here with a countdown.' : 'When the next match is added, it shows here with a countdown.'}</small></div></section>`}
       ${moneyGlance()}
+      ${myOrdersCard()}
       ${pollsPanel()}
       ${fixturesPanel()}
       ${hplPanel()}

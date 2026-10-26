@@ -129,11 +129,15 @@ class LedgerApiTest {
         String privateLedger = """
                 {"players":[{"id":"p1","name":"Babar","att":{},"payments":[{"id":"x1","date":"","amount":"700","method":"","note":""}]},
                             {"id":"p2","name":"Rizwan","att":{},"payments":[{"id":"x2","date":"","amount":"900","method":"","note":""}]}],
+                 "charges":[{"id":"c1","title":"Shirt","amount":"1050","players":["p1","p2"],"received":["p1","p2"]}],
                  "settings":{"viewerAccess":"own"}}
                 """;
         assertThat(send("PUT", "/api/ledger", privateLedger, token).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"viewerAccess\":\"own\"").doesNotContain("\"700\"").doesNotContain("\"900\"");
         assertThat(viewerGet("p1").body()).contains("\"amount\":\"700\"").doesNotContain("\"900\"");
+        // Who has sent money for an order: a viewer only learns about themselves.
+        assertThat(viewerGet("p1").body()).contains("\"players\":[\"p1\",\"p2\"],\"received\":[\"p1\"]");
+        assertThat(send("GET", "/api/ledger", null, token).body()).contains("\"received\":[\"p1\",\"p2\"]");
         assertThat(send("GET", "/api/ledger", null, token).body()).contains("\"700\"").contains("\"900\"");
         assertThat(send("PUT", "/api/ledger", "{\"players\":[],\"settings\":{\"viewerAccess\":\"all\"}}", token).statusCode()).isEqualTo(200);
 
