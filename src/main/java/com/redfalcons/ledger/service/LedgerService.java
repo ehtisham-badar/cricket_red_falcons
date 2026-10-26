@@ -4,6 +4,7 @@ import com.redfalcons.ledger.model.DayAmount;
 import com.redfalcons.ledger.model.Expense;
 import com.redfalcons.ledger.model.MatchDay;
 import com.redfalcons.ledger.model.MatchStat;
+import com.redfalcons.ledger.model.MemberCharge;
 import com.redfalcons.ledger.model.Payment;
 import com.redfalcons.ledger.model.Player;
 import com.redfalcons.ledger.model.Setting;
@@ -15,12 +16,14 @@ import com.redfalcons.ledger.repo.MatchDayRepository;
 import com.redfalcons.ledger.repo.MatchPhotoRepository;
 import com.redfalcons.ledger.repo.PlayerPhotoRepository;
 import com.redfalcons.ledger.repo.MatchStatRepository;
+import com.redfalcons.ledger.repo.MemberChargeRepository;
 import com.redfalcons.ledger.repo.PaymentRepository;
 import com.redfalcons.ledger.repo.PlayerRepository;
 import com.redfalcons.ledger.repo.SettingRepository;
 import com.redfalcons.ledger.repo.TournamentPaymentRepository;
 import com.redfalcons.ledger.repo.TrainingRepository;
 import com.redfalcons.ledger.web.LedgerDto;
+import com.redfalcons.ledger.web.LedgerDto.ChargeDto;
 import com.redfalcons.ledger.web.LedgerDto.ExpenseDto;
 import com.redfalcons.ledger.web.LedgerDto.MatchDto;
 import com.redfalcons.ledger.web.LedgerDto.StatDto;
@@ -82,6 +85,7 @@ public class LedgerService {
     private final PlayerPhotoRepository photos;
     private final MatchPhotoRepository matchPhotos;
     private final EngageCleanup engage;
+    private final MemberChargeRepository charges;
     /** Largest count a single stat can hold. */
     private static final int STAT_MAX = 999;
 
@@ -89,8 +93,10 @@ public class LedgerService {
                          ExpenseRepository expenses, PaymentRepository payments,
                          TournamentPaymentRepository tournamentPayments, SettingRepository settings,
                          MatchDayRepository matches, MatchStatRepository stats, NotificationService notifications,
-                         PlayerPhotoRepository photos, MatchPhotoRepository matchPhotos, EngageCleanup engage) {
+                         PlayerPhotoRepository photos, MatchPhotoRepository matchPhotos, EngageCleanup engage,
+                         MemberChargeRepository charges) {
         this.engage = engage;
+        this.charges = charges;
         this.matchPhotos = matchPhotos;
         this.notifications = notifications;
         this.photos = photos;
@@ -133,7 +139,7 @@ public class LedgerService {
         }).toList();
         return new LedgerDto(full.app(), full.version(), full.savedAt(), ps, full.amounts(), full.trainings(), full.expenses(),
                 full.tournament(), st, full.twelfth(), full.battingOrder(), full.matches(),
-                showStats && full.stats() != null ? full.stats() : Map.of());
+                showStats && full.stats() != null ? full.stats() : Map.of(), full.charges());
     }
 
     /** The full ledger, as the admin sees it. */
@@ -196,7 +202,15 @@ public class LedgerService {
                         tournamentPayments.findAll(BY_POSITION).stream()
                                 .map(x -> new PaymentDto(x.getId(), x.getDate(), x.getAmount(), x.getMethod(), x.getNote()))
                                 .toList(), parseIntOr(s.get(MATCH_COUNT), DEFAULT_MATCH_COUNT)),
-                settingsDto, parseTwelfth(s.get(TWELFTH)), parseBatting(s), matchesWithTwelfth(parseTwelfth(s.get(TWELFTH))), storedStats());
+                settingsDto, parseTwelfth(s.get(TWELFTH)), parseBatting(s), matchesWithTwelfth(parseTwelfth(s.get(TWELFTH))), storedStats(),
+                storedCharges());
+    }
+
+    private List<ChargeDto> storedCharges() {
+        return charges.findAll(BY_POSITION).stream()
+                .map(c -> new ChargeDto(c.getId(), c.getTitle(), c.getAmount(),
+                        c.getPlayerIds().isEmpty() ? List.of() : List.of(c.getPlayerIds().split(","))))
+                .toList();
     }
 
     /** Bowling styles a player may pick for themselves. */
@@ -436,6 +450,18 @@ public class LedgerService {
             }
         });
 
+        // Charges on chosen players (a shirt order); without charges (an older app), keep the stored ones.
+        List<ChargeDto> chargeIn = in.charges() != null ? in.charges() : storedCharges();
+        List<MemberCharge> newCharges = new ArrayList<>();
+        Set<String> chargeIds = new HashSet<>();
+        for (ChargeDto c : chargeIn) {
+            if (c == null || blank(c.id()) || !chargeIds.add(c.id())) continue;
+            String who = String.join(",", c.players() == null ? List.of()
+                    : c.players().stream().filter(playerIds::contains).distinct().toList());
+            if (who.length() > 2000) throw new IllegalArgumentException("Too many players on one charge.");
+            newCharges.add(new MemberCharge(c.id(), newCharges.size(), clip(c.title(), 80), numeric(c.amount()), who));
+        }
+
         Map<String, String> oldExpenseAmounts = new HashMap<>();
         expenses.idsAndAmounts().forEach(row -> oldExpenseAmounts.put((String) row[0], (String) row[1]));
 
@@ -445,6 +471,7 @@ public class LedgerService {
         // and update the rest; a bulk delete would leave stale copies that "update" missing rows.
         matches.deleteAll(matches.findAll().stream().filter(m -> !matchIds.contains(m.getId())).toList());
         expenses.deleteAllInBatch();
+        charges.deleteAll(); // not InBatch: the stored rows may be loaded (kept when the save has none)
         payments.deleteAllInBatch();
         tournamentPayments.deleteAllInBatch();
         legacyAmounts.deleteAllInBatch();
@@ -454,6 +481,7 @@ public class LedgerService {
         matches.saveAll(newMatches);
         players.saveAll(newPlayers);
         expenses.saveAll(newExpenses);
+        charges.saveAll(newCharges);
         payments.saveAll(newPayments);
 
         TournamentDto tour = in.tournament();

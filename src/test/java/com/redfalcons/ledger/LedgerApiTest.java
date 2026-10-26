@@ -91,6 +91,15 @@ class LedgerApiTest {
                 .contains("\"amounts\":{\"t1\":\"1500\"}")
                 .doesNotContain("legacy-t1");
 
+        // Charges on chosen players (a shirt order) keep only real players, once each; a save without them keeps them.
+        String withCharges = v3.replace("\"tournament\":{\"fee\":\"65000\"}",
+                "\"tournament\":{\"fee\":\"65000\"},\"charges\":[{\"id\":\"c1\",\"title\":\" Shirt \",\"amount\":\"2500\",\"players\":[\"p2\",\"ghost\",\"p2\",\"p1\"]}]");
+        assertThat(send("PUT", "/api/ledger", withCharges, token).statusCode()).isEqualTo(200);
+        String charged = "\"charges\":[{\"id\":\"c1\",\"title\":\"Shirt\",\"amount\":\"2500\",\"players\":[\"p2\",\"p1\"]}]";
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains(charged);
+        assertThat(send("PUT", "/api/ledger", v3, token).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains(charged);
+
         // League fee name, advance, transfers to the tournament management and the payment account round-trip.
         String withManagement = """
                 {"players":[],"tournament":{"name":"Hundred Premier League","fee":"65000","advance":"1200","matchCount":6,"payments":[

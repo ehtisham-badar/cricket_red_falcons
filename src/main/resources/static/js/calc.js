@@ -12,6 +12,8 @@
 //    (player.tournament !== false) until they are.
 //    With roundUp each player's league total is rounded once, to whole rupees that add up to the fee.
 //  - A player's payments ({ id, date, amount, method, note }) add up to what they have paid.
+//  - charges ({ id, title, amount, players: [ids] }) are season-wide costs on chosen players only, such as a
+//    shirt order: each of them is charged the amount. The team fund pays the supplier.
 //  - tournament.payments are transfers from the admin to the tournament management; only money
 //    actually sent leaves the admin's account (cash in hand), the rest is still owed to management.
 (function (root) {
@@ -81,6 +83,21 @@
     if (!e.sharedBy || !e.sharedBy.length) return null;
     const ids = e.sharedBy.filter(id => state.players.some(p => p.id === id));
     return ids.length ? ids : null;
+  }
+
+  // Season-wide charges (a shirt order), each on its chosen players only.
+  function charges(state) {
+    return state.charges || [];
+  }
+
+  // What a player is charged for one charge: its amount if they are on it, else 0.
+  function chargeOf(c, playerId) {
+    return (c.players || []).includes(playerId) ? num(c.amount) : 0;
+  }
+
+  // The whole charge: its amount for every player on it.
+  function chargeTotal(state, c) {
+    return round2(num(c.amount) * (c.players || []).filter(id => state.players.some(p => p.id === id)).length);
   }
 
   // The 12th man shares a match's costs once he bats or bowls in it; fielding as a substitute doesn't count.
@@ -237,6 +254,14 @@
       });
     });
 
+    charges(state).forEach(c => {
+      const amt = chargeOf(c, player.id);
+      if (amt > 0) {
+        cost += amt;
+        lines.push({ type: 'charge', text: (c.title || 'Charge') + ': ' + fmt(amt) });
+      }
+    });
+
     cost = round2(cost);
     credit = round2(credit);
     const paid = paidTotal(player);
@@ -262,6 +287,8 @@
       if (c.net > 0) payBack += c.net;
       if (c.net < 0) owed += -c.net;
     });
+    const chargesSpent = round2(charges(state).reduce((s, c) => s + chargeTotal(state, c), 0));
+    fundSpent += chargesSpent;
     days(state).forEach(d => {
       daySpent += stats[d.id].amount;
       dayExpenses(state, d.id).forEach(e => { if (!e.paidBy) fundSpent += num(e.amount); });
@@ -270,7 +297,8 @@
       collected: round2(collected),
       tournamentFee: tour.fee,
       daySpent: round2(daySpent),
-      spent: round2(daySpent + tour.fee),
+      chargesSpent,
+      spent: round2(daySpent + tour.fee + chargesSpent),
       fronted: round2(fronted),
       sentToManagement: sent,
       managementDue: round2(Math.max(tour.fee - sent, 0)),
@@ -376,7 +404,7 @@
 
   const api = {
     matches, leagueMatchCount, days, num, isCharged, pays, expPays, twelfthPlays,
-    BALLS_PER_OVER, STAT_KEYS, statOf, runsOf, shotsOf, strikeRate, oversOf, economy, batted, extrasOf, concededOf, bowled, leagueStats, round2, inTournament, paidTotal, dayExpenses, dayAmount, sharedOf, dayStats, allStats,
+    BALLS_PER_OVER, STAT_KEYS, statOf, runsOf, shotsOf, strikeRate, oversOf, economy, batted, extrasOf, concededOf, bowled, leagueStats, round2, inTournament, paidTotal, dayExpenses, dayAmount, sharedOf, charges, chargeOf, chargeTotal, dayStats, allStats,
     tournamentStats, advanceShare, advancePerPlayer, advanceDue, playerCalc, totals, warnings, money, signedMoney, netLabel
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

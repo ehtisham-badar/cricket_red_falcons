@@ -394,7 +394,7 @@
 
   function emptyState() {
     return {
-      players: [], trainings: [{ id: 't1', desc: '' }], expenses: {}, tournament: { name: '', fee: '', advance: '', matchCount: 5, payments: [] }, twelfth: {}, battingOrder: {}, matches: [], stats: {},
+      players: [], trainings: [{ id: 't1', desc: '' }], expenses: {}, tournament: { name: '', fee: '', advance: '', matchCount: 5, payments: [] }, twelfth: {}, battingOrder: {}, matches: [], stats: {}, charges: [],
       settings: { currency: 'Rs ', maxPerMatch: 11, roundUp: false, ...DEFAULT_PAY_TO }
     };
   }
@@ -483,10 +483,16 @@
         (stats[match] = stats[match] || {})[pid] = { ...C.statOf({ stats: { m: { p: e } } }, 'm', 'p') };
       });
     });
+    // Season-wide charges on chosen players (a shirt order); only known players, each once.
+    const charges = (Array.isArray(d.charges) ? d.charges : []).filter(c => c && c.id).map(c => ({
+      id: c.id, title: c.title || '', amount: c.amount == null ? '' : String(c.amount),
+      players: [...new Set(Array.isArray(c.players) ? c.players : [])].filter(id => ids.has(id))
+    }));
     return {
       players,
       matches,
       stats,
+      charges,
       twelfth,
       battingOrder,
       trainings: d.trainings && d.trainings.length ? d.trainings.map(t => ({ id: t.id, desc: t.desc || '' })) : [{ id: 't1', desc: '' }],
@@ -516,8 +522,8 @@
   }
 
   function comparable(d) {
-    const { players, trainings, matches, expenses, tournament, settings, twelfth, battingOrder, stats } = d;
-    return JSON.stringify({ players, trainings, matches, expenses, tournament, settings, twelfth, battingOrder, stats });
+    const { players, trainings, matches, expenses, tournament, settings, twelfth, battingOrder, stats, charges } = d;
+    return JSON.stringify({ players, trainings, matches, expenses, tournament, settings, twelfth, battingOrder, stats, charges });
   }
 
   // ---------- language ----------
@@ -2010,10 +2016,52 @@
         <div><span>${admin ? 'I have paid management' : 'Paid to management'}</span><strong class="pos">${fmt(t.sentToManagement)}</strong></div>
         <div><span>Still owed to management</span><strong class="${t.managementDue > 0 ? 'neg' : ''}">${fmt(t.managementDue)}</strong></div>
         <div ${ownOnly() ? 'hidden' : ''}><span>${admin ? 'In my account' : 'With the manager'}</span><strong class="${t.cashInHand < 0 ? 'neg' : ''}">${fmtNet(t.cashInHand).replace(/^\+/, '')}</strong>
-          <small>Collected ${fmt(t.collected)} − sent ${fmt(t.sentToManagement)}${t.daySpent - t.fronted > 0 ? ` − expenses ${fmt(t.daySpent - t.fronted)}` : ''}</small></div>
+          <small>Collected ${fmt(t.collected)} − sent ${fmt(t.sentToManagement)}${t.daySpent - t.fronted > 0 ? ` − expenses ${fmt(t.daySpent - t.fronted)}` : ''}${t.chargesSpent > 0 ? ` − orders ${fmt(t.chargesSpent)}` : ''}</small></div>
       </div>
       <h4 class="league-sub">Payments to management</h4>
       ${paymentEditor(MGMT, state.tournament.payments, '+ Add payment to management')}
+    </section>`;
+  }
+
+  let chargePicker = null;                   // the charge whose player list is open (admin)
+
+  // Admin only: season-wide charges on chosen players (a shirt order). Each gets its own column on the season sheet.
+  function chargesBlock() {
+    if (!isAdmin() || !state.players.length) return '';
+    const rows = C.charges(state).map(x => {
+      const chosen = new Set(x.players);
+      const open = chargePicker === x.id;
+      const attrs = `data-id="${esc(x.id)}"`;
+      return `<div class="exp-row">
+        <input class="field" type="text" placeholder="Title (e.g. Shirt)" value="${esc(x.title)}" maxlength="80"
+          data-input="charge-title" ${attrs} data-focus="cht-${esc(x.id)}" aria-label="Title">
+        <span class="money-input"><em>${esc(cur().trim())}</em><input type="text" inputmode="decimal" placeholder="0" value="${esc(x.amount)}"
+          data-input="charge-amount" ${attrs} data-focus="cha-${esc(x.id)}" aria-label="Amount for each player"></span>
+        <button class="icon-btn danger" data-action="remove-charge" ${attrs} aria-label="Remove ${esc(x.title || 'charge')}">${X_ICON}</button>
+        <div class="exp-share ${open ? 'open' : ''}">
+          <button class="exp-share-btn ${chosen.size ? 'on' : ''}" data-action="charge-open" ${attrs} aria-expanded="${open}">
+            ${icon('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>', 15)}
+            Charged to: <strong>${chosen.size ? `${chosen.size} player${chosen.size === 1 ? '' : 's'}` : 'nobody yet'}</strong>${chosen.size && C.num(x.amount) > 0 ? ` · ${fmt(C.chargeTotal(state, x))} in all` : ''}</button>
+          ${open ? `<div class="exp-pick">
+            <p class="muted">Tap the players to charge. Each of them is charged ${C.num(x.amount) > 0 ? fmt(C.num(x.amount)) : 'the amount'}.</p>
+            <div class="exp-pick-quick">
+              <button class="chip" data-action="charge-set" ${attrs} data-who="squad">Whole squad</button>
+              <button class="chip" data-action="charge-set" ${attrs} data-who="none">Nobody</button>
+            </div>
+            <div class="exp-pick-people">${state.players.map(p => `<button class="exp-person ${chosen.has(p.id) ? 'on' : ''}" data-action="charge-toggle" ${attrs} data-player="${esc(p.id)}" aria-pressed="${chosen.has(p.id)}">
+              ${chosen.has(p.id) ? icon('<path d="M20 6 9 17l-5-5"/>', 14) : ''}${esc(p.name || 'Unnamed')}</button>`).join('')}</div>
+            <button class="btn btn-ghost small" data-action="charge-open" ${attrs}>Done</button>
+          </div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+    return `<section class="panel">
+      <div class="panel-head"><h3>Orders &amp; extra charges</h3><p class="muted">Charge chosen players for something like a shirt. It adds to their balance and gets its own column on the season sheet.</p></div>
+      ${rows ? `<div class="exp-rows charge-rows"><div class="exp-head"><span>Title</span><span>Each</span><span></span></div>${rows}</div>` : ''}
+      <div class="quick-add"><span class="muted">Add:</span>
+        <button class="chip" data-action="add-charge" data-title="Shirt">+ Shirt</button>
+        <button class="chip" data-action="add-charge" data-title="">+ Other</button>
+      </div>
     </section>`;
   }
 
@@ -2432,6 +2480,7 @@
 
     // Matches the admin hasn't finished yet stay off the sheet.
     const sheetDays = days.filter(C.isCharged);
+    const charges = C.charges(state);
     const table = state.players.length ? `
       <section class="panel">
         <div class="panel-head"><h3>Season sheet</h3><p class="muted">Who attended what, and where everyone stands.</p></div>
@@ -2441,6 +2490,7 @@
               <tr><th class="sticky">#</th><th class="sticky sticky-2">Player</th>
                 ${sheetDays.map(d => `<th class="day-col ${d.type}" title="${esc(d.label)}${d.desc ? ' — ' + esc(d.desc) : ''}">${d.short}<small>${!C.isCharged(d) ? 'pending' : stats[d.id].n > 0 && stats[d.id].common > 0 ? fmt(stats[d.id].share) : '—'}</small></th>`).join('')}
                 <th class="day-col tour" title="League fee for the matches each player played">League<small>${tour.fee > 0 ? fmt(tour.perMatch) + '/match' : '—'}</small></th>
+                ${charges.map(x => `<th class="day-col charge" title="${esc(x.title || 'Charge')}: ${fmt(C.num(x.amount))} for each player on it">${esc(x.title || 'Charge')}<small>${C.num(x.amount) > 0 ? fmt(C.num(x.amount)) + ' each' : '—'}</small></th>`).join('')}
                 <th>Cost</th><th>Paid</th><th title="Items bought for the team">Bought</th><th class="spent-col" title="What the matches played, trainings and expenses have cost so far — without the share of league matches still to come">Used so far</th><th class="spent-col" title="Paid + bought − used so far: what is left of their money (paid back if they leave)">Left</th><th>Balance</th></tr>
             </thead>
             <tbody>
@@ -2450,6 +2500,7 @@
                   <td class="sticky">${i + 1}</td><td class="sticky sticky-2 name-cell"><button class="pl-name" data-action="open-profile" data-id="${esc(p.id)}">${esc(p.name)}</button><button class="icon-btn exp-btn mini" data-action="open-player" data-id="${esc(p.id)}" aria-label="Expense card for ${esc(p.name)}" title="Expenses and payments">${WALLET_ICON}</button></td>
                   ${sheetDays.map(d => `<td class="dot-cell">${p.att[d.id] ? `<span class="dot ${d.type}" title="${d.type === 'match' ? 'Played' : 'Arrived'}"></span>` : isTwelfth(p, d) ? '<span class="dot twelfth" title="12th man"></span>' : '<span class="dot-empty"></span>'}</td>`).join('')}
                   <td class="league-cell">${tour.charges[p.id].amount > 0 ? fmt(tour.charges[p.id].amount) : '—'}</td>
+                  ${charges.map(x => `<td class="league-cell">${C.chargeOf(x, p.id) > 0 ? fmt(C.chargeOf(x, p.id)) : '—'}</td>`).join('')}
                   ${seesMoneyOf(p) ? `<td>${fmt(c.cost)}</td><td>${fmt(c.paid)}</td><td>${c.credit > 0 ? fmt(c.credit) : '—'}</td>
                   <td class="spent-col">${c.usedSoFar > 0 ? fmt(c.usedSoFar) : '—'}</td><td class="spent-col ${netClass(c.left)}">${fmtNet(c.left)}</td>
                   <td class="${netClass(c.net)} strong">${fmtNet(c.net)}</td>` : '<td>—</td><td>—</td><td>—</td><td class="spent-col">—</td><td class="spent-col">—</td><td class="zero">Private</td>'}</tr>`;
@@ -2457,6 +2508,7 @@
             </tbody>
             <tfoot><tr><td class="sticky"></td><td class="sticky sticky-2">Attended</td>
               ${sheetDays.map(d => `<td>${stats[d.id].n}</td>`).join('')}<td>${fmt(Object.values(tour.charges).reduce((x, c) => x + c.amount, 0))}</td>
+              ${charges.map(x => `<td>${fmt(C.chargeTotal(state, x))}</td>`).join('')}
               <td>${fmt(t.spent)}</td><td>${ownOnly() ? '—' : fmt(t.collected)}</td><td>${t.fronted > 0 ? fmt(t.fronted) : '—'}</td>${(() => { if (ownOnly()) return '<td class="spent-col">—</td><td class="spent-col">—</td>'; const cs = state.players.map(p => C.playerCalc(state, p, stats, fmt, tour)); const used = C.round2(cs.reduce((x, c) => x + c.usedSoFar, 0)); const left = C.round2(cs.reduce((x, c) => x + c.left, 0)); return `<td class="spent-col">${fmt(used)}</td><td class="spent-col">${fmtNet(left)}</td>`; })()}<td></td></tr></tfoot>
           </table>
         </div>
@@ -2468,6 +2520,7 @@
           <button class="btn btn-gold" data-action="share-image">${IMAGE_ICON} Share as image</button></div>` : '')}
       ${myBalance()}
       ${leagueBlock()}
+      ${chargesBlock()}
       <div class="stats" ${ownOnly() ? 'hidden' : ''}>${cards.map(c => `<div class="stat ${c.cls}"><span>${c.label}</span><strong>${c.value}</strong><small>${esc(c.note)}</small></div>`).join('')}</div>
       ${warningBanner()}
       <div class="summary-grid">
@@ -4501,6 +4554,7 @@ ${tabRows.map(r => {
     const list = paymentsOf(el.dataset.player);
     return list && list.find(x => x.id === el.dataset.id);
   }
+  function findCharge(el) { return C.charges(state).find(x => x.id === el.dataset.id); }
   function findExpense(el) { return (state.expenses[el.dataset.day] || []).find(e => e.id === el.dataset.id); }
 
   const actions = {
@@ -5514,6 +5568,40 @@ ${tabRows.map(r => {
       e.sharedBy = el.dataset.who === 'xi' ? state.players.filter(p => C.pays(state, p, el.dataset.day)).map(p => p.id) : [];
       commit();
     },
+    'add-charge'(el) {
+      if (!isAdmin()) return;
+      const x = { id: rid(), title: el.dataset.title || '', amount: '', players: [] };
+      (state.charges = state.charges || []).push(x);
+      chargePicker = x.id;
+      commit();
+      const target = document.querySelector(`[data-focus="${x.title ? 'cha' : 'cht'}-${x.id}"]`);
+      if (target) target.focus();
+    },
+    'charge-open'(el) { if (!isAdmin()) return; chargePicker = chargePicker === el.dataset.id ? null : el.dataset.id; render(); },
+    'charge-toggle'(el) {
+      const x = findCharge(el);
+      if (!x || !isAdmin()) return;
+      const set = new Set(x.players);
+      set.has(el.dataset.player) ? set.delete(el.dataset.player) : set.add(el.dataset.player);
+      x.players = state.players.map(p => p.id).filter(id => set.has(id));
+      commit();
+    },
+    'charge-set'(el) {
+      const x = findCharge(el);
+      if (!x || !isAdmin()) return;
+      x.players = el.dataset.who === 'squad' ? state.players.filter(C.inTournament).map(p => p.id) : [];
+      commit();
+    },
+    async 'remove-charge'(el) {
+      const x = findCharge(el);
+      if (!x || !isAdmin()) return;
+      if (x.players.length && C.num(x.amount) > 0) {
+        const ok = await confirmDialog('Remove this charge?', `${x.title || 'This charge'} (${fmt(C.chargeTotal(state, x))}) will come off ${x.players.length} player${x.players.length === 1 ? '' : 's'}' balances.`, 'Remove', true);
+        if (!ok) return;
+      }
+      state.charges = state.charges.filter(y => y.id !== x.id);
+      commit();
+    },
     'remove-expense'(el) {
       const list = state.expenses[el.dataset.day];
       if (!list) return;
@@ -5531,6 +5619,8 @@ ${tabRows.map(r => {
     'p-jersey-name'(el) { const p = findPlayer(el.dataset.id); if (p) p.jerseyName = el.value.slice(0, 24); },
     'p-jersey'(el) { el.value = el.value.replace(/\D/g, '').slice(0, 3); const p = findPlayer(el.dataset.id); if (p) p.jersey = el.value; },
     'training-desc'(el) { const t = state.trainings.find(x => x.id === el.dataset.id); if (t) t.desc = el.value; },
+    'charge-title'(el) { const x = findCharge(el); if (x) x.title = el.value; },
+    'charge-amount'(el) { el.value = cleanNumber(el.value); const x = findCharge(el); if (x) x.amount = el.value; },
     'exp-item'(el) { const e = findExpense(el); if (e) e.item = el.value; },
     'exp-amount'(el) { el.value = cleanNumber(el.value); const e = findExpense(el); if (e) e.amount = el.value; },
     'exp-paidby'(el) { const e = findExpense(el); if (e) e.paidBy = el.value; },

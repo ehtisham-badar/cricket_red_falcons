@@ -9,7 +9,8 @@ import java.util.Map;
  * for the match, and null on save keeps the stored ones); {@code battingOrder} maps a match id to its XI's
  * player ids in batting order (null on save keeps the stored ones); {@code matches} are the league matches
  * added so far (null on save keeps the stored ones); {@code stats} maps match id -> player id -> that player's
- * stats in the match (admin only; null on save keeps the stored ones);
+ * stats in the match (admin only; null on save keeps the stored ones); {@code charges} are season-wide charges
+ * on chosen players, such as a shirt order (null on save keeps the stored ones);
  * {@code amounts} (per-day totals) is still written so older readers keep working, and is read
  * as a single expense per day when a file has no {@code expenses}.
  */
@@ -26,7 +27,8 @@ public record LedgerDto(
         Map<String, String> twelfth,
         Map<String, List<String>> battingOrder,
         List<MatchDto> matches,
-        Map<String, Map<String, StatDto>> stats) {
+        Map<String, Map<String, StatDto>> stats,
+        List<ChargeDto> charges) {
 
     /**
      * {@code paid} is the total of {@code payments}; files without payments are read from {@code paid}.
@@ -40,6 +42,10 @@ public record LedgerDto(
                             String battingHand, String bowlingArm, String bowlingStyle,
                             Boolean keeper, Boolean captain, Boolean viceCaptain, String jersey, String photoAt,
                             String jerseyName, String profileAt, String shirtSize, String kitAt) {
+    }
+
+    /** A charge on chosen players only (a shirt order): each of {@code players} is charged {@code amount}. */
+    public record ChargeDto(String id, String title, String amount, List<String> players) {
     }
 
     public record PaymentDto(String id, String date, String amount, String method, String note) {
