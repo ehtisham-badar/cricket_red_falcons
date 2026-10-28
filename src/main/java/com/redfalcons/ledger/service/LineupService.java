@@ -53,7 +53,7 @@ public class LineupService {
         int max = intOr(settings.findById("maxPerMatch").map(Setting::getValue).orElse(null), 11);
         if (xi.size() > max) throw new IllegalArgumentException("A match can have at most " + max + " players.");
         String t = twelfth != null && known.contains(twelfth) && !xi.contains(twelfth) ? twelfth : "";
-        String bat = String.join(",", (batting == null ? List.<String>of() : batting).stream().distinct().filter(xi::contains).toList());
+        String bat = String.join(",", (batting == null ? List.<String>of() : batting).stream().distinct().filter(id -> xi.contains(id) || id.equals(t)).toList());
         requests.deleteAll(requests.findByManagerIdAndMatchIdAndStatus(manager.getId(), match.getId(), LineupRequest.PENDING));
         requests.flush();
         LineupRequest saved = requests.save(new LineupRequest(AdminAuth.randomToken().substring(0, 16), manager.getId(), manager.getName(),

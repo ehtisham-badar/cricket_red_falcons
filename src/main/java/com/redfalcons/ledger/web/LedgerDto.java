@@ -1,5 +1,7 @@
 package com.redfalcons.ledger.web;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import java.util.List;
 import java.util.Map;
 
@@ -51,7 +53,9 @@ public record LedgerDto(
     public record ChargeDto(String id, String title, String amount, List<String> players, List<String> received) {
     }
 
-    public record PaymentDto(String id, String date, String amount, String method, String note, Boolean refund) {
+    /** {@code refund}: money the admin paid back to the player; left out of the JSON unless true. */
+    public record PaymentDto(String id, String date, String amount, String method, String note,
+                             @JsonInclude(JsonInclude.Include.NON_NULL) Boolean refund) {
     }
 
     /** {@code sharedBy}: the players who share this expense; empty means everyone who played. */

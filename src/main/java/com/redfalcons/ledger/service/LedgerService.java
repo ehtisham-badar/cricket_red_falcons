@@ -307,13 +307,15 @@ public class LedgerService {
                 if (xi.contains(p.getId())) p.getAttended().add(m.getId());
                 else p.getAttended().remove(m.getId());
             });
-            // A batting order lists only players in the XI, each once; none means the default order.
-            String batOrder = String.join(",", order.getOrDefault(m.getId(), List.of()).stream().distinct().filter(xi::contains).toList());
+            String t = sent.get(m.getId());
+            boolean hasTwelfth = t != null && playerIds.contains(t) && !xi.contains(t);
+            if (hasTwelfth) twelfthNow.put(m.getId(), t);
+            else twelfthNow.remove(m.getId());
+            // A batting order lists only the XI and the 12th man, each once; none means the default order.
+            String batOrder = String.join(",", order.getOrDefault(m.getId(), List.of()).stream().distinct()
+                    .filter(id -> xi.contains(id) || (hasTwelfth && id.equals(t))).toList());
             if (!batOrder.isEmpty() && batOrder.length() <= SETTING_MAX) settings.save(new Setting(BATTING + m.getId(), batOrder));
             else settings.deleteById(BATTING + m.getId());
-            String t = sent.get(m.getId());
-            if (t != null && playerIds.contains(t) && !xi.contains(t)) twelfthNow.put(m.getId(), t);
-            else twelfthNow.remove(m.getId());
         }
         StringJoiner out = new StringJoiner(";");
         twelfthNow.forEach((match, id) -> out.add(match + "=" + id));
@@ -513,9 +515,13 @@ public class LedgerService {
         Map<String, Set<String>> attendedBy = new HashMap<>();
         newPlayers.forEach(p -> attendedBy.put(p.getId(), p.getAttended()));
         StringJoiner twelfth = new StringJoiner(";");
+        Map<String, String> twelfthKept = new HashMap<>();
         twelfthIn.forEach((match, playerId) -> {
             Set<String> att = attendedBy.get(playerId);
-            if (matchIds.contains(match) && att != null && !att.contains(match)) twelfth.add(match + "=" + playerId);
+            if (matchIds.contains(match) && att != null && !att.contains(match)) {
+                twelfth.add(match + "=" + playerId);
+                twelfthKept.put(match, playerId);
+            }
         });
         if (twelfth.length() <= SETTING_MAX) settings.save(new Setting(TWELFTH, twelfth.toString()));
 
@@ -550,12 +556,12 @@ public class LedgerService {
         stats.deleteAll(stats.findAll().stream().filter(x -> !newStats.containsKey(x.getId())).toList());
         stats.saveAll(newStats.values());
 
-        // A batting order only lists players who are playing that match, each once.
+        // A batting order only lists players who are playing that match (or its 12th man), each once.
         Set<String> battingKeys = new HashSet<>();
         for (String match : matchIds) {
             List<String> ids = battingIn.get(match);
             String value = ids == null ? "" : String.join(",", ids.stream().distinct()
-                    .filter(id -> attendedBy.containsKey(id) && attendedBy.get(id).contains(match)).toList());
+                    .filter(id -> (attendedBy.containsKey(id) && attendedBy.get(id).contains(match)) || id.equals(twelfthKept.get(match))).toList());
             if (!value.isEmpty() && value.length() <= SETTING_MAX) {
                 settings.save(new Setting(BATTING + match, value));
                 battingKeys.add(BATTING + match);

@@ -468,11 +468,11 @@
       const p = players.find(x => x.id === id);
       if (isMatch(match) && p && !p.att[match]) twelfth[match] = id;
     });
-    // match id -> player ids in batting order; only players playing that match, each once
+    // match id -> player ids in batting order; only players playing that match (or its 12th man), each once
     const battingOrder = {};
     Object.entries(d.battingOrder || {}).forEach(([match, list]) => {
       if (!isMatch(match) || !Array.isArray(list)) return;
-      const kept = [...new Set(list)].filter(id => players.some(p => p.id === id && p.att[match]));
+      const kept = [...new Set(list)].filter(id => twelfth[match] === id || players.some(p => p.id === id && p.att[match]));
       if (kept.length) battingOrder[match] = kept;
     });
     // match id -> player id -> stats (admin only); keep known matches and players
@@ -2263,7 +2263,7 @@
   function ourInnings(m, src) {
     const name = p => `${esc(p.name)}${isCaptain(p) ? ' (c)' : ''}${isKeeper(p) ? ' †' : ''}`;
     const tw = findPlayer(state.twelfth[src.id]);
-    const order = battingOrderOf(src.id).concat(tw && C.twelfthPlays(state, src.id) ? [tw] : []);
+    const order = batOrderOf(src.id).filter(p => p !== tw || C.twelfthPlays(state, src.id));
     const rows = order.map(p => ({ p, e: C.statOf(state, src.id, p.id) }));
     const batters = rows.filter(r => C.batted(r.e));
     const dnb = order.filter(p => !batters.some(r => r.p.id === p.id));
@@ -4169,20 +4169,21 @@ ${tabRows.map(r => {
   }
 
   function battingSection(d) {
-    const order = battingOrderOf(d.id);
+    const order = batOrderOf(d.id);
+    const tw = state.twelfth[d.id];
     const edit = canPickXi(d);
     const UP = icon('<path d="m18 15-6-6-6 6"/>', 18);
     const DOWN = icon('<path d="m6 9 6 6 6-6"/>', 18);
     const GRIP = icon('<circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/>', 18);
     return `<section class="bat">
-      <h3 class="sub first">Batting order <span class="nf-note">(not finalized)</span>
+      <h3 class="sub first">Batting order${tw ? ' · playing 12' : ''} <span class="nf-note">(not finalized)</span>
         ${edit && state.battingOrder[d.id] ? `<button class="chip small-chip" data-action="bat-reset" data-day="${esc(d.id)}">Reset</button>` : ''}</h3>
       ${edit ? '<p class="muted bat-hint">Drag a player by the handle to any position, or use the arrows.</p>' : ''}
       <ol class="bat-list" data-day="${esc(d.id)}">
-        ${order.map((p, i) => `<li class="${i < 2 ? 'opener' : ''}" data-id="${esc(p.id)}">
+        ${order.map((p, i) => `<li class="${i < 2 ? 'opener' : ''} ${p.id === tw ? 'twelfth' : ''}" data-id="${esc(p.id)}">
           ${edit ? `<span class="bat-grip" title="Drag to reorder" aria-hidden="true">${GRIP}</span>` : ''}
           <span class="bat-pos">${i + 1}</span>
-          <span class="pname"><strong>${esc(p.name)}</strong><small>${i < 2 ? 'Opener' : esc(p.role) || '—'}</small></span>
+          <span class="pname"><strong>${esc(p.name)}</strong><small>${[i < 2 ? 'Opener' : '', p.id === tw ? '12th man' : '', i < 2 || p.id === tw ? '' : esc(p.role) || '—'].filter(Boolean).join(' · ')}</small></span>
           ${edit ? `<span class="bat-moves">
             <button class="icon-btn" data-action="bat-move" data-day="${esc(d.id)}" data-id="${esc(p.id)}" data-dir="up" ${i === 0 ? 'disabled' : ''} aria-label="Move ${esc(p.name)} up">${UP}</button>
             <button class="icon-btn" data-action="bat-move" data-day="${esc(d.id)}" data-id="${esc(p.id)}" data-dir="down" ${i === order.length - 1 ? 'disabled' : ''} aria-label="Move ${esc(p.name)} down">${DOWN}</button>
@@ -4225,7 +4226,7 @@ ${tabRows.map(r => {
       grip.removeEventListener('pointercancel', end);
       items.forEach(x => { x.style.transform = ''; x.classList.remove('dragging', 'shifting'); });
       if (ev.type === 'pointercancel' || to === from) return;
-      const ids = battingOrderOf(day).map(p => p.id);
+      const ids = batOrderOf(day).map(p => p.id);
       ids.splice(to, 0, ids.splice(from, 1)[0]);
       state.battingOrder[day] = ids;
       touchXi(day);
@@ -4568,6 +4569,18 @@ ${tabRows.map(r => {
     const playing = state.players.filter(p => p.att[dayId]);
     const saved = (state.battingOrder[dayId] || []).map(findPlayer).filter(p => p && p.att[dayId]);
     return saved.concat(playing.filter(p => !saved.includes(p)));
+  }
+
+  // The batting order with the 12th man in it (a playing 12): where he was put, or last.
+  function batOrderOf(dayId) {
+    const xi = battingOrderOf(dayId);
+    const tw = findPlayer(state.twelfth[dayId]);
+    if (!tw) return xi;
+    const saved = state.battingOrder[dayId] || [];
+    const at = saved.indexOf(tw.id);
+    if (at < 0) return xi.concat([tw]);
+    const before = saved.slice(0, at).filter(id => xi.some(p => p.id === id)).length;
+    return xi.slice(0, before).concat([tw], xi.slice(before));
   }
 
   // Fisher–Yates with crypto randomness, so every player has the same chance.
@@ -5016,7 +5029,7 @@ ${tabRows.map(r => {
       const playing = state.players.filter(p => p.att[matchId]).map(p => p.id);
       try {
         await api('POST', '/api/manager/lineups', { matchId, playing, twelfth: state.twelfth[matchId] || '',
-          batting: state.battingOrder[matchId] ? battingOrderOf(matchId).map(p => p.id) : [] });
+          batting: state.battingOrder[matchId] ? batOrderOf(matchId).map(p => p.id) : [] });
         delete xiDirty[matchId];
         await revertMatch(matchId);
         await loadMyLineups();
@@ -5033,7 +5046,7 @@ ${tabRows.map(r => {
     'bat-move'(el) {
       const day = el.dataset.day;
       if (!canPickXi(findMatch(day))) return;
-      const order = battingOrderOf(day).map(p => p.id);
+      const order = batOrderOf(day).map(p => p.id);
       const i = order.indexOf(el.dataset.id);
       const j = i + (el.dataset.dir === 'up' ? -1 : 1);
       if (i < 0 || j < 0 || j >= order.length) return;

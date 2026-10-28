@@ -1054,6 +1054,8 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
 .bat-pos { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: rgba(var(--red-rgb), .18); color: var(--red-soft); font-weight: 800; font-size: 13px; }
 .bat-list li.opener .bat-pos { background: rgba(var(--gold-rgb), .2); color: var(--gold); }
 .bat-list li.opener .pname small { color: var(--gold); font-weight: 700; }
+.bat-list li.twelfth { border-style: dashed; }
+.bat-list li.twelfth .pname small { color: var(--gold-light); font-weight: 700; }
 .bat-moves { display: flex; gap: 6px; }
 .bat-moves .icon-btn { width: 38px; height: 38px; }
 .bat-moves .icon-btn:disabled { opacity: .25; cursor: default; }
