@@ -29,10 +29,15 @@ public class Payment {
     @Column(nullable = false, length = 200)
     private String note = "";
 
+    /** Money the admin paid back to the player (it lowers what they have paid); null on rows from before this column. */
+    @Column(name = "paid_back")
+    private Boolean refund;
+
     protected Payment() {
     }
 
-    public Payment(String id, String playerId, int position, String date, String amount, String method, String note) {
+    public Payment(String id, String playerId, int position, String date, String amount, String method, String note,
+                   boolean refund) {
         this.id = id;
         this.playerId = playerId;
         this.position = position;
@@ -40,6 +45,7 @@ public class Payment {
         this.amount = amount;
         this.method = method;
         this.note = note;
+        this.refund = refund;
     }
 
     public String getId() { return id; }
@@ -49,4 +55,5 @@ public class Payment {
     public String getAmount() { return amount; }
     public String getMethod() { return method; }
     public String getNote() { return note; }
+    public boolean isRefund() { return Boolean.TRUE.equals(refund); }
 }

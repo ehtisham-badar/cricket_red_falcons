@@ -151,7 +151,7 @@ public class LedgerService {
         Map<String, List<PaymentDto>> paymentsByPlayer = new HashMap<>();
         payments.findAll(BY_POSITION).forEach(x -> paymentsByPlayer
                 .computeIfAbsent(x.getPlayerId(), k -> new ArrayList<>())
-                .add(new PaymentDto(x.getId(), x.getDate(), x.getAmount(), x.getMethod(), x.getNote())));
+                .add(new PaymentDto(x.getId(), x.getDate(), x.getAmount(), x.getMethod(), x.getNote(), x.isRefund() ? true : null)));
 
         Map<String, String> photoAt = new HashMap<>();
         photos.versions().forEach(row -> photoAt.put((String) row[0], (String) row[1]));
@@ -160,7 +160,7 @@ public class LedgerService {
                     Map<String, Boolean> att = new LinkedHashMap<>();
                     p.getAttended().forEach(d -> att.put(d, true));
                     List<PaymentDto> paid = paymentsByPlayer.getOrDefault(p.getId(), legacyPayments(p.getId(), p.getPaid()));
-                    return new PlayerDto(p.getId(), p.getName(), p.getRole(), sum(paid.stream().map(PaymentDto::amount)),
+                    return new PlayerDto(p.getId(), p.getName(), p.getRole(), sum(paid.stream().map(LedgerService::signedAmount)),
                             p.isInTournament(), att, paid, p.getPhone(), p.getBattingHand(), p.getBowlingArm(),
                             p.getBowlingStyle(), p.isKeeper(), p.isCaptain(), p.isViceCaptain(), p.getJersey(),
                             photoAt.getOrDefault(p.getId(), ""), p.getJerseyName(), p.getProfileSavedAt(),
@@ -203,7 +203,7 @@ public class LedgerService {
                 new TournamentDto(s.getOrDefault(TOURNAMENT_NAME, ""), s.getOrDefault(TOURNAMENT_FEE, ""),
                         s.getOrDefault(TOURNAMENT_ADVANCE, ""),
                         tournamentPayments.findAll(BY_POSITION).stream()
-                                .map(x -> new PaymentDto(x.getId(), x.getDate(), x.getAmount(), x.getMethod(), x.getNote()))
+                                .map(x -> new PaymentDto(x.getId(), x.getDate(), x.getAmount(), x.getMethod(), x.getNote(), null))
                                 .toList(), parseIntOr(s.get(MATCH_COUNT), DEFAULT_MATCH_COUNT)),
                 settingsDto, parseTwelfth(s.get(TWELFTH)), parseBatting(s), matchesWithTwelfth(parseTwelfth(s.get(TWELFTH))), storedStats(),
                 storedCharges());
@@ -412,9 +412,12 @@ public class LedgerService {
             List<String> amounts = new ArrayList<>();
             for (PaymentDto x : paymentIn) {
                 if (x == null || blank(x.id()) || !paymentIds.add(x.id())) continue;
-                newPayments.add(new Payment(x.id(), p.id(), newPayments.size(), isoDate(x.date()), numeric(x.amount()),
-                        clip(x.method(), 40), clip(x.note(), 200)));
-                amounts.add(numeric(x.amount()));
+                boolean refund = Boolean.TRUE.equals(x.refund());
+                String amount = numeric(x.amount());
+                newPayments.add(new Payment(x.id(), p.id(), newPayments.size(), isoDate(x.date()), amount,
+                        clip(x.method(), 40), clip(x.note(), 200), refund));
+                // Money paid back counts against what the player has paid.
+                amounts.add(refund && !amount.isEmpty() ? "-" + amount : amount);
             }
             String phone = p.phone() != null ? clip(p.phone(), 20) : storedPhones.getOrDefault(p.id(), "");
             Player row = new Player(p.id(), newPlayers.size(), nz(p.name()).trim(), nz(p.role()),
@@ -705,7 +708,13 @@ public class LedgerService {
     /** A "paid" total from before payments were itemised becomes one undated payment. */
     private static List<PaymentDto> legacyPayments(String playerId, String paid) {
         if (paid == null || paid.isEmpty()) return List.of();
-        return List.of(new PaymentDto("legacy-pay-" + playerId, "", paid, "", LEGACY_PAYMENT_NOTE));
+        return List.of(new PaymentDto("legacy-pay-" + playerId, "", paid, "", LEGACY_PAYMENT_NOTE, null));
+    }
+
+    /** A payment's amount, negative when it is money paid back to the player. */
+    private static String signedAmount(PaymentDto x) {
+        String a = x.amount();
+        return Boolean.TRUE.equals(x.refund()) && a != null && !a.isEmpty() ? "-" + a : a;
     }
 
     private static String sum(java.util.stream.Stream<String> amounts) {

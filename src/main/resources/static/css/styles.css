@@ -649,6 +649,12 @@ h1, h2, h3 { margin: 0; font-weight: 400; }
 .pay-row > .note { grid-area: note; }
 .pay-row > .icon-btn { grid-area: del; align-self: start; }
 .sheet .chip { margin-bottom: 4px; }
+/* Money the admin paid back to a player: shown as a minus, in the "you pay back" colour. */
+.pay-row.pay-back { grid-template-areas: "tag tag tag del" "date amount method del" "note note note del"; border-color: rgba(var(--gold-rgb), .35); background: rgba(var(--gold-rgb), .05); }
+.pay-back-tag { grid-area: tag; justify-self: start; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--pos); }
+.exp-list li.pay-back .amt { color: var(--pos); }
+.chip.pay-back-chip { margin-left: 6px; border-color: rgba(var(--gold-rgb), .5); background: rgba(var(--gold-rgb), .06); color: var(--pos); }
+.chip.pay-back-chip:hover { background: rgba(var(--gold-rgb), .16); }
 
 /* Expense editor (day sheet) */
 .exp-rows { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
@@ -957,6 +963,7 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
   .charge-rows .exp-row { grid-template-columns: minmax(0, 1fr) 130px; }
   .league-figs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .pay-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px; grid-template-areas: "date amount del" "method method del" "note note del"; }
+  .pay-row.pay-back { grid-template-areas: "tag tag del" "date amount del" "method method del" "note note del"; }
   .me-actions { width: 100%; }
   .me-actions .btn-gold { flex: 1; }
   .toast { bottom: 90px; }
@@ -1723,6 +1730,39 @@ body:not(.is-admin) .player-head, body:not(.is-admin) .player-line { grid-templa
 .hero-form i.f-loss { background: linear-gradient(180deg, var(--red-hi), var(--red-deep)); }
 .hero-form i.f-tie { background: linear-gradient(180deg, var(--gold), var(--gold-deep)); color: var(--on-gold); }
 .hero-form em { font-style: normal; font-size: 13px; color: var(--text); opacity: .85; }
+/* Shortcut tiles under the hero. */
+.quick-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(64px, 1fr)); gap: 10px; margin: -4px 0 18px; }
+.qt { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 12px 4px 10px; border-radius: 18px; border: 1px solid var(--line-2);
+  background: linear-gradient(180deg, var(--panel-1), var(--panel-2)); color: var(--text); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+  transition: transform .18s var(--ease), border-color .18s, box-shadow .18s; }
+.qt:hover, .qt:focus-visible { transform: translateY(-3px); border-color: rgba(var(--gold-rgb), .55); box-shadow: 0 10px 24px rgba(var(--shadow-rgb), .35); }
+.qt:active { transform: scale(.96); }
+.qt-ico { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 14px; color: var(--on-gold);
+  background: linear-gradient(160deg, var(--gold-light), var(--gold) 55%, var(--gold-deep)); box-shadow: 0 4px 12px rgba(var(--gold-rgb), .25); }
+.qt:nth-child(odd) .qt-ico { color: #fff; background: linear-gradient(160deg, var(--red-hi), var(--red-deep)); box-shadow: 0 4px 12px rgba(var(--red-rgb), .3); }
+/* The player's own card on Home: who they are, and how much of their cost they have paid. */
+.me-player { display: flex; align-items: center; justify-content: space-between; gap: 16px 22px; flex-wrap: wrap; margin-bottom: 16px; position: relative; overflow: hidden;
+  border-color: rgba(var(--gold-rgb), .3); background: radial-gradient(80% 120% at 100% 0%, rgba(var(--gold-rgb), .12), transparent 60%), linear-gradient(160deg, var(--panel-1), var(--panel-2)); }
+.me-player.neg { border-color: rgba(var(--neg-rgb), .35); background: radial-gradient(80% 120% at 100% 0%, rgba(var(--neg-rgb), .12), transparent 60%), linear-gradient(160deg, var(--panel-1), var(--panel-2)); }
+.mp-who { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.mp-who .avatar { box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px rgba(var(--gold-rgb), .6); }
+.mp-name { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.mp-name strong { font-size: 18px; color: var(--text); }
+.mp-name small { color: var(--gold-light); font-weight: 700; font-size: 12px; letter-spacing: .04em; }
+.mp-money { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.mp-ring { width: 72px; height: 72px; flex: none; transform: rotate(-90deg); }
+.mp-ring circle { fill: none; stroke-width: 7; }
+.mp-track { stroke: rgba(var(--hi-rgb), .08); }
+.mp-fill { stroke: var(--gold); stroke-linecap: round; transition: stroke-dashoffset .8s var(--ease); }
+.me-player.neg .mp-fill { stroke: var(--neg); }
+.mp-ring text { transform: rotate(90deg); transform-origin: 40px 40px; fill: var(--text); font-size: 15px; font-weight: 800; font-family: var(--body-font); }
+.mp-figs { display: flex; flex-direction: column; gap: 2px; }
+.mp-figs small { color: var(--muted); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.mp-figs strong { font-family: var(--head-font); font-size: 28px; line-height: 1.1; }
+.mp-figs strong.neg { color: var(--neg); }
+.mp-figs strong.pos { color: var(--pos); }
+.mp-figs span { color: var(--muted); font-size: 13px; }
+@media (max-width: 520px) { .mp-money { width: 100%; } .mp-money .btn { margin-left: auto; } }
 @keyframes hero-spin { to { transform: rotate(360deg); } }
 @keyframes hero-drift { to { transform: translateX(88px); } }
 @media (max-width: 420px) { .home-hero { padding: 18px 14px 16px; } .hero-crest { width: 62px; height: 62px; } }

@@ -51,7 +51,7 @@ public record LedgerDto(
     public record ChargeDto(String id, String title, String amount, List<String> players, List<String> received) {
     }
 
-    public record PaymentDto(String id, String date, String amount, String method, String note) {
+    public record PaymentDto(String id, String date, String amount, String method, String note, Boolean refund) {
     }
 
     /** {@code sharedBy}: the players who share this expense; empty means everyone who played. */

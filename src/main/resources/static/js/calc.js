@@ -11,7 +11,8 @@
 //    so pays nothing). Matches not added yet, or with no XI marked, are split across everyone taking part
 //    (player.tournament !== false) until they are.
 //    With roundUp each player's league total is rounded once, to whole rupees that add up to the fee.
-//  - A player's payments ({ id, date, amount, method, note }) add up to what they have paid.
+//  - A player's payments ({ id, date, amount, method, note, refund }) add up to what they have paid; a refund
+//    (money the admin paid back to settle a player in credit) is taken off.
 //  - charges ({ id, title, amount, players: [ids] }) are season-wide costs on chosen players only, such as a
 //    shirt order: each of them is charged the amount. The team fund pays the supplier.
 //  - tournament.payments are transfers from the admin to the tournament management; only money
@@ -67,7 +68,8 @@
 
   function paidTotal(player) {
     if (!player.payments) return num(player.paid);
-    return round2(player.payments.reduce((s, x) => s + num(x.amount), 0));
+    // Money the admin paid back (refund) comes off what the player has paid.
+    return round2(player.payments.reduce((s, x) => s + (x.refund ? -num(x.amount) : num(x.amount)), 0));
   }
 
   function dayExpenses(state, dayId) {

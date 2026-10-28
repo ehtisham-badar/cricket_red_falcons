@@ -425,7 +425,7 @@
     if (Array.isArray(p.payments)) {
       return p.payments.map(x => ({
         id: x.id || rid(), date: x.date || '', amount: x.amount == null ? '' : String(x.amount),
-        method: x.method || '', note: x.note || ''
+        method: x.method || '', note: x.note || '', ...(x.refund === true ? { refund: true } : {})
       }));
     }
     const paid = p.paid == null ? '' : String(p.paid);
@@ -1761,7 +1761,7 @@
     out.push(`Total: ${fmt(c.cost)}`, '');
     out.push('*Paid*');
     if (p.payments.length) {
-      p.payments.forEach(x => out.push(`• ${formatDate(x.date) || 'Earlier'}${x.method ? ' (' + x.method + ')' : ''}: ${fmt(C.num(x.amount))}`));
+      p.payments.forEach(x => out.push(`• ${formatDate(x.date) || 'Earlier'}${x.refund ? ' paid back to you' : ''}${x.method ? ' (' + x.method + ')' : ''}: ${x.refund ? '−' : ''}${fmt(C.num(x.amount))}`));
     } else {
       out.push('• Nothing yet');
     }
@@ -2616,10 +2616,41 @@
     const me = myPlayer();
     if (!me) return '';
     const c = C.playerCalc(state, me, null, fmt);
-    return `<section class="panel glance ${netClass(c.net)}"><div class="glance-row">
-        <div><small>Your balance</small><strong class="${c.net < 0 ? 'neg' : ''}">${c.net < 0 ? fmt(-c.net) : fmt(c.net)}</strong></div>
-        <div class="glance-note">${c.net < 0 ? 'Still to pay' : c.net > 0 ? 'To be paid back to you' : 'All settled'}</div>
-      </div>${open}</section>`;
+    // The ring: how much of their cost so far is covered by what they paid (and bought for the team).
+    const pct = c.cost > 0 ? Math.min(100, Math.round((c.paid + c.credit) / c.cost * 100)) : 100;
+    const R = 34, L = 2 * Math.PI * R;
+    return `<section class="panel me-player ${netClass(c.net)}">
+      <div class="mp-who">${avatar(me, 58)}
+        <div class="mp-name"><strong>${esc(me.name)}</strong><small>${[me.jersey ? '#' + esc(me.jersey) : '', esc(me.role)].filter(Boolean).join(' · ') || 'Red Falcons'}</small></div>
+      </div>
+      <div class="mp-money">
+        <svg class="mp-ring" viewBox="0 0 80 80" role="img" aria-label="${pct}% of your cost paid">
+          <circle cx="40" cy="40" r="${R}" class="mp-track"/>
+          <circle cx="40" cy="40" r="${R}" class="mp-fill" stroke-dasharray="${L.toFixed(1)}" stroke-dashoffset="${(L * (1 - pct / 100)).toFixed(1)}"/>
+          <text x="40" y="45" text-anchor="middle">${pct}%</text>
+        </svg>
+        <div class="mp-figs">
+          <small>${c.net < 0 ? 'Still to pay' : c.net > 0 ? 'To be paid back to you' : 'All settled'}</small>
+          <strong class="${c.net < 0 ? 'neg' : c.net > 0 ? 'pos' : ''}">${c.net < 0 ? fmt(-c.net) : fmt(c.net)}</strong>
+          <span>Paid ${fmt(c.paid)} · Cost ${fmt(c.cost)}</span>
+        </div>
+        ${open}
+      </div>
+    </section>`;
+  }
+
+  // Shortcut tiles under the hero, to the screens this viewer can open.
+  function quickTiles() {
+    const ic = id => (TABS.find(t => t.id === id) || {}).icon || '';
+    const tiles = [
+      daysVisible() && ['days', 'Matches'],
+      ['players', 'Squad'],
+      statsVisible() && ['stats', 'Stats'],
+      ['news', 'News'],
+      ['money', 'Money']
+    ].filter(Boolean);
+    return `<nav class="quick-tiles" aria-label="Shortcuts">${tiles.map(([id, label]) =>
+      `<button class="qt" data-action="tab" data-tab="${id}"><span class="qt-ico">${icon(ic(id), 22)}</span><span>${label}</span></button>`).join('')}</nav>`;
   }
 
   // A player's own orders (a shirt): what each costs them and whether the admin has marked their money as sent.
@@ -2685,10 +2716,11 @@
     const next = nextMatchCard();
     return `
       ${homeHero()}
+      ${quickTiles()}
+      ${moneyGlance()}
       ${todoCard()}
       ${next || `<section class="panel empty-next"><span class="pp-ico">${icon('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>', 22)}</span>
         <div class="pp-text"><strong>No upcoming match yet</strong><small>${isAdmin() ? 'Add one on the Days tab and it shows here with a countdown.' : 'When the next match is added, it shows here with a countdown.'}</small></div></section>`}
-      ${moneyGlance()}
       ${myOrdersCard()}
       ${pollsPanel()}
       ${fixturesPanel()}
@@ -4277,7 +4309,9 @@ ${tabRows.map(r => {
     const max = state.settings.maxPerMatch;
     const full = isMatch && s.n >= max;
     const twelfthId = isMatch ? state.twelfth[d.id] : null;
-    const rows = state.players.map((p, i) => `
+    // Players set to Out of the tournament aren't listed, unless already marked for this day (so it can be undone).
+    const listed = state.players.filter(p => C.inTournament(p) || p.att[d.id] || twelfthId === p.id);
+    const rows = listed.map((p, i) => `
       <div class="att-row ${p.att[d.id] ? 'is-on' : ''} ${twelfthId === p.id ? 'is-twelfth' : ''}">
         <span class="sr">${i + 1}</span>
         <span class="pname"><strong>${esc(p.name)}</strong><small>${esc(p.role) || '—'}</small></span>
@@ -4347,21 +4381,23 @@ ${tabRows.map(r => {
     return p ? p.payments : null;
   }
 
-  function paymentRows(p) {
-    return paymentEditor(p.id, p.payments, '+ Add payment');
+  function paymentRows(p, net) {
+    return paymentEditor(p.id, p.payments, '+ Add payment', net);
   }
 
-  function paymentEditor(ownerId, list, addLabel) {
+  // net: the player's balance; when it's in credit the admin can record paying it back.
+  function paymentEditor(ownerId, list, addLabel, net = 0) {
     const p = { id: ownerId, payments: list };
     if (!isAdmin()) {
       if (!p.payments.length) return '<p class="muted">No payments yet.</p>';
-      return `<ul class="exp-list">${p.payments.map(x => `<li><span><strong>${formatDate(x.date) || 'Earlier'}</strong>
+      return `<ul class="exp-list">${p.payments.map(x => `<li class="${x.refund ? 'pay-back' : ''}"><span><strong>${formatDate(x.date) || 'Earlier'}${x.refund ? ' · Paid back' : ''}</strong>
         <small>${[x.method, x.note].filter(Boolean).map(esc).join(' · ') || '—'}</small></span>
-        <span class="amt">${fmt(C.num(x.amount))}</span></li>`).join('')}</ul>`;
+        <span class="amt">${x.refund ? '−' : ''}${fmt(C.num(x.amount))}</span></li>`).join('')}</ul>`;
     }
     const attrs = x => `data-player="${esc(p.id)}" data-id="${esc(x.id)}"`;
     const rows = p.payments.map(x => `
-      <div class="pay-row">
+      <div class="pay-row ${x.refund ? 'pay-back' : ''}">
+        ${x.refund ? '<span class="pay-back-tag" title="Money you paid back to the player">Paid back</span>' : ''}
         <input class="field" type="date" value="${esc(x.date)}" max="${today()}" data-input="pay-date" ${attrs(x)} aria-label="Date">
         <span class="money-input"><em>${esc(cur().trim())}</em><input type="text" inputmode="decimal" placeholder="0" value="${esc(x.amount)}"
           data-input="pay-amount" ${attrs(x)} data-focus="pya-${esc(x.id)}" aria-label="Amount"></span>
@@ -4374,7 +4410,9 @@ ${tabRows.map(r => {
         <button class="icon-btn danger" data-action="remove-payment" ${attrs(x)} aria-label="Remove payment">${X_ICON}</button>
       </div>`).join('');
     return `${rows ? `<div class="exp-rows">${rows}</div>` : ''}
-      <button class="chip" data-action="add-payment" data-id="${esc(p.id)}">${addLabel}</button>`;
+      <button class="chip" data-action="add-payment" data-id="${esc(p.id)}">${addLabel}</button>
+      ${ownerId !== MGMT ? `<button class="chip pay-back-chip" data-action="add-payment" data-id="${esc(p.id)}" data-refund="1"
+        title="Record money you gave back to the player to settle their balance">− Pay back${net > 0 ? ` ${fmt(net)}` : ''}</button>` : ''}`;
   }
 
   function advanceStatus(p, net) {
@@ -4394,8 +4432,9 @@ ${tabRows.map(r => {
     const stats = C.allStats(state);
     const c = C.playerCalc(state, p, stats, fmt);
     // Test matches only exist for the stats; they never show in a player's attendance.
-    const days = C.days(state).filter(d => d.type === 'training' || (!d.test && matchVisible(d)));
     const inTour = C.inTournament(p);
+    // A player Out of the tournament only shows the days they were already marked for.
+    const days = C.days(state).filter(d => (d.type === 'training' || (!d.test && matchVisible(d))) && (inTour || p.att[d.id] || isTwelfth(p, d)));
 
     const fields = admin ? `
       <div class="form-grid">
@@ -4433,8 +4472,9 @@ ${tabRows.map(r => {
         </div>` : ''}
         ${fields}
         ${seesMoneyOf(p) ? `<h3 class="sub">Payments <span class="muted">${fmt(c.paid)}</span></h3>
-        ${paymentRows(p)}` : ''}
+        ${paymentRows(p, c.net)}` : ''}
         <h3 class="sub">Attendance</h3>
+        ${!inTour ? '<p class="muted">Out of the tournament — not listed for matches or trainings.</p>' : ''}
         <div class="att-grid">
           ${days.map(d => `<div class="att-cell ${d.type}"><span>${d.label}</span>${toggleButton(p, d, stats)}</div>`).join('')}
         </div>
@@ -4879,6 +4919,7 @@ ${tabRows.map(r => {
       if (p.att[day.id]) {
         delete p.att[day.id];
       } else {
+        if (!C.inTournament(p)) { toast(`${p.name || 'This player'} is Out of the tournament, so can’t be added to ${day.label}.`); return; }
         const n = C.dayStats(state, day).n;
         if (day.type === 'match' && n >= state.settings.maxPerMatch) {
           toast(`${state.settings.maxPerMatch} players already played ${day.label}`);
@@ -4896,6 +4937,7 @@ ${tabRows.map(r => {
       if (state.twelfth[day] === p.id) {
         delete state.twelfth[day];
       } else {
+        if (!C.inTournament(p)) { toast(`${p.name || 'This player'} is Out of the tournament.`); return; }
         delete p.att[day];
         state.twelfth[day] = p.id;
       }
@@ -5564,6 +5606,11 @@ ${tabRows.map(r => {
       const list = paymentsOf(el.dataset.id);
       if (!list || !isAdmin()) return;
       const x = { id: rid(), date: today(), amount: '', method: el.dataset.id === MGMT ? 'Bank transfer' : 'Cash', note: '' };
+      if (el.dataset.refund) {
+        // Paying back a player in credit: start from what they are owed, so their balance comes to zero.
+        const net = C.playerCalc(state, findPlayer(el.dataset.id), null, fmt).net;
+        Object.assign(x, { refund: true, amount: net > 0 ? String(net) : '', note: 'Paid back' });
+      }
       list.push(x);
       commit();
       const target = document.querySelector(`[data-focus="pya-${x.id}"]`);
@@ -5576,7 +5623,7 @@ ${tabRows.map(r => {
       if (!x) return;
       if (C.num(x.amount) > 0) {
         const whose = owner === MGMT ? 'the payments to management' : `${findPlayer(owner).name}'s payments`;
-        const ok = await confirmDialog('Remove this payment?', `${fmt(C.num(x.amount))}${x.date ? ' on ' + formatDate(x.date) : ''} will be removed from ${whose}.`, 'Remove', true);
+        const ok = await confirmDialog(x.refund ? 'Remove this pay back?' : 'Remove this payment?', `${fmt(C.num(x.amount))}${x.date ? ' on ' + formatDate(x.date) : ''} will be removed from ${whose}.`, 'Remove', true);
         if (!ok) return;
       }
       list.splice(list.indexOf(x), 1);
