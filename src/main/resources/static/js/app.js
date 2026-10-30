@@ -1867,6 +1867,19 @@
     return p ? { name: p.name, role: /keeper/i.test(p.role) ? 'Wicket-keeper' : p.role.replace(/\s*\+?\s*captain\s*/i, '').trim() } : null;
   }
 
+  // The XI and the 12th man together in a random order, so the batting order isn't given away.
+  function playingXII(dayId) {
+    return shuffle(batOrderOf(dayId)).map(p => {
+      const keeper = /keeper/i.test(p.role);
+      return {
+        name: p.name,
+        role: keeper ? '' : p.role.replace(/\s*\+?\s*captain\s*/i, '').trim(),
+        captain: /captain/i.test(p.role),
+        keeper
+      };
+    });
+  }
+
   function xiImage(day, details) {
     return window.RFBalanceImage.renderXI({
       matchLabel: day.label,
@@ -4282,7 +4295,8 @@ ${tabRows.map(r => {
 
   // What a manager sees above the attendance list: Share, and where their proposal stands.
   function lineupBox(d, s) {
-    const share = s.n > 0 ? `<div class="xi-actions"><button class="btn btn-gold" data-action="share-xi" data-id="${esc(d.id)}">${IMAGE_ICON} Share Playing XI</button></div>` : '';
+    const share = s.n > 0 ? `<div class="xi-actions"><button class="btn btn-gold" data-action="share-xi" data-id="${esc(d.id)}">${IMAGE_ICON} Share Playing XI</button>
+      <button class="btn btn-gold" data-action="share-xii" data-id="${esc(d.id)}">${IMAGE_ICON} Share Playing XII</button></div>` : '';
     let status;
     const last = lastLineup(d.id);
     if (xiDirty[d.id]) {
@@ -4342,7 +4356,8 @@ ${tabRows.map(r => {
         ${isMatch && isAdmin() ? `<div class="xi-actions">
           <button class="btn btn-ghost" data-action="random-xi" data-id="${esc(d.id)}">${DICE_ICON} Random XI + 12th</button>
           ${s.n > 0 || twelfthId ? `<button class="btn btn-danger" data-action="clear-xi" data-id="${esc(d.id)}">${X_ICON} Clear XI</button>` : ''}
-          ${s.n > 0 ? `<button class="btn btn-gold" data-action="share-xi" data-id="${esc(d.id)}">${IMAGE_ICON} Share Playing XI</button>` : ''}
+          ${s.n > 0 ? `<button class="btn btn-gold" data-action="share-xi" data-id="${esc(d.id)}">${IMAGE_ICON} Share Playing XI</button>
+          <button class="btn btn-gold" data-action="share-xii" data-id="${esc(d.id)}">${IMAGE_ICON} Share Playing XII</button>` : ''}
           ${announceButton(d, 'btn-primary')}
         </div>
         ${s.n > 0 ? '' : '<p class="muted xi-hint">Mark who’s playing below, or pick at random, to share the Playing XI picture.</p>'}` : ''}
@@ -5688,6 +5703,33 @@ ${tabRows.map(r => {
           title: `${day.label} · Playing XI`, alt: `${day.label} Playing XI`, shareTitle: `Red Falcons · ${day.label} Playing XI`,
           fileName: () => `red-falcons-${day.short.toLowerCase()}-playing-xi.png`,
           fields: XI_FIELDS.map(f => ({ ...f, value: details[f.key] })), redraw: values => xiImage(day, values)
+        });
+      } catch (e) {
+        toast('Could not create the picture.');
+      } finally {
+        el.disabled = false;
+        el.innerHTML = label;
+      }
+    },
+    // For the whole team: the 12 in a random order, without the batting order.
+    async 'share-xii'(el) {
+      const day = C.days(state).find(d => d.id === el.dataset.id);
+      if (!day) return;
+      const label = el.innerHTML;
+      el.disabled = true;
+      el.textContent = 'Creating…';
+      try {
+        const players = playingXII(day.id); // shuffled once, so typing details doesn't reshuffle
+        const draw = details => window.RFBalanceImage.renderXI({
+          matchLabel: day.label, leagueName: leagueName(), ...details,
+          players, unordered: true, link: location.host, logoSrc: 'img/logo.jpeg'
+        });
+        const details = { opponent: day.opponent, when: [formatMatchDate(day.date), fmtClock(day.time)].filter(Boolean).join(' · '),
+          venue: day.venue, report: reportTime(day.time) };
+        showImageDialog(await draw(details), {
+          title: `${day.label} · Playing XII`, alt: `${day.label} Playing XII`, shareTitle: `Red Falcons · ${day.label} Playing XII`,
+          fileName: () => `red-falcons-${day.short.toLowerCase()}-playing-xii.png`,
+          fields: XI_FIELDS.map(f => ({ ...f, value: details[f.key] })), redraw: draw
         });
       } catch (e) {
         toast('Could not create the picture.');

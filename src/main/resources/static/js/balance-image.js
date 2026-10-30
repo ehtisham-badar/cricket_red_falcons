@@ -324,6 +324,7 @@
    * @param {string} [o.opponent], [o.when], [o.venue] optional details typed in before sharing
    * @param {{name: string, role: string, captain: boolean, keeper: boolean, opener?: boolean}[]} o.players  in batting order
    * @param {{name: string, role: string}} [o.twelfth]  the 12th man, drawn below the XI
+   * @param {boolean} [o.unordered]  a Playing XII in no particular order: no numbers, openers or batting order
    * @param {string} o.link, o.logoSrc
    * @returns {Promise<Blob>}
    */
@@ -349,7 +350,7 @@
     canvas.height = H;
     const ctx = canvas.getContext('2d');
     ctx.textBaseline = 'middle';
-    drawHeader(ctx, H, logo, 'CRICKET CLUB · PLAYING XI', o.leagueName, headerH);
+    drawHeader(ctx, H, logo, o.unordered ? 'CRICKET CLUB · PLAYING XII' : 'CRICKET CLUB · PLAYING XI', o.leagueName, headerH);
 
     // Match banner: match name, opponent, then date and venue.
     roundRect(ctx, PAD, bannerTop, W - PAD * 2, bannerH, 22);
@@ -408,12 +409,13 @@
     const colW = W - PAD * 2;
     ctx.fillStyle = C.gold;
     ctx.font = `800 18px ${BODY}`;
-    spaced(ctx, 'BATTING ORDER', PAD + 4, listTop - 24, 3);
-    // The order can still change, so say so next to the heading.
-    const headW = [...'BATTING ORDER'].reduce((w, ch) => w + ctx.measureText(ch).width, 0) + 3 * 12;
+    const heading = o.unordered ? 'PLAYING XII' : 'BATTING ORDER';
+    spaced(ctx, heading, PAD + 4, listTop - 24, 3);
+    // The order can still change (or isn't given at all), so say so next to the heading.
+    const headW = [...heading].reduce((w, ch) => w + ctx.measureText(ch).width, 0) + 3 * (heading.length - 1);
     ctx.fillStyle = C.muted;
     ctx.font = `600 18px ${BODY}`;
-    ctx.fillText('(not finalized)', PAD + 4 + headW + 14, listTop - 24);
+    ctx.fillText(o.unordered ? '(in no particular order)' : '(not finalized)', PAD + 4 + headW + 14, listTop - 24);
     o.players.forEach((p, i) => {
       const x = PAD;
       const y = listTop + i * (ROW_H + GAP);
@@ -433,7 +435,13 @@
       ctx.fillStyle = p.opener ? C.gold : C.due;
       ctx.font = `800 20px ${BODY}`;
       ctx.textAlign = 'center';
-      ctx.fillText(String(i + 1), bx, cy + 1);
+      if (o.unordered) {
+        ctx.beginPath();
+        ctx.arc(bx, cy, 6, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.fillText(String(i + 1), bx, cy + 1);
+      }
 
       const right = x + colW - 24;
       ctx.textAlign = 'right';
