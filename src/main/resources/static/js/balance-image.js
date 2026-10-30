@@ -316,14 +316,42 @@
     return new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
   }
 
+  // A player's name with C, VC and WK badges after it, fitted before maxX.
+  function drawNameWithBadges(ctx, p, nameX, cy, maxX) {
+    const badges = [p.captain && { text: 'C', bg: C.gold, color: '#1c1c21' },
+      p.viceCaptain && { text: 'VC', bg: 'rgba(226,182,92,0.22)', color: C.gold, ring: C.gold },
+      p.keeper && { text: 'WK', bg: 'rgba(208,34,44,0.85)', color: C.text }].filter(Boolean);
+    ctx.textAlign = 'left';
+    ctx.font = `800 18px ${BODY}`;
+    const badgesW = badges.reduce((w, b) => w + ctx.measureText(b.text).width + 22 + 8, 0);
+    ctx.fillStyle = C.text;
+    ctx.font = `700 30px ${BODY}`;
+    const name = fit(ctx, p.name || 'Unnamed', maxX - badgesW - nameX);
+    ctx.fillText(name, nameX, cy + 1);
+    let tx = nameX + ctx.measureText(name).width + 14;
+    ctx.font = `800 18px ${BODY}`;
+    badges.forEach(b => {
+      const w = ctx.measureText(b.text).width + 22;
+      roundRect(ctx, tx, cy - 16, w, 32, 16);
+      ctx.fillStyle = b.bg;
+      ctx.fill();
+      if (b.ring) { ctx.strokeStyle = b.ring; ctx.lineWidth = 2; ctx.stroke(); }
+      ctx.fillStyle = b.color;
+      ctx.textAlign = 'center';
+      ctx.fillText(b.text, tx + w / 2, cy + 1);
+      ctx.textAlign = 'left';
+      tx += w + 8;
+    });
+  }
+
   /**
    * A match's Playing XI.
    * @param {object} o
    * @param {string} o.matchLabel                     e.g. "Match 1"
    * @param {string} o.leagueName                     shown under the club name
    * @param {string} [o.opponent], [o.when], [o.venue] optional details typed in before sharing
-   * @param {{name: string, role: string, captain: boolean, keeper: boolean, opener?: boolean}[]} o.players  in batting order
-   * @param {{name: string, role: string}} [o.twelfth]  the 12th man, drawn below the XI
+   * @param {{name: string, role: string, captain: boolean, viceCaptain?: boolean, keeper: boolean, opener?: boolean}[]} o.players  in batting order
+   * @param {{name: string, role: string, captain?: boolean, viceCaptain?: boolean}} [o.twelfth]  the 12th man, drawn below the XI
    * @param {boolean} [o.unordered]  a Playing XII in no particular order: no numbers, openers or batting order
    * @param {string} o.link, o.logoSrc
    * @returns {Promise<Blob>}
@@ -452,27 +480,7 @@
       const roleW = role ? ctx.measureText(role).width + 24 : 0;
       ctx.textAlign = 'left';
 
-      const badges = [p.captain && { text: 'C', bg: C.gold, color: '#1c1c21' }, p.keeper && { text: 'WK', bg: 'rgba(208,34,44,0.85)', color: C.text }].filter(Boolean);
-      ctx.font = `800 18px ${BODY}`;
-      const badgesW = badges.reduce((w, b) => w + ctx.measureText(b.text).width + 22 + 8, 0);
-      const nameX = x + 86;
-      ctx.fillStyle = C.text;
-      ctx.font = `700 30px ${BODY}`;
-      const name = fit(ctx, p.name || 'Unnamed', right - roleW - badgesW - 12 - nameX);
-      ctx.fillText(name, nameX, cy + 1);
-      let tx = nameX + ctx.measureText(name).width + 14;
-      ctx.font = `800 18px ${BODY}`;
-      badges.forEach(b => {
-        const w = ctx.measureText(b.text).width + 22;
-        roundRect(ctx, tx, cy - 16, w, 32, 16);
-        ctx.fillStyle = b.bg;
-        ctx.fill();
-        ctx.fillStyle = b.color;
-        ctx.textAlign = 'center';
-        ctx.fillText(b.text, tx + w / 2, cy + 1);
-        ctx.textAlign = 'left';
-        tx += w + 8;
-      });
+      drawNameWithBadges(ctx, p, x + 86, cy, right - roleW - 12);
     });
 
     if (o.twelfth) {
@@ -501,9 +509,7 @@
       ctx.fillText(o.twelfth.role || '', right, cy + 1);
       const roleW = o.twelfth.role ? ctx.measureText(o.twelfth.role).width + 24 : 0;
       ctx.textAlign = 'left';
-      ctx.fillStyle = C.text;
-      ctx.font = `700 30px ${BODY}`;
-      ctx.fillText(fit(ctx, o.twelfth.name || 'Unnamed', right - roleW - PAD - 86), PAD + 86, cy + 1);
+      drawNameWithBadges(ctx, o.twelfth, PAD + 86, cy, right - roleW);
     }
 
     drawFooter(ctx, listTop + listH + TWELFTH_H + 30, 'Follow the team', o.link);

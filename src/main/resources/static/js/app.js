@@ -1851,12 +1851,12 @@
   // The players marked as playing this match, in batting order, with captain and keeper from their role.
   function playingXI(dayId) {
     return battingOrderOf(dayId).map((p, i) => {
-      const keeper = /keeper/i.test(p.role);
+      const keeper = isKeeper(p);
       return {
         opener: i < 2,
         name: p.name,
         role: keeper ? '' : p.role.replace(/\s*\+?\s*captain\s*/i, '').trim(),
-        captain: /captain/i.test(p.role),
+        captain: isCaptain(p), viceCaptain: !!p.viceCaptain,
         keeper
       };
     });
@@ -1864,17 +1864,18 @@
 
   function twelfthMan(dayId) {
     const p = findPlayer(state.twelfth[dayId]);
-    return p ? { name: p.name, role: /keeper/i.test(p.role) ? 'Wicket-keeper' : p.role.replace(/\s*\+?\s*captain\s*/i, '').trim() } : null;
+    return p ? { name: p.name, role: isKeeper(p) ? 'Wicket-keeper' : p.role.replace(/\s*\+?\s*captain\s*/i, '').trim(),
+      captain: isCaptain(p), viceCaptain: !!p.viceCaptain } : null;
   }
 
   // The XI and the 12th man together in a random order, so the batting order isn't given away.
   function playingXII(dayId) {
     return shuffle(batOrderOf(dayId)).map(p => {
-      const keeper = /keeper/i.test(p.role);
+      const keeper = isKeeper(p);
       return {
         name: p.name,
         role: keeper ? '' : p.role.replace(/\s*\+?\s*captain\s*/i, '').trim(),
-        captain: /captain/i.test(p.role),
+        captain: isCaptain(p), viceCaptain: !!p.viceCaptain,
         keeper
       };
     });
