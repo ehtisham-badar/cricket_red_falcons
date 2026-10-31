@@ -100,6 +100,18 @@ class LedgerApiTest {
         assertThat(send("PUT", "/api/ledger", v3, token).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/ledger", null, null).body()).contains(charged);
 
+        // Money sent to the shirt maker is its own list, apart from management; a save without it keeps it.
+        String withShirt = v3.replace("\"tournament\":{\"fee\":\"65000\"}",
+                "\"tournament\":{\"fee\":\"65000\"},\"shirtPayments\":[{\"id\":\"s1\",\"date\":\"2026-10-30\",\"amount\":\"10000\",\"method\":\"Cash\",\"note\":\"Advance\"},{\"id\":\"s1\",\"amount\":\"5\"}]");
+        assertThat(send("PUT", "/api/ledger", withShirt, token).statusCode()).isEqualTo(200);
+        String shirtSent = "\"shirtPayments\":[{\"id\":\"s1\",\"date\":\"2026-10-30\",\"amount\":\"10000\",\"method\":\"Cash\",\"note\":\"Advance\"}]";
+        String afterShirt = send("GET", "/api/ledger", null, null).body();
+        assertThat(afterShirt).contains(shirtSent).contains("\"tournament\":{\"name\":\"\",\"fee\":\"65000\",\"advance\":\"\",\"payments\":[]");
+        assertThat(send("PUT", "/api/ledger", v3, token).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains(shirtSent);
+        assertThat(send("PUT", "/api/ledger", v3.replace("\"tournament\":{\"fee\":\"65000\"}", "\"tournament\":{\"fee\":\"65000\"},\"shirtPayments\":[]"), token).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"shirtPayments\":[]");
+
         // League fee name, advance, transfers to the tournament management and the payment account round-trip.
         String withManagement = """
                 {"players":[],"tournament":{"name":"Hundred Premier League","fee":"65000","advance":"1200","matchCount":6,"payments":[

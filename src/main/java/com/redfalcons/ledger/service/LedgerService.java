@@ -9,6 +9,7 @@ import com.redfalcons.ledger.model.Payment;
 import com.redfalcons.ledger.model.Player;
 import com.redfalcons.ledger.model.Setting;
 import com.redfalcons.ledger.model.Training;
+import com.redfalcons.ledger.model.ShirtPayment;
 import com.redfalcons.ledger.model.TournamentPayment;
 import com.redfalcons.ledger.repo.DayAmountRepository;
 import com.redfalcons.ledger.repo.ExpenseRepository;
@@ -20,6 +21,7 @@ import com.redfalcons.ledger.repo.MemberChargeRepository;
 import com.redfalcons.ledger.repo.PaymentRepository;
 import com.redfalcons.ledger.repo.PlayerRepository;
 import com.redfalcons.ledger.repo.SettingRepository;
+import com.redfalcons.ledger.repo.ShirtPaymentRepository;
 import com.redfalcons.ledger.repo.TournamentPaymentRepository;
 import com.redfalcons.ledger.repo.TrainingRepository;
 import com.redfalcons.ledger.web.LedgerDto;
@@ -86,6 +88,7 @@ public class LedgerService {
     private final MatchPhotoRepository matchPhotos;
     private final EngageCleanup engage;
     private final MemberChargeRepository charges;
+    private final ShirtPaymentRepository shirtPayments;
     /** Largest count a single stat can hold. */
     private static final int STAT_MAX = 999;
 
@@ -94,9 +97,10 @@ public class LedgerService {
                          TournamentPaymentRepository tournamentPayments, SettingRepository settings,
                          MatchDayRepository matches, MatchStatRepository stats, NotificationService notifications,
                          PlayerPhotoRepository photos, MatchPhotoRepository matchPhotos, EngageCleanup engage,
-                         MemberChargeRepository charges) {
+                         MemberChargeRepository charges, ShirtPaymentRepository shirtPayments) {
         this.engage = engage;
         this.charges = charges;
+        this.shirtPayments = shirtPayments;
         this.matchPhotos = matchPhotos;
         this.notifications = notifications;
         this.photos = photos;
@@ -142,7 +146,7 @@ public class LedgerService {
                 : new ChargeDto(c.id(), c.title(), c.amount(), c.players(), c.received().stream().filter(id -> id.equals(viewerId)).toList())).toList();
         return new LedgerDto(full.app(), full.version(), full.savedAt(), ps, full.amounts(), full.trainings(), full.expenses(),
                 full.tournament(), st, full.twelfth(), full.battingOrder(), full.matches(),
-                showStats && full.stats() != null ? full.stats() : Map.of(), cs);
+                showStats && full.stats() != null ? full.stats() : Map.of(), cs, full.shirtPayments());
     }
 
     /** The full ledger, as the admin sees it. */
@@ -206,7 +210,13 @@ public class LedgerService {
                                 .map(x -> new PaymentDto(x.getId(), x.getDate(), x.getAmount(), x.getMethod(), x.getNote(), null))
                                 .toList(), parseIntOr(s.get(MATCH_COUNT), DEFAULT_MATCH_COUNT)),
                 settingsDto, parseTwelfth(s.get(TWELFTH)), parseBatting(s), matchesWithTwelfth(parseTwelfth(s.get(TWELFTH))), storedStats(),
-                storedCharges());
+                storedCharges(), storedShirtPayments());
+    }
+
+    private List<PaymentDto> storedShirtPayments() {
+        return shirtPayments.findAll(BY_POSITION).stream()
+                .map(x -> new PaymentDto(x.getId(), x.getDate(), x.getAmount(), x.getMethod(), x.getNote(), null))
+                .toList();
     }
 
     private List<ChargeDto> storedCharges() {
@@ -510,6 +520,19 @@ public class LedgerService {
             }
         }
         tournamentPayments.saveAll(sent);
+
+        // Money sent to the shirt maker; without it (an older app), keep the stored payments.
+        if (in.shirtPayments() != null) {
+            List<ShirtPayment> toShirt = new ArrayList<>();
+            Set<String> shirtIds = new HashSet<>();
+            for (PaymentDto x : in.shirtPayments()) {
+                if (x == null || blank(x.id()) || !shirtIds.add(x.id())) continue;
+                toShirt.add(new ShirtPayment(x.id(), toShirt.size(), isoDate(x.date()), numeric(x.amount()),
+                        clip(x.method(), 40), clip(x.note(), 200)));
+            }
+            shirtPayments.deleteAllInBatch();
+            shirtPayments.saveAll(toShirt);
+        }
 
         // A 12th man must be a known player who isn't also playing that match.
         Map<String, Set<String>> attendedBy = new HashMap<>();

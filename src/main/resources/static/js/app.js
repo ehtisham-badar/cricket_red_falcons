@@ -395,7 +395,7 @@
 
   function emptyState() {
     return {
-      players: [], trainings: [{ id: 't1', desc: '' }], expenses: {}, tournament: { name: '', fee: '', advance: '', matchCount: 5, payments: [] }, twelfth: {}, battingOrder: {}, matches: [], stats: {}, charges: [],
+      players: [], trainings: [{ id: 't1', desc: '' }], expenses: {}, tournament: { name: '', fee: '', advance: '', matchCount: 5, payments: [] }, twelfth: {}, battingOrder: {}, matches: [], stats: {}, charges: [], shirtPayments: [],
       settings: { currency: 'Rs ', maxPerMatch: 11, roundUp: false, ...DEFAULT_PAY_TO }
     };
   }
@@ -502,6 +502,7 @@
       battingOrder,
       trainings: d.trainings && d.trainings.length ? d.trainings.map(t => ({ id: t.id, desc: t.desc || '' })) : [{ id: 't1', desc: '' }],
       expenses,
+      shirtPayments: paymentsFrom(null, { payments: d.shirtPayments || [] }),
       tournament: {
         name: (d.tournament && d.tournament.name) || '',
         fee: d.tournament && d.tournament.fee != null ? String(d.tournament.fee) : '',
@@ -1268,7 +1269,7 @@
       return `${head}<section class="panel"><p class="muted">No orders yet. Add one (for example a shirt) under Money → Orders &amp; extra charges, and pick the players on it.</p>
         <button class="btn btn-gold" data-action="tab" data-tab="money">Go to Money</button></section>`;
     }
-    return head + list.map(x => {
+    return head + shirtBlock() + list.map(x => {
       const got = new Set(x.received || []);
       const people = x.players.map(id => findPlayer(id)).filter(Boolean);
       const amt = C.num(x.amount);
@@ -2076,10 +2077,35 @@
         <div><span>${admin ? 'I have paid management' : 'Paid to management'}</span><strong class="pos">${fmt(t.sentToManagement)}</strong></div>
         <div><span>Still owed to management</span><strong class="${t.managementDue > 0 ? 'neg' : ''}">${fmt(t.managementDue)}</strong></div>
         <div ${ownOnly() ? 'hidden' : ''}><span>${admin ? 'In my account' : 'With the manager'}</span><strong class="${t.cashInHand < 0 ? 'neg' : ''}">${fmtNet(t.cashInHand).replace(/^\+/, '')}</strong>
-          <small>Collected ${fmt(t.collected)} − management ${fmt(t.sentToManagement)}${t.teamSpent > 0 ? ` − team expenses ${fmt(t.teamSpent)}` : ''}</small></div>
+          <small>Collected ${fmt(t.collected)} − management ${fmt(t.sentToManagement)}${t.teamSpent > 0 ? ` − team expenses ${fmt(t.teamSpent)}` : ''}${t.sentToShirt > 0 ? ' (incl. shirt maker)' : ''}</small></div>
       </div>
       <h4 class="league-sub">Payments to management</h4>
       ${paymentEditor(MGMT, state.tournament.payments, '+ Add payment to management')}
+    </section>`;
+  }
+
+  // Money sent to the shirt maker for the orders (shirts): kept apart from the league's management.
+  function shirtBlock() {
+    const t = C.totals(state, fmt);
+    const admin = isAdmin();
+    if (!(t.chargesSpent > 0) && !state.shirtPayments.length) return '';
+    const pct = t.chargesSpent > 0 ? Math.min(100, Math.round(t.sentToShirt / t.chargesSpent * 100)) : 0;
+    const got = C.charges(state).reduce((n, x) => n + C.num(x.amount) * (x.received || []).length, 0);
+    const names = C.charges(state).map(x => x.title).filter(Boolean);
+    return `<section class="panel league shirt-maker">
+      <div class="league-head">
+        <div><span class="day-kind">Shirts</span><h3>Shirt maker</h3>
+          ${t.chargesSpent > 0 ? `<span class="league-pct">${pct}% paid to the shirt maker</span>` : ''}</div>
+        ${t.chargesSpent > 0 ? pctRing(pct) : ''}
+      </div>
+      <div class="league-figs">
+        <div><span>Order total</span><strong>${fmt(t.chargesSpent)}</strong><small>${esc(names.join(', ')) || 'Orders'}</small></div>
+        <div><span>${admin ? 'I have paid the shirt maker' : 'Paid to the shirt maker'}</span><strong class="pos">${fmt(t.sentToShirt)}</strong></div>
+        <div><span>Still owed to the shirt maker</span><strong class="${t.shirtDue > 0 ? 'neg' : ''}">${fmt(t.shirtDue)}</strong></div>
+        ${admin ? `<div><span>Collected from players</span><strong>${fmt(C.round2(got))}</strong><small>Marked as sent on Team → Shirt money</small></div>` : ''}
+      </div>
+      <h4 class="league-sub">Payments to the shirt maker</h4>
+      ${paymentEditor(SHIRT, state.shirtPayments, '+ Add payment to shirt maker')}
     </section>`;
   }
 
@@ -2520,7 +2546,7 @@
     const cards = [
       { label: 'Collected', value: fmt(t.collected), cls: '', note: 'Paid in by players' },
       { label: 'League fee', value: t.tournamentFee > 0 ? fmt(t.tournamentFee) : '—', cls: '', note: tour.fee > 0 ? `${fmt(t.sentToManagement)} sent to management · ${fmt(t.managementDue)} still owed` : 'Not set' },
-      { label: 'Team expenses', value: fmt(t.teamSpent), cls: '', note: [`Days ${fmt(t.daySpent - t.fronted)}`, t.chargesSpent > 0 ? `orders ${fmt(t.chargesSpent)}` : '', t.fronted > 0 ? `+ ${fmt(t.fronted)} bought by players` : ''].filter(Boolean).join(' · ') },
+      { label: 'Team expenses', value: fmt(t.teamSpent), cls: '', note: [`Days ${fmt(t.daySpent - t.fronted)}`, t.sentToShirt > 0 ? `shirt maker ${fmt(t.sentToShirt)}` : '', t.fronted > 0 ? `+ ${fmt(t.fronted)} bought by players` : ''].filter(Boolean).join(' · ') },
       { label: admin ? 'In my account' : 'With the manager', value: fmtNet(t.cashInHand).replace(/^\+/, ''), cls: t.cashInHand < 0 ? 'neg' : '', note: `Collected ${fmt(t.collected)} − management ${fmt(t.sentToManagement)} − team expenses ${fmt(t.teamSpent)}` },
       { label: admin ? 'You pay back' : 'To be paid back', value: fmt(t.payBack), cls: 'pos', note: 'Players in credit' },
       { label: admin ? 'Still owed to you' : 'Balance due', value: fmt(t.owed), cls: 'neg', note: 'Players still to pay' }
@@ -2580,6 +2606,7 @@
           <button class="btn btn-gold" data-action="share-image">${IMAGE_ICON} Share as image</button></div>` : '')}
       ${myBalance()}
       ${leagueBlock()}
+      ${shirtBlock()}
       ${chargesBlock()}
       <div class="stats" ${ownOnly() ? 'hidden' : ''}>${cards.map(c => `<div class="stat ${c.cls}"><span>${c.label}</span><strong>${c.value}</strong><small>${esc(c.note)}</small></div>`).join('')}</div>
       ${warningBanner()}
@@ -4402,10 +4429,12 @@ ${tabRows.map(r => {
 
   const today = () => new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD in local time
 
-  // Payments made by a player, or (owner MGMT) sent by the admin to the tournament management.
+  // Payments made by a player, or sent by the admin to the tournament management (owner MGMT) or the shirt maker (SHIRT).
   const MGMT = '__mgmt';
+  const SHIRT = '__shirt';
   function paymentsOf(ownerId) {
     if (ownerId === MGMT) return state.tournament.payments;
+    if (ownerId === SHIRT) return state.shirtPayments;
     const p = findPlayer(ownerId);
     return p ? p.payments : null;
   }
@@ -4440,7 +4469,7 @@ ${tabRows.map(r => {
       </div>`).join('');
     return `${rows ? `<div class="exp-rows">${rows}</div>` : ''}
       <button class="chip" data-action="add-payment" data-id="${esc(p.id)}">${addLabel}</button>
-      ${ownerId !== MGMT ? `<button class="chip pay-back-chip" data-action="add-payment" data-id="${esc(p.id)}" data-refund="1"
+      ${ownerId !== MGMT && ownerId !== SHIRT ? `<button class="chip pay-back-chip" data-action="add-payment" data-id="${esc(p.id)}" data-refund="1"
         title="Record money you gave back to the player to settle their balance">− Pay back${net > 0 ? ` ${fmt(net)}` : ''}</button>` : ''}`;
   }
 
@@ -5654,7 +5683,7 @@ ${tabRows.map(r => {
     'add-payment'(el) {
       const list = paymentsOf(el.dataset.id);
       if (!list || !isAdmin()) return;
-      const x = { id: rid(), date: today(), amount: '', method: el.dataset.id === MGMT ? 'Bank transfer' : 'Cash', note: '' };
+      const x = { id: rid(), date: today(), amount: '', method: el.dataset.id === MGMT || el.dataset.id === SHIRT ? 'Bank transfer' : 'Cash', note: '' };
       if (el.dataset.refund) {
         // Paying back a player in credit: start from what they are owed, so their balance comes to zero.
         const net = C.playerCalc(state, findPlayer(el.dataset.id), null, fmt).net;
@@ -5671,7 +5700,7 @@ ${tabRows.map(r => {
       const x = list && list.find(y => y.id === el.dataset.id);
       if (!x) return;
       if (C.num(x.amount) > 0) {
-        const whose = owner === MGMT ? 'the payments to management' : `${findPlayer(owner).name}'s payments`;
+        const whose = owner === MGMT ? 'the payments to management' : owner === SHIRT ? 'the payments to the shirt maker' : `${findPlayer(owner).name}'s payments`;
         const ok = await confirmDialog(x.refund ? 'Remove this pay back?' : 'Remove this payment?', `${fmt(C.num(x.amount))}${x.date ? ' on ' + formatDate(x.date) : ''} will be removed from ${whose}.`, 'Remove', true);
         if (!ok) return;
       }

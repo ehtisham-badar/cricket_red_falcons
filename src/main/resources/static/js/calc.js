@@ -290,7 +290,9 @@
       if (c.net < 0) owed += -c.net;
     });
     const chargesSpent = round2(charges(state).reduce((s, c) => s + chargeTotal(state, c), 0));
-    fundSpent += chargesSpent;
+    // Orders (shirts) leave the fund only as the admin sends money to the shirt maker, like the league and management.
+    const sentToShirt = round2((state.shirtPayments || []).reduce((s, x) => s + num(x.amount), 0));
+    fundSpent += sentToShirt;
     days(state).forEach(d => {
       daySpent += stats[d.id].amount;
       dayExpenses(state, d.id).forEach(e => { if (!e.paidBy) fundSpent += num(e.amount); });
@@ -304,7 +306,9 @@
       fronted: round2(fronted),
       sentToManagement: sent,
       managementDue: round2(Math.max(tour.fee - sent, 0)),
-      // teamSpent: what the team fund paid for the team itself (day expenses it paid, and orders), apart from management.
+      sentToShirt,
+      shirtDue: round2(Math.max(chargesSpent - sentToShirt, 0)),
+      // teamSpent: what the team fund paid for the team itself (day expenses it paid, and the shirt maker), apart from management.
       teamSpent: round2(fundSpent - sent),
       cashInHand: round2(collected - fundSpent),
       payBack: round2(payBack),
