@@ -87,8 +87,8 @@ public class LeagueFeedService {
 
     /**
      * Every 15 minutes: fetch when the stored copy is from before the latest Saturday 4 pm (or there is none),
-     * retrying on errors. On fetch day itself, if Crickslab still shows the old table, ask again every hour
-     * until midnight so the new results are picked up once they are entered.
+     * retrying on errors. On fetch day itself, while Crickslab still shows the old table or one of that day's
+     * matches isn't finished yet, ask again every hour until midnight so the final results are picked up.
      */
     @Scheduled(initialDelay = 30_000, fixedDelay = 15 * 60_000)
     public void scheduledRefresh() {
@@ -98,7 +98,8 @@ public class LeagueFeedService {
             load();
             Instant due = lastFetchTime(now);
             boolean stillFetchDay = now.atZone(PAKISTAN).toLocalDate().equals(due.atZone(PAKISTAN).toLocalDate());
-            boolean go = fetchedAt.isBefore(due) || (stillFetchDay && tableUnchanged && lastTry.plus(WAIT_FOR_TABLE).isBefore(now));
+            boolean waiting = tableUnchanged || unfinishedOn(cached, now.atZone(PAKISTAN).toLocalDate());
+            boolean go = fetchedAt.isBefore(due) || (stillFetchDay && waiting && lastTry.plus(WAIT_FOR_TABLE).isBefore(now));
             if (refreshing || !go) return;
             lastTry = now;
             refreshing = true;
@@ -202,20 +203,32 @@ public class LeagueFeedService {
             out.put("pointsTable", old.get("pointsTable"));
             out.put("leaders", old.get("leaders"));
         }
-        Map<Object, Map<String, Object>> oldById = new HashMap<>();
-        ((List<Map<String, Object>>) old.getOrDefault("results", List.of())).forEach(r -> oldById.put(r.get("id"), r));
+        // Matched by id as text: a stored copy reads ids back as Integer, a fresh page has Long.
+        Map<String, Map<String, Object>> oldById = new HashMap<>();
+        ((List<Map<String, Object>>) old.getOrDefault("results", List.of())).forEach(r ->
+                oldById.merge(String.valueOf(r.get("id")), r, (a, b) -> progress(b) > progress(a) ? b : a));
         List<Map<String, Object>> results = new ArrayList<>();
-        Set<Object> seen = new HashSet<>();
+        Set<String> seen = new HashSet<>();
         for (Map<String, Object> r : (List<Map<String, Object>>) fresh.getOrDefault("results", List.of())) {
-            Map<String, Object> before = oldById.get(r.get("id"));
+            String id = String.valueOf(r.get("id"));
+            if (!seen.add(id)) continue;
+            Map<String, Object> before = oldById.get(id);
             results.add(before != null && progress(before) > progress(r) ? before : r);
-            seen.add(r.get("id"));
         }
         // A match the new copy doesn't list (an older cached page) stays.
         oldById.forEach((id, r) -> { if (!seen.contains(id)) results.add(r); });
         results.sort(Comparator.comparing((Map<String, Object> r) -> String.valueOf(r.get("start"))).reversed());
         out.put("results", results);
         return out;
+    }
+
+    /** Whether a match scheduled on {@code day} (Pakistan time) isn't finished in this copy. */
+    @SuppressWarnings("unchecked")
+    static boolean unfinishedOn(Map<String, Object> copy, java.time.LocalDate day) {
+        if (copy == null) return false;
+        return ((List<Map<String, Object>>) copy.getOrDefault("results", List.of())).stream()
+                .filter(r -> String.valueOf(r.get("start")).startsWith(day.toString()))
+                .anyMatch(r -> !"Completed".equalsIgnoreCase(String.valueOf(r.get("status"))));
     }
 
     private static int played(List<Map<String, Object>> table) {

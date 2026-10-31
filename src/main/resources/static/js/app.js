@@ -1252,10 +1252,18 @@
       </section>`;
   }
 
+  let shirtUnpaidOnly = false;               // Shirt money: show only who hasn't sent their money yet
+
+  // Who on an order hasn't sent their money yet.
+  const unpaidOn = x => { const got = new Set(x.received || []); return x.players.map(id => findPlayer(id)).filter(p => p && !got.has(p.id)); };
+
   // The admin's tracker: for each order (a shirt), who on it has sent their money. It doesn't change balances.
   function viewShirtMoney() {
     const list = C.charges(state);
-    const head = pageHead('Shirt money', 'Who has sent their money for the order.');
+    const due = list.reduce((n, x) => n + unpaidOn(x).length, 0);
+    const head = pageHead('Shirt money', 'Who has sent their money for the order.', list.length ? `<div class="share-row">
+        <button class="btn ${shirtUnpaidOnly ? 'btn-primary' : 'btn-gold'}" data-action="shirt-unpaid" aria-pressed="${shirtUnpaidOnly}">
+          ${icon('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', 18)} ${shirtUnpaidOnly ? 'Show everyone' : `Who hasn’t paid (${due})`}</button></div>` : '');
     if (!list.length) {
       return `${head}<section class="panel"><p class="muted">No orders yet. Add one (for example a shirt) under Money → Orders &amp; extra charges, and pick the players on it.</p>
         <button class="btn btn-gold" data-action="tab" data-tab="money">Go to Money</button></section>`;
@@ -1264,7 +1272,9 @@
       const got = new Set(x.received || []);
       const people = x.players.map(id => findPlayer(id)).filter(Boolean);
       const amt = C.num(x.amount);
-      const rows = people.map((p, i) => {
+      const unpaid = unpaidOn(x);
+      const shown = shirtUnpaidOnly ? unpaid : people;
+      const rows = shown.map((p, i) => {
         const on = got.has(p.id);
         return `<div class="paid-line ${on ? 'on' : ''}">
           <span class="sr">${i + 1}</span>
@@ -1275,8 +1285,10 @@
       }).join('');
       return `<section class="panel">
         <div class="panel-head"><h3>${esc(x.title || 'Order')}${amt > 0 ? ` <span class="muted">${fmt(amt)} each</span>` : ''}</h3>
-          <p class="muted">${got.size} of ${people.length} sent${amt > 0 ? ` · ${fmt(C.round2(amt * got.size))} of ${fmt(C.chargeTotal(state, x))} received` : ''}</p></div>
-        ${rows || '<p class="muted">Nobody is on this order yet. Pick the players under Money → Orders &amp; extra charges.</p>'}
+          <p class="muted">${got.size} of ${people.length} sent${amt > 0 ? ` · ${fmt(C.round2(amt * got.size))} of ${fmt(C.chargeTotal(state, x))} received` : ''}${unpaid.length ? ` · <strong class="neg">${unpaid.length} still to pay${amt > 0 ? ` (${fmt(C.round2(amt * unpaid.length))})` : ''}</strong>` : ''}</p>
+          ${unpaid.length ? `<button class="btn btn-ghost small" data-action="shirt-copy-unpaid" data-id="${esc(x.id)}">${COPY_ICON} Copy reminder</button>` : ''}</div>
+        ${shirtUnpaidOnly && people.length && !unpaid.length ? '<p class="muted">Everyone on this order has paid. 🎉</p>'
+          : rows || '<p class="muted">Nobody is on this order yet. Pick the players under Money → Orders &amp; extra charges.</p>'}
       </section>`;
     }).join('');
   }
@@ -4859,6 +4871,14 @@ ${tabRows.map(r => {
       tab = 'announce';
       render();
       toast('Review the message, then press Send.');
+    },
+    'shirt-unpaid'() { shirtUnpaidOnly = !shirtUnpaidOnly; render(); },
+    'shirt-copy-unpaid'(el) {
+      const x = C.charges(state).find(c => c.id === el.dataset.id);
+      if (!x) return;
+      const amt = C.num(x.amount);
+      const names = unpaidOn(x).map((p, i) => `${i + 1}. ${p.name}`);
+      copyText(`*${x.title || 'Shirt'} money still due*${amt > 0 ? ` (${fmt(amt)} each)` : ''}\n${names.join('\n')}\n\nPlease send it as soon as you can. Thanks! 🦅`);
     },
     async 'kit-copy'() {
       const list = state.players.filter(C.inTournament);

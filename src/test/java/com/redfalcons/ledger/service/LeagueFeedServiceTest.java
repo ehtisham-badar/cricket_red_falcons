@@ -75,6 +75,32 @@ class LeagueFeedServiceTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void aStoredCopyWithIntegerIdsDoesNotDuplicateMatches() {
+        Map<String, Object> stored = Map.of("results", List.of(
+                Map.of("id", 7, "start", "2026-10-31T12:45", "status", "In-Progress", "result", "", "teams", List.of(Map.of("name", "RAPTORS", "runs", 163, "wickets", 8))),
+                Map.of("id", 7, "start", "2026-10-31T12:45", "status", "In-Progress", "result", "", "teams", List.of(Map.of("name", "RAPTORS", "runs", 100, "wickets", 2))),
+                Map.of("id", 3, "start", "2026-10-24T09:30", "status", "Completed", "result", "ANGGLER won", "teams", List.of())));
+        Map<String, Object> fresh = Map.of("results", List.of(
+                Map.of("id", 7L, "start", "2026-10-31T12:45", "status", "Completed", "result", "RAPTORS won by 43 runs", "teams", List.of(Map.of("name", "RAPTORS", "runs", 163, "wickets", 8))),
+                Map.of("id", 3L, "start", "2026-10-24T09:30", "status", "Completed", "result", "ANGGLER won", "teams", List.of())));
+        List<Map<String, Object>> results = (List<Map<String, Object>>) LeagueFeedService.newest(stored, fresh).get("results");
+        assertThat(results).hasSize(2);
+        assertThat(results.get(0)).containsEntry("result", "RAPTORS won by 43 runs");
+    }
+
+    @Test
+    void keepsAskingOnSaturdayWhileThatDaysMatchIsUnfinished() {
+        Map<String, Object> copy = Map.of("results", List.of(
+                Map.of("id", 7L, "start", "2026-10-31T12:45", "status", "In-Progress"),
+                Map.of("id", 5L, "start", "2026-10-24T12:45", "status", "TossDone")));
+        assertThat(LeagueFeedService.unfinishedOn(copy, java.time.LocalDate.parse("2026-10-31"))).isTrue();
+        // An old match stuck on Crickslab doesn't keep us asking on a later day.
+        assertThat(LeagueFeedService.unfinishedOn(copy, java.time.LocalDate.parse("2026-11-07"))).isFalse();
+        assertThat(LeagueFeedService.unfinishedOn(null, java.time.LocalDate.parse("2026-10-31"))).isFalse();
+    }
+
+    @Test
     void fetchesFromSaturdayFourPmPakistanTime() {
         // Sat 31 Oct 2026, 4 pm in Pakistan is 11:00 UTC.
         java.time.Instant sat4pm = java.time.Instant.parse("2026-10-31T11:00:00Z");
