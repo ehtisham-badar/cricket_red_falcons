@@ -638,12 +638,46 @@
     await ensureFonts();
     const logo = await loadImage(o.logoSrc);
     const list = o.awards;
-    const CARD_H = 130;
     const GAP = 16;
     const headerH = 290;
     const titleY = headerH + 20;
     const listTop = headerH + 64;
-    const H = listTop + Math.max(list.length, 1) * (CARD_H + GAP) + 120;
+    const nameW = W - PAD * 2 - 380;
+    const LINE_H = 44;
+    const MAX_LINES = 3;
+
+    // Winners are listed whole: tied names wrap onto more lines (a long tie ends in "+ N more").
+    const measure = document.createElement('canvas').getContext('2d');
+    measure.font = `700 36px ${BODY}`;
+    const wrap = names => {
+      const lines = [];
+      let line = '';
+      let i = 0;
+      for (; i < names.length; i++) {
+        const t = line ? line + ', ' + names[i] : names[i];
+        if (!line || measure.measureText(t).width <= nameW) { line = t; continue; }
+        if (lines.length === MAX_LINES - 1) break;
+        lines.push(line);
+        line = names[i];
+      }
+      let left = names.length - i;
+      if (left > 0) {
+        // The last line gives up names until "+ N more" fits.
+        while (line.includes(', ') && measure.measureText(`${line} + ${left} more`).width > nameW) {
+          line = line.slice(0, line.lastIndexOf(', '));
+          left += 1;
+        }
+        line += ` + ${left} more`;
+      }
+      lines.push(line);
+      return lines;
+    };
+    const rows = list.map(a => {
+      const lines = wrap(a.players ? a.players.map(p => p.name || 'Unnamed') : [a.name]);
+      return { a, lines, h: 100 + (lines.length - 1) * LINE_H };
+    });
+    const total = rows.reduce((t, r) => t + r.h + GAP, 0);
+    const H = listTop + Math.max(total, 130) + 120;
 
     const canvas = document.createElement('canvas');
     canvas.width = W;
@@ -665,36 +699,36 @@
 
     const colW = W - PAD * 2;
     const right = PAD + colW - 32;
-    list.forEach((a, i) => {
-      const y = listTop + i * (CARD_H + GAP);
-      const cy = y + CARD_H / 2;
-      roundRect(ctx, PAD, y, colW, CARD_H, 22);
+    let y = listTop;
+    rows.forEach(({ a, lines, h }) => {
+      roundRect(ctx, PAD, y, colW, h, 22);
       ctx.fillStyle = C.card;
       ctx.fill();
       ctx.fillStyle = C.gold;
-      roundRect(ctx, PAD, y, 8, CARD_H, 4);
+      roundRect(ctx, PAD, y, 8, h, 4);
       ctx.fill();
 
       ctx.fillStyle = C.gold;
       ctx.font = `800 19px ${BODY}`;
-      spaced(ctx, a.title.toUpperCase(), PAD + 40, cy - 30, 3);
+      spaced(ctx, a.title.toUpperCase(), PAD + 40, y + 26, 3);
       ctx.fillStyle = C.text;
-      ctx.font = `700 38px ${BODY}`;
-      ctx.fillText(fit(ctx, a.name, colW - 360), PAD + 40, cy + 14);
+      ctx.font = `700 36px ${BODY}`;
+      lines.forEach((ln, k) => ctx.fillText(ln, PAD + 40, y + 66 + k * LINE_H));
 
       ctx.textAlign = 'right';
       ctx.fillStyle = C.goldLight;
       ctx.font = `800 36px ${BODY}`;
-      ctx.fillText(a.value, right, cy - (a.note ? 10 : 0));
+      ctx.fillText(a.value, right, y + 52);
       if (a.note) {
         ctx.fillStyle = C.muted;
         ctx.font = `600 20px ${BODY}`;
-        ctx.fillText(a.note, right, cy + 26);
+        ctx.fillText(a.note, right, y + 88);
       }
       ctx.textAlign = 'left';
+      y += h + GAP;
     });
 
-    const fy = listTop + Math.max(list.length, 1) * (CARD_H + GAP) + 18;
+    const fy = y + 18;
     ctx.fillStyle = C.line;
     ctx.fillRect(PAD, fy, colW, 2);
     ctx.textAlign = 'center';

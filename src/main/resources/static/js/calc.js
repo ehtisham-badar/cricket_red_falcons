@@ -423,7 +423,6 @@
   // momWins is { playerId: number } of Man of the Match awards, when known.
   function seasonAwards(state, visible, momWins) {
     const stats = leagueStats(state, visible).filter(t => t.matches > 0);
-    const att = attendance(state);
     const out = [];
     const award = (key, title, list, value, show, note) => {
       const best = list.reduce((m, x) => Math.max(m, value(x)), 0);
@@ -440,9 +439,6 @@
       const list = state.players.map(p => ({ player: p, n: momWins[p.id] || 0 }));
       award('mom', 'Man of the Match', list, x => x.n, v => v + (v === 1 ? ' award' : ' awards'));
     }
-    award('training', 'Training regular', att, a => a.trainings, v => v + (v === 1 ? ' session' : ' sessions'));
-    award('streak', 'Longest training streak', att, a => a.longest, v => v + ' in a row');
-    award('played', 'Most matches played', att, a => a.matches, v => v + (v === 1 ? ' match' : ' matches'));
     return out;
   }
 
