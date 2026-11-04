@@ -65,6 +65,13 @@
   }
 
   const inTournament = p => p.tournament !== false;
+  // "Divide money": the player shares the league fee equally with the others who have it on.
+  const dividesMoney = p => p.divide === true;
+  // Who the league fee falls on: the players who divide the money if any do, else the whole squad (the per-match way).
+  const feePayers = state => {
+    const dividers = state.players.filter(dividesMoney);
+    return dividers.length ? dividers : state.players.filter(inTournament);
+  };
 
   function paidTotal(player) {
     if (!player.payments) return num(player.paid);
@@ -159,6 +166,17 @@
     const unplayed = leagueMatchCount(state) - played.length;
     if (!(fee > 0)) return { perMatch, unplayed, charges };
 
+    const dividers = state.players.filter(dividesMoney);
+    if (dividers.length) {
+      // Divide money: the whole fee is split equally between the players who have it on, however many matches they play.
+      const share = fee / dividers.length;
+      const label = 'League fee';
+      dividers.forEach(p => {
+        charges[p.id].exact += share;
+        charges[p.id].played += played.length >= leagueMatchCount(state) ? share : share * played.length / leagueMatchCount(state);
+        charges[p.id].parts.push({ label, amount: fee, n: dividers.length, share });
+      });
+    } else {
     played.forEach(m => {
       const n = stats[m.id] ? stats[m.id].payers : 0;
       if (!n) return;
@@ -175,6 +193,7 @@
         charges[p.id].exact += amount / squad.length;
         charges[p.id].parts.push({ label, amount, n: squad.length, share: amount / squad.length });
       });
+    }
     }
 
     const list = state.players.map(p => charges[p.id]);
@@ -195,7 +214,7 @@
 
   function tournamentStats(state, stats) {
     const fee = num(state.tournament && state.tournament.fee);
-    const n = state.players.filter(inTournament).length;
+    const n = feePayers(state).length;
     const league = leagueCharges(state, stats || allStats(state), fee);
     return { fee, n, share: split(fee, n, state.settings.roundUp), perMatch: league.perMatch, unplayed: league.unplayed, charges: league.charges };
   }
@@ -203,7 +222,7 @@
   // Money already sent to management, split over the players taking part: the suggested advance.
   function advanceShare(state) {
     const sent = ((state.tournament && state.tournament.payments) || []).reduce((s, x) => s + num(x.amount), 0);
-    return split(sent, state.players.filter(inTournament).length, state.settings.roundUp);
+    return split(sent, feePayers(state).length, state.settings.roundUp);
   }
 
   // The advance each player pays up front: the admin's amount, else the suggested share.
@@ -214,7 +233,7 @@
 
   // How much of the advance a player still has to pay; their payments count towards it first.
   function advanceDue(state, player) {
-    if (!inTournament(player)) return 0;
+    if (!feePayers(state).includes(player)) return 0;
     return round2(Math.max(advancePerPlayer(state) - paidTotal(player), 0));
   }
 
@@ -411,7 +430,7 @@
   }
 
   const api = {
-    matches, leagueMatchCount, days, num, isCharged, pays, expPays, twelfthPlays,
+    matches, leagueMatchCount, dividesMoney, feePayers, days, num, isCharged, pays, expPays, twelfthPlays,
     BALLS_PER_OVER, STAT_KEYS, statOf, runsOf, shotsOf, strikeRate, oversOf, economy, batted, extrasOf, concededOf, bowled, leagueStats, round2, inTournament, paidTotal, dayExpenses, dayAmount, sharedOf, charges, chargeOf, chargeTotal, dayStats, allStats,
     tournamentStats, advanceShare, advancePerPlayer, advanceDue, playerCalc, totals, warnings, money, signedMoney, netLabel
   };

@@ -29,6 +29,10 @@ public class Player {
     @Column(name = "in_tournament")
     private Boolean inTournament = true;
 
+    /** Whether the player shares the league fee equally with the others who do. Null (older rows) means no. */
+    @Column(name = "divide_money")
+    private Boolean divideMoney = false;
+
     /** WhatsApp number for reminders; admin-only. Null on rows from before this column. */
     private String phone = "";
 
@@ -95,6 +99,8 @@ public class Player {
     public String getRole() { return role; }
     public String getPaid() { return paid; }
     public boolean isInTournament() { return !Boolean.FALSE.equals(inTournament); }
+    public boolean isDivideMoney() { return Boolean.TRUE.equals(divideMoney); }
+    public void setDivideMoney(boolean v) { this.divideMoney = v; }
     public String getPhone() { return phone == null ? "" : phone; }
     public Set<String> getAttended() { return attended; }
 

@@ -139,7 +139,8 @@ public class LedgerService {
                     // Who has updated their profile is for the admin; players only learn about their own.
                     p.id().equals(viewerId) ? p.profileAt() : "",
                     // Shirt sizes and whether someone has answered are for the admin; players see only their own.
-                    p.id().equals(viewerId) ? p.shirtSize() : "", p.id().equals(viewerId) ? p.kitAt() : "");
+                    p.id().equals(viewerId) ? p.shirtSize() : "", p.id().equals(viewerId) ? p.kitAt() : "",
+                    p.divide());
         }).toList();
         // Who has sent money for an order is payment news too: with "own", a viewer only learns about themselves.
         List<ChargeDto> cs = full.charges() == null ? null : full.charges().stream().map(c -> !ownOnly || c.received() == null ? c
@@ -168,7 +169,7 @@ public class LedgerService {
                             p.isInTournament(), att, paid, p.getPhone(), p.getBattingHand(), p.getBowlingArm(),
                             p.getBowlingStyle(), p.isKeeper(), p.isCaptain(), p.isViceCaptain(), p.getJersey(),
                             photoAt.getOrDefault(p.getId(), ""), p.getJerseyName(), p.getProfileSavedAt(),
-                            p.getShirtSize(), p.getKitSavedAt());
+                            p.getShirtSize(), p.getKitSavedAt(), p.isDivideMoney());
                 })
                 .toList();
 
@@ -434,6 +435,7 @@ public class LedgerService {
             String phone = p.phone() != null ? clip(p.phone(), 20) : storedPhones.getOrDefault(p.id(), "");
             Player row = new Player(p.id(), newPlayers.size(), nz(p.name()).trim(), nz(p.role()),
                     sum(amounts.stream()), !Boolean.FALSE.equals(p.tournament()), phone, attended);
+            row.setDivideMoney(Boolean.TRUE.equals(p.divide()));
             Player kept = storedProfiles.get(p.id());
             if (p.battingHand() != null || kept == null) {
                 row.setProfile(pick(p.battingHand(), HANDS), pick(p.bowlingArm(), HANDS), clip(p.bowlingStyle(), 40),

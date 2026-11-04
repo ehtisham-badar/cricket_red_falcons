@@ -437,7 +437,7 @@
     const players = (d.players || []).map(p => {
       const id = p.id || rid();
       return {
-        id, name: p.name || '', role: p.role || '', tournament: p.tournament !== false, att: p.att || {},
+        id, name: p.name || '', role: p.role || '', tournament: p.tournament !== false, divide: p.divide === true, att: p.att || {},
         payments: paymentsFrom(id, p), phone: p.phone == null ? '' : String(p.phone),
         battingHand: p.battingHand === 'left' || p.battingHand === 'right' ? p.battingHand : '',
         bowlingArm: p.bowlingArm === 'left' || p.bowlingArm === 'right' ? p.bowlingArm : '',
@@ -1813,7 +1813,7 @@
     const chips = [];
     if (t.owed > 0) chips.push({ text: `Still to pay ${fmt(t.owed)}`, color: '#ff6b6b', bg: 'rgba(208,34,44,0.18)' });
     if (t.payBack > 0) chips.push({ text: `To pay back ${fmt(t.payBack)}`, color: '#e2b65c', bg: 'rgba(226,182,92,0.14)' });
-    if (tour.fee > 0) chips.push({ text: `League ${fmt(tour.perMatch)} per match ÷ XI`, color: '#f5eee2', bg: 'rgba(255,255,255,0.07)' });
+    if (tour.fee > 0) chips.push({ text: state.players.some(C.dividesMoney) ? `League ${fmt(tour.fee)} ÷ ${tour.n} players` : `League ${fmt(tour.perMatch)} per match ÷ XI`, color: '#f5eee2', bg: 'rgba(255,255,255,0.07)' });
     const league = t.tournamentFee > 0 || state.tournament.payments.length ? {
       name: leagueName(),
       figures: [
@@ -2944,6 +2944,13 @@
       ${isAdmin() ? '' : 'disabled'} aria-pressed="${on}" title="Taking part in the league">${on ? 'In' : 'Out'}</button>`;
   }
 
+  // "Divide money": the player shares the league fee equally with the others who have it on.
+  function divideToggle(p) {
+    const on = C.dividesMoney(p);
+    return `<button class="tog divide-tog ${on ? 'on' : ''} ${isAdmin() ? '' : 'ro'}" data-action="toggle-divide" data-id="${esc(p.id)}"
+      ${isAdmin() ? '' : 'disabled'} aria-pressed="${on}" title="Divide the league fee equally with the others who have this on">${on ? 'On' : 'Off'}</button>`;
+  }
+
   // ---------- stats (admin) ----------
   const SR = (runs, balls) => { const v = C.strikeRate(runs, balls); return v == null ? '—' : v.toFixed(2); };
   const ECON = (runs, balls) => { const v = C.economy(runs, balls); return v == null ? '—' : v.toFixed(2); };
@@ -3853,9 +3860,9 @@
         <span class="pl-namecell">${avatar(p, 30)}<button class="pl-name" data-action="open-profile" data-id="${esc(p.id)}">${esc(p.name) || '<em>Unnamed</em>'}</button>${tag(p)}<button class="icon-btn exp-btn mini" data-action="open-player" data-id="${esc(p.id)}" aria-label="Expense card for ${esc(p.name)}" title="Expenses and payments">${WALLET_ICON}</button></span>
         ${admin
           ? `<select class="field select" data-input="role" data-id="${esc(p.id)}" aria-label="Role for ${esc(p.name)}">${ROLES.map(r => `<option value="${esc(r)}" ${r === p.role ? 'selected' : ''}>${r || 'No role'}</option>`).join('')}</select>
-             ${tourToggle(p)}
+             ${tourToggle(p)}${divideToggle(p)}
              <button class="icon-btn danger" data-action="remove-player" data-id="${esc(p.id)}" aria-label="Remove ${esc(p.name)}">${X_ICON}</button>`
-          : `<span class="muted role">${esc(p.role) || '—'}</span>${tourToggle(p)}`}
+          : `<span class="muted role">${esc(p.role) || '—'}</span>${tourToggle(p)}${divideToggle(p)}`}
       </div>`).join('');
 
     return `
@@ -3863,7 +3870,7 @@
           <button class="btn btn-gold" data-action="share-squad">${IMAGE_ICON} Send squad list to management</button></div>` : '')}
       <div class="players-layout">
         <section class="panel">
-          <div class="player-head"><span>Sr.</span><span>Name</span><span>Role</span><span>Tournament</span></div>
+          <div class="player-head"><span>Sr.</span><span>Name</span><span>Role</span><span>Tournament</span><span>Divide</span></div>
           ${list || emptyPlayers()}
         </section>
         ${admin ? `<section class="panel add-panel">
@@ -4502,6 +4509,8 @@ ${tabRows.map(r => {
         ${p.phone && !waNumber(p.phone) ? '<p class="field-hint">Not a valid mobile number, so reminders open the chat picker.</p>' : ''}
         <div class="form-row"><span>Tournament</span>
           <span class="tour-row">${tourToggle(p)}<small class="muted">${inTour ? 'Taking part · pays league fee for matches played' : 'Not taking part in the league'}</small></span></div>
+        <div class="form-row"><span>Divide money</span>
+          <span class="tour-row">${divideToggle(p)}<small class="muted">${C.dividesMoney(p) ? 'Shares the league fee equally with the others who divide' : 'League fee not divided to this player'}</small></span></div>
       </div>` : `
       <dl class="kv"><dt>Role</dt><dd>${esc(p.role) || '—'}</dd>
         <dt>Tournament</dt><dd>${inTour ? 'Taking part' : 'Not taking part'}</dd></dl>`;
@@ -4582,7 +4591,7 @@ ${tabRows.map(r => {
       version: 3,
       savedAt: new Date().toISOString(),
       players: state.players.map(p => ({
-        id: p.id, name: p.name, role: p.role, paid: String(C.paidTotal(p) || ''), tournament: p.tournament, att: p.att, payments: p.payments,
+        id: p.id, name: p.name, role: p.role, paid: String(C.paidTotal(p) || ''), tournament: p.tournament, divide: p.divide === true, att: p.att, payments: p.payments,
         phone: p.phone
       })),
       amounts,
@@ -5678,6 +5687,12 @@ ${tabRows.map(r => {
       const p = findPlayer(el.dataset.id);
       if (!p || !isAdmin()) return;
       p.tournament = !C.inTournament(p);
+      commit();
+    },
+    'toggle-divide'(el) {
+      const p = findPlayer(el.dataset.id);
+      if (!p || !isAdmin()) return;
+      p.divide = !C.dividesMoney(p);
       commit();
     },
     'add-payment'(el) {
