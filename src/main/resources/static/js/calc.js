@@ -402,6 +402,50 @@
     });
   }
 
+  // Attendance: trainings attended, the longest and the current run of trainings in a row, and matches played.
+  // Matches count once the admin has finished them (test matches never do).
+  function attendance(state) {
+    const trainings = state.trainings || [];
+    const played = matches(state).filter(m => m.finished && !m.test);
+    return state.players.map(p => {
+      let longest = 0, run = 0;
+      trainings.forEach(t => {
+        if (p.att && p.att[t.id]) { run += 1; longest = Math.max(longest, run); } else run = 0;
+      });
+      return {
+        player: p, trainings: trainings.filter(t => p.att && p.att[t.id]).length, trainingsTotal: trainings.length,
+        longest, current: run, matches: played.filter(m => p.att && p.att[m.id]).length, matchesTotal: played.length
+      };
+    });
+  }
+
+  // Season awards: the leader in each category (ties: everyone level is named). Categories nobody has a value in are left out.
+  // momWins is { playerId: number } of Man of the Match awards, when known.
+  function seasonAwards(state, visible, momWins) {
+    const stats = leagueStats(state, visible).filter(t => t.matches > 0);
+    const att = attendance(state);
+    const out = [];
+    const award = (key, title, list, value, show, note) => {
+      const best = list.reduce((m, x) => Math.max(m, value(x)), 0);
+      if (!(best > 0)) return;
+      const winners = list.filter(x => value(x) === best).map(x => x.player);
+      out.push({ key, title, players: winners, name: winners.map(p => p.name || 'Unnamed').join(' & '), value: show(best), note: note || '' });
+    };
+    award('runs', 'Best batter', stats, t => t.runs, v => v + (v === 1 ? ' run' : ' runs'));
+    award('wickets', 'Best bowler', stats, t => t.wickets, v => v + (v === 1 ? ' wicket' : ' wickets'));
+    award('sixes', 'Six machine', stats, t => t.sixes, v => v + (v === 1 ? ' six' : ' sixes'));
+    award('catches', 'Best fielder', stats, t => t.catches, v => v + (v === 1 ? ' catch' : ' catches'));
+    award('sr', 'Fastest scorer', stats.filter(t => t.balls >= 20 && t.strikeRate != null), t => t.strikeRate, v => v.toFixed(2) + ' SR', 'min 20 balls');
+    if (momWins) {
+      const list = state.players.map(p => ({ player: p, n: momWins[p.id] || 0 }));
+      award('mom', 'Man of the Match', list, x => x.n, v => v + (v === 1 ? ' award' : ' awards'));
+    }
+    award('training', 'Training regular', att, a => a.trainings, v => v + (v === 1 ? ' session' : ' sessions'));
+    award('streak', 'Longest training streak', att, a => a.longest, v => v + ' in a row');
+    award('played', 'Most matches played', att, a => a.matches, v => v + (v === 1 ? ' match' : ' matches'));
+    return out;
+  }
+
   function warnings(state) {
     const stats = allStats(state);
     const out = days(state).filter(d => isCharged(d) && stats[d.id].amount > 0 && stats[d.id].expPayers === 0).map(d => d.label);
@@ -430,7 +474,7 @@
   }
 
   const api = {
-    matches, leagueMatchCount, dividesMoney, feePayers, days, num, isCharged, pays, expPays, twelfthPlays,
+    matches, leagueMatchCount, attendance, seasonAwards, dividesMoney, feePayers, days, num, isCharged, pays, expPays, twelfthPlays,
     BALLS_PER_OVER, STAT_KEYS, statOf, runsOf, shotsOf, strikeRate, oversOf, economy, batted, extrasOf, concededOf, bowled, leagueStats, round2, inTournament, paidTotal, dayExpenses, dayAmount, sharedOf, charges, chargeOf, chargeTotal, dayStats, allStats,
     tournamentStats, advanceShare, advancePerPlayer, advanceDue, playerCalc, totals, warnings, money, signedMoney, netLabel
   };

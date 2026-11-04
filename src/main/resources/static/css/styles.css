@@ -2197,3 +2197,7 @@ a.btn { text-decoration: none; }
 .so-far small { color: var(--muted); font-size: 12px; }
 .so-far .pos strong { color: var(--pos); }
 .so-far .neg strong { color: var(--neg, var(--red-soft)); }
+
+/* Season awards (Stats) */
+.st-table .aw-grid { margin: 12px 0 14px; }
+.st-table .share-row { margin: 0 0 14px; }

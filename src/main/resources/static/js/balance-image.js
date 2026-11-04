@@ -632,5 +632,81 @@
     return new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
   }
 
-  root.RFBalanceImage = { render, renderXI, renderSquad };
+  // Season awards: one card per award with the winner's name and figure.
+  // o.awards: [{ title, name, value, note }]; o.leagueName; o.dateText; o.link; o.logoSrc
+  async function renderAwards(o) {
+    await ensureFonts();
+    const logo = await loadImage(o.logoSrc);
+    const list = o.awards;
+    const CARD_H = 130;
+    const GAP = 16;
+    const headerH = 290;
+    const titleY = headerH + 20;
+    const listTop = headerH + 64;
+    const H = listTop + Math.max(list.length, 1) * (CARD_H + GAP) + 120;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    ctx.textBaseline = 'middle';
+    drawHeader(ctx, H, logo, '', '', headerH);
+
+    ctx.fillStyle = C.gold;
+    ctx.font = `800 24px ${BODY}`;
+    spaced(ctx, 'SEASON AWARDS', PAD + 4, titleY, 4);
+    if (o.leagueName) {
+      ctx.textAlign = 'right';
+      ctx.fillStyle = C.muted;
+      ctx.font = `700 22px ${BODY}`;
+      ctx.fillText(fit(ctx, o.leagueName, 520), W - PAD - 4, titleY);
+      ctx.textAlign = 'left';
+    }
+
+    const colW = W - PAD * 2;
+    const right = PAD + colW - 32;
+    list.forEach((a, i) => {
+      const y = listTop + i * (CARD_H + GAP);
+      const cy = y + CARD_H / 2;
+      roundRect(ctx, PAD, y, colW, CARD_H, 22);
+      ctx.fillStyle = C.card;
+      ctx.fill();
+      ctx.fillStyle = C.gold;
+      roundRect(ctx, PAD, y, 8, CARD_H, 4);
+      ctx.fill();
+
+      ctx.fillStyle = C.gold;
+      ctx.font = `800 19px ${BODY}`;
+      spaced(ctx, a.title.toUpperCase(), PAD + 40, cy - 30, 3);
+      ctx.fillStyle = C.text;
+      ctx.font = `700 38px ${BODY}`;
+      ctx.fillText(fit(ctx, a.name, colW - 360), PAD + 40, cy + 14);
+
+      ctx.textAlign = 'right';
+      ctx.fillStyle = C.goldLight;
+      ctx.font = `800 36px ${BODY}`;
+      ctx.fillText(a.value, right, cy - (a.note ? 10 : 0));
+      if (a.note) {
+        ctx.fillStyle = C.muted;
+        ctx.font = `600 20px ${BODY}`;
+        ctx.fillText(a.note, right, cy + 26);
+      }
+      ctx.textAlign = 'left';
+    });
+
+    const fy = listTop + Math.max(list.length, 1) * (CARD_H + GAP) + 18;
+    ctx.fillStyle = C.line;
+    ctx.fillRect(PAD, fy, colW, 2);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = C.muted;
+    ctx.font = `600 24px ${BODY}`;
+    ctx.fillText(o.dateText || '', W / 2, fy + 50);
+    ctx.fillStyle = C.gold;
+    ctx.font = `800 26px ${BODY}`;
+    ctx.fillText(o.link || '', W / 2, fy + 90);
+    ctx.textAlign = 'left';
+    return new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+  }
+
+  root.RFBalanceImage = { render, renderXI, renderSquad, renderAwards };
 })(this);

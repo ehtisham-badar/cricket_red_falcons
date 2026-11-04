@@ -3089,6 +3089,34 @@
     </section>`;
   }
 
+  // Man of the Match wins per player, from the closed votes.
+  function momWins() {
+    if (!engage) return null;
+    const wins = {};
+    engage.mom.filter(r => r.closed).forEach(r => (r.winners || []).forEach(id => { wins[id] = (wins[id] || 0) + 1; }));
+    return wins;
+  }
+
+  const seasonAwards = () => C.seasonAwards(state, statsMatchVisible, momWins());
+
+  // Award cards, the training attendance table, and a button to share the awards as a picture.
+  function awardsPanel() {
+    const awards = seasonAwards();
+    const att = C.attendance(state).filter(a => a.trainings > 0 || a.matches > 0)
+      .sort((a, b) => b.trainings - a.trainings || b.longest - a.longest || b.matches - a.matches);
+    if (!awards.length && !att.length) return '';
+    const share = awards.length ? `<button class="btn btn-gold" data-action="share-awards">${IMAGE_ICON} Share awards as image</button>` : '';
+    return `<section class="panel st-table">
+      <div class="panel-head"><h3>Season awards</h3><p class="muted">Leaders so far, including who turns up.</p></div>
+      ${awards.length ? `<div class="st-leaders aw-grid">${awards.map(a => `<div class="stat pos"><span>${esc(a.title)}</span>
+        <strong>${esc(a.value)}</strong><small>${esc(a.name)}${a.note ? ` · ${esc(a.note)}` : ''}</small></div>`).join('')}</div>` : ''}
+      ${share ? `<div class="share-row">${share}</div>` : ''}
+      ${att.length ? `<div class="table-wrap"><table class="sheet-table"><thead><tr><th class="st-name">Attendance</th><th>Trainings</th><th>Best streak</th><th>Streak now</th><th>Matches</th></tr></thead>
+        <tbody>${att.map(a => `<tr><td class="st-name"><button class="pl-name" data-action="open-profile" data-id="${esc(a.player.id)}">${esc(a.player.name)}</button></td>
+          <td class="strong">${a.trainings}/${a.trainingsTotal}</td><td>${a.longest}</td><td>${a.current}</td><td>${a.matches}/${a.matchesTotal}</td></tr>`).join('')}</tbody></table></div>` : ''}
+    </section>`;
+  }
+
   function leagueStatsView() {
     const all = C.leagueStats(state, statsMatchVisible).filter(t => t.matches > 0);
     if (!all.length) {
@@ -3113,6 +3141,7 @@
     </section>`;
     const tests = state.matches.filter(m => m.test && statsMatchVisible(m)).length;
     return `${tests ? `<p class="test-note">These totals include ${tests} generated test match${tests === 1 ? '' : 'es'}. Delete them from the Days tab when you are done trying things out.</p>` : ''}
+      ${awardsPanel()}
       <div class="st-leaders">${leaders.map(l => `<div class="stat ${l.x ? 'pos' : ''}"><span>${l.label}</span>
         <strong>${l.x ? l.x.v : '—'}</strong><small>${l.x ? esc(l.x.t.player.name) : (l.note || 'No one yet')}</small></div>`).join('')}</div>
       ${table('Batting', ['Player', 'M', 'Inns', 'Runs', 'Balls', 'SR', 'HS', 'Avg', '4s', '6s', '1s', '2s', '3s'], batting.map(t => `<tr>${name(t)}
@@ -5730,6 +5759,27 @@ ${tabRows.map(r => {
       el.textContent = 'Creating…';
       try {
         showImageDialog(await balanceImage());
+      } catch (e) {
+        toast('Could not create the picture.');
+      } finally {
+        el.disabled = false;
+        el.innerHTML = label;
+      }
+    },
+    async 'share-awards'(el) {
+      const awards = seasonAwards();
+      if (!awards.length) { toast('No awards yet.'); return; }
+      const label = el.innerHTML;
+      el.disabled = true;
+      el.textContent = 'Creating…';
+      try {
+        showImageDialog(await window.RFBalanceImage.renderAwards({
+          awards, leagueName: leagueName(), link: location.host, logoSrc: 'img/logo.jpeg',
+          dateText: 'Updated ' + new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+        }), {
+          title: 'Season awards', alt: 'Red Falcons season awards', shareTitle: 'Red Falcons season awards',
+          fileName: () => `red-falcons-awards-${today()}.png`
+        });
       } catch (e) {
         toast('Could not create the picture.');
       } finally {
