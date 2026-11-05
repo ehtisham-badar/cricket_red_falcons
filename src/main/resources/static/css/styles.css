@@ -2367,3 +2367,11 @@ a.btn { text-decoration: none; }
   font: 800 26px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .12em; color: var(--gold); user-select: all; }
 .acc-approve { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(var(--gold-rgb), .45); background: rgba(var(--gold-rgb), .08); }
 .acc-approve > span { flex: 1; min-width: 150px; }
+
+/* Admin: Requests tab */
+.tab { position: relative; }
+.tab-count { position: absolute; top: 2px; right: 4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; display: inline-grid; place-items: center;
+  background: var(--red-hi, #e0303a); color: #fff; font-size: 11px; font-weight: 800; line-height: 1; box-shadow: 0 0 0 2px var(--bg, #111); }
+.req-page { display: flex; flex-direction: column; gap: 10px; max-width: 760px; }
+.req-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; color: var(--gold); }
+.req-empty p { margin: 0; color: var(--muted); }

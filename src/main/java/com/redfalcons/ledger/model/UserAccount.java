@@ -4,9 +4,10 @@ import jakarta.persistence.*;
 
 /**
  * A player's sign-in: email, password and full name. When the name is a squad player's (or they confirm
- * which one they are) the account asks for that player ({@code pendingPlayerId}); once the admin approves,
- * {@code playerId} links it and they see the app as that player. Until then, or without a squad match, they see
- * only a waiting / "coming soon" screen. The password is stored as a salted hash.
+ * A name that is exactly a squad player's links the account ({@code playerId}) and they see the app as that
+ * player; a near match they confirm asks for the player ({@code pendingPlayerId}) and waits for the admin's
+ * approval. Until then, or without a squad match, they see only a waiting / "coming soon" screen. The password
+ * is stored as a salted hash.
  */
 @Entity
 @Table(name = "user_accounts", uniqueConstraints = @UniqueConstraint(columnNames = "email"))

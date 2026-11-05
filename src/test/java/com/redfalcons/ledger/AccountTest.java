@@ -64,19 +64,17 @@ class AccountTest {
         String admin = field(send("POST", "/api/login", "{\"name\":\"test-key\"}", null, null).body(), "token");
         assertThat(send("PUT", "/api/ledger", SQUAD, admin, null).statusCode()).isEqualTo(200);
 
-        // An exact name (any case or spacing) asks for that player; nothing shows until the admin approves.
+        // The same name as in the squad (any case or spacing) links straight away, with the squad's spelling.
         HttpResponse<String> exact = signup("Roxy@Example.com ", "secret123", "  ehtisham   BADAR ");
         assertThat(exact.statusCode()).isEqualTo(200);
-        assertThat(exact.body()).contains("\"email\":\"roxy@example.com\"").contains("\"playerId\":\"\"")
-                .contains("\"pendingPlayerId\":\"p1\"").contains("\"pendingPlayerName\":\"Ehtisham Badar\"").contains("\"taken\":false");
+        assertThat(exact.body()).contains("\"email\":\"roxy@example.com\"").contains("\"name\":\"Ehtisham Badar\"")
+                .contains("\"playerId\":\"p1\"").contains("\"pendingPlayerId\":\"\"").contains("\"taken\":false");
         String roxy = field(exact.body(), "token");
-        assertThat(send("GET", "/api/ledger", null, null, roxy).statusCode()).isEqualTo(401);
-        assertThat(send("GET", "/api/account/links", null, null, roxy).statusCode()).isEqualTo(403);
-        assertThat(send("GET", "/api/account/links", null, admin, null).body()).contains("\"email\":\"roxy@example.com\"").contains("\"pendingPlayerId\":\"p1\"");
-        assertThat(send("POST", "/api/account/users/" + field(exact.body(), "id") + "/approve", null, null, roxy).statusCode()).isEqualTo(403);
-        assertThat(send("POST", "/api/account/users/" + field(exact.body(), "id") + "/approve", null, admin, null).body())
-                .contains("\"name\":\"Ehtisham Badar\"").contains("\"playerId\":\"p1\"").contains("\"pendingPlayerId\":\"\"");
         assertThat(send("GET", "/api/ledger", null, null, roxy).statusCode()).isEqualTo(200);
+        // Nothing to approve for it; only the admin sees the list.
+        assertThat(send("GET", "/api/account/links", null, null, roxy).statusCode()).isEqualTo(403);
+        assertThat(send("GET", "/api/account/links", null, admin, null).body()).isEqualTo("[]");
+        assertThat(send("POST", "/api/account/users/" + field(exact.body(), "id") + "/approve", null, admin, null).statusCode()).isEqualTo(400);
 
         // The same email can't sign up twice; weak passwords and bad emails are refused.
         assertThat(signup("roxy@example.com", "secret123", "Someone").statusCode()).isEqualTo(400);
@@ -96,6 +94,8 @@ class AccountTest {
         assertThat(send("GET", "/api/ledger", null, null, talha).statusCode()).isEqualTo(401);
         assertThat(send("GET", "/api/account/me", null, null, talha).body()).contains("\"possible\":[]");
         String talhaId = field(partial.body(), "id");
+        assertThat(send("GET", "/api/account/links", null, admin, null).body()).contains("\"email\":\"talha@example.com\"").contains("\"pendingPlayerId\":\"p4\"");
+        assertThat(send("POST", "/api/account/users/" + talhaId + "/approve", null, null, talha).statusCode()).isEqualTo(403);
         assertThat(send("POST", "/api/account/users/" + talhaId + "/approve", null, admin, null).body())
                 .contains("\"name\":\"Talha Ramzan\"").contains("\"playerId\":\"p4\"");
         assertThat(send("GET", "/api/ledger", null, null, talha).statusCode()).isEqualTo(200);
@@ -111,13 +111,15 @@ class AccountTest {
         HttpResponse<String> stranger = signup("guest@example.com", "secret123", "Imran Khan");
         assertThat(stranger.body()).contains("\"playerId\":\"\"").contains("\"pendingPlayerId\":\"\"").contains("\"possible\":[]").contains("\"taken\":false");
 
-        // A request the admin declines leaves the account unlinked; a player asked for can't be asked for twice.
-        HttpResponse<String> haider = signup("haider.p@example.com", "secret123", "Haider");
-        assertThat(haider.body()).contains("\"pendingPlayerId\":\"p5\"");
-        assertThat(signup("haider.copy@example.com", "secret123", "Haider").body()).contains("\"pendingPlayerId\":\"\"").contains("\"taken\":true");
-        assertThat(send("POST", "/api/account/users/" + field(haider.body(), "id") + "/decline", null, admin, null).body()).contains("\"pendingPlayerId\":\"\"");
-        assertThat(send("GET", "/api/account/links", null, admin, null).body()).doesNotContain("haider.p@example.com");
-        send("DELETE", "/api/account/users/" + field(haider.body(), "id"), null, admin, null);
+        // A near match waits; a player someone asked for can't be asked for again; a declined request stays unlinked.
+        HttpResponse<String> nabeelY = signup("nabeel.y.p@example.com", "secret123", "Yousaf");
+        String nyToken = field(nabeelY.body(), "token");
+        assertThat(send("POST", "/api/account/claim", "{\"playerId\":\"p2\"}", null, nyToken).body()).contains("\"pendingPlayerId\":\"p2\"");
+        assertThat(signup("nabeel.copy@example.com", "secret123", "Nabeel Yousaf").body()).contains("\"playerId\":\"\"").contains("\"taken\":true");
+        assertThat(send("POST", "/api/account/users/" + field(nabeelY.body(), "id") + "/decline", null, admin, null).body()).contains("\"pendingPlayerId\":\"\"");
+        assertThat(send("GET", "/api/account/links", null, admin, null).body()).doesNotContain("nabeel.y.p@example.com");
+        assertThat(send("GET", "/api/ledger", null, null, nyToken).statusCode()).isEqualTo(401);
+        send("DELETE", "/api/account/users/" + field(nabeelY.body(), "id"), null, admin, null);
 
         // Players change only their own profile.
         assertThat(send("PUT", "/api/players/p1/profile", "{\"battingHand\":\"left\"}", null, roxy).statusCode()).isEqualTo(200);
@@ -165,7 +167,6 @@ class AccountTest {
         String admin = field(send("POST", "/api/login", "{\"name\":\"test-key\"}", null, null).body(), "token");
         assertThat(send("PUT", "/api/ledger", SQUAD, admin, null).statusCode()).isEqualTo(200);
         String id = field(signup("haider@example.com", "secret123", "Haider").body(), "id");
-        send("POST", "/api/account/users/" + id + "/approve", null, admin, null);
 
         // Asking twice makes one request; an unknown email says the same and makes none.
         assertThat(send("POST", "/api/account/forgot", "{\"email\":\"Haider@example.com\",\"note\":\"New phone\"}", null, null).statusCode()).isEqualTo(200);
@@ -201,9 +202,7 @@ class AccountTest {
     void biometricSignInRegistersAndSignsIn() throws Exception {
         String admin = field(send("POST", "/api/login", "{\"name\":\"test-key\"}", null, null).body(), "token");
         assertThat(send("PUT", "/api/ledger", SQUAD, admin, null).statusCode()).isEqualTo(200);
-        String shehroz = signup("shehroz@example.com", "secret123", "Shehroz Khan").body();
-        send("POST", "/api/account/users/" + field(shehroz, "id") + "/approve", null, admin, null);
-        String token = field(shehroz, "token");
+        String token = field(signup("shehroz@example.com", "secret123", "Shehroz Khan").body(), "token");
 
         // The device makes a key pair; the private key never leaves it.
         KeyPairGenerator g = KeyPairGenerator.getInstance("EC");

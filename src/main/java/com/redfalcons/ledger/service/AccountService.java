@@ -30,9 +30,9 @@ import java.util.stream.Collectors;
 
 /**
  * Player accounts: sign up with email, password and full name; sign in with email and password (or the
- * device's biometrics once turned on). A name that is a squad player's (or a near match they confirm) asks
- * to be that player, and the admin approves before the account is linked. The admin and managers keep
- * signing in as before.
+ * device's biometrics once turned on). A name that is exactly a squad player's links the account straight
+ * away; a near match they confirm ("Are you Ehtisham Badar?") waits for the admin's approval. The admin and
+ * managers keep signing in as before.
  */
 @Service
 public class AccountService {
@@ -93,7 +93,7 @@ public class AccountService {
         boolean taken = false;
         List<NameMatch.Squad> possible = List.of();
         if (m.exact() != null && !claimed.contains(m.exact().id())) {
-            a.setPendingPlayerId(m.exact().id());
+            link(a, m.exact());             // the same name as in the squad: no approval needed
         } else {
             taken = m.exact() != null;
             possible = m.possible().stream().filter(p -> !claimed.contains(p.id())).toList();

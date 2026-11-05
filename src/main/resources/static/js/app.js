@@ -38,6 +38,7 @@
     { id: 'announce', label: 'Announce', staffTab: true, icon: '<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>' },
     { id: 'polls', label: 'Polls', staffTab: true, icon: '<path d="M3 3v18h18"/><path d="M8 17V9M13 17V5M18 17v-6"/>' },
     { id: 'shirtpay', label: 'Shirt money', adminTab: true, icon: '<path d="M20.4 3.6 16 2l-4 3-4-3-4.4 1.6L2 8l3 2v10h14V10l3-2z"/>' },
+    { id: 'requests', label: 'Requests', adminTab: true, icon: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>' },
     { id: 'accounts', label: 'Accounts', adminTab: true, icon: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>' },
     { id: 'profile', label: 'Profile', userTab: true, icon: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>' },
     { id: 'kit', label: 'Kit sizes', adminTab: true, icon: '<path d="M20.4 3.6 16 2l-4 3-4-3-4.4 1.6L2 8l3 2v10h14V10l3-2z"/>' },
@@ -52,6 +53,7 @@
     { id: 'money', label: 'Money', tabs: ['money'] },
     { id: 'players', label: 'Team', tabs: ['players', 'shirtpay', 'accounts'] },
     { id: 'news', label: 'News', tabs: ['news', 'announce', 'polls', 'kit'] },
+    { id: 'requests', label: 'Requests', tabs: ['requests'] },
     { id: 'profile', label: 'Profile', tabs: ['profile'] },
     { id: 'settings', label: 'Settings', tabs: ['settings'] }
   ];
@@ -1377,7 +1379,8 @@
     return `${Math.floor(s / 86400)} d ago`;
   };
 
-  function sheetInbox() {
+  // The admin's requests: in the bell's sheet, or (asPage) on the Requests tab without the player updates.
+  function sheetInbox(asPage = false) {
     const items = [
       ...(inbox ? inbox.access.filter(m => m.status === 'pending').map(m => ({ kind: 'access', at: m.createdAt, m })) : []),
       ...(inbox ? inbox.lineups.map(l => ({ kind: 'lineup', at: l.createdAt, l })) : [])
@@ -1432,6 +1435,12 @@
           </div>`}
       </article>`;
     };
+    if (asPage) {
+      const waiting = inboxCount();
+      return `${pageHead('Requests', 'Everything waiting for your decision: accounts to approve, password resets, manager requests and lineup changes.')}
+        <div class="req-page">${links}${resets}${inbox === null ? '<p class="muted">Loading…</p>' : items.map(card).join('')}
+          ${inbox !== null && !waiting ? `<section class="panel req-empty">${icon('<path d="M20 6 9 17l-5-5"/>', 28)}<p>Nothing waiting. You’re all caught up.</p></section>` : ''}</div>`;
+    }
     return `<header class="sheet-head">
         <div><span class="day-kind">Admin</span><h2>Notifications</h2>
           <p class="muted">New accounts to approve, password resets, manager requests and lineup changes wait here for your decision, and you see when players update their profile.</p></div>
@@ -2004,8 +2013,9 @@
       const open = visibleIn(g);
       const target = open.includes(lastIn[g.id]) ? lastIn[g.id] : open[0];
       const on = g === here;
-      return `<button class="tab ${on ? 'active' : ''}" data-action="tab" data-tab="${target}" title="${g.label}" aria-label="${g.label}" ${on ? 'aria-current="page"' : ''}>
-        ${icon(g.icon || tabDef(g.tabs[0]).icon)}<span>${g.label}</span></button>`;
+      const waiting = g.id === 'requests' ? inboxCount() : 0;
+      return `<button class="tab ${on ? 'active' : ''}" data-action="tab" data-tab="${target}" title="${g.label}" aria-label="${waiting ? `${g.label}, ${waiting} waiting` : g.label}" ${on ? 'aria-current="page"' : ''}>
+        ${icon(g.icon || tabDef(g.tabs[0]).icon)}<span>${g.label}</span>${waiting ? `<b class="tab-count">${waiting}</b>` : ''}</button>`;
     }).join('');
     // Related screens share an entry in the bar; this switch moves between them.
     const groupSeg = () => {
@@ -2019,7 +2029,7 @@
       : isUser() ? `<span class="badge badge-view">${icon(PERSON_ICON, 14)} ${esc(session.name)}</span>`
       : `<span class="badge badge-view">${icon('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>', 14)} ${esc(session.name)} · ${isManager() ? 'manager' : 'view only'}</span>`;
 
-    const views = { news: viewNews, summary: viewHome, money: viewMoney, days: viewDays, stats: viewStats, players: viewPlayers, announce: viewAnnounce, polls: viewPolls, kit: viewKit, shirtpay: viewShirtMoney, accounts: viewAccounts, profile: viewProfile, settings: viewSettings };
+    const views = { news: viewNews, summary: viewHome, money: viewMoney, days: viewDays, stats: viewStats, players: viewPlayers, announce: viewAnnounce, polls: viewPolls, kit: viewKit, shirtpay: viewShirtMoney, accounts: viewAccounts, requests: () => sheetInbox(true), profile: viewProfile, settings: viewSettings };
     $('#view').innerHTML = archiveBar() + groupSeg() + (views[tab] || viewHome)();
     $('#sheet-root').innerHTML = sheet ? renderSheet() : '';
     document.body.classList.toggle('sheet-open', !!sheet);
@@ -5281,7 +5291,7 @@ ${tabRows.map(r => {
   function findExpense(el) { return (state.expenses[el.dataset.day] || []).find(e => e.id === el.dataset.id); }
 
   const actions = {
-    tab(el) { tab = el.dataset.tab; saveTab(); sheet = null; render(); animateView(); window.scrollTo({ top: 0 }); if (tab === 'announce') loadAnnouncements(); if (tab === 'news') { loadNews(); loadHpl(); } if (tab === 'accounts') loadAccounts(); if (tab === 'settings' && isUser()) refreshMe(); },
+    tab(el) { tab = el.dataset.tab; saveTab(); sheet = null; render(); animateView(); window.scrollTo({ top: 0 }); if (tab === 'announce') loadAnnouncements(); if (tab === 'news') { loadNews(); loadHpl(); } if (tab === 'accounts') loadAccounts(); if (tab === 'requests') loadInbox(); if (tab === 'settings' && isUser()) refreshMe(); },
     'ann-template'(el) {
       const x = ANN_TEMPLATES.find(y => y.id === el.dataset.t);
       if (!x) return;
