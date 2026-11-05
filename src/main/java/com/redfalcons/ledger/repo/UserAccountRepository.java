@@ -10,4 +10,6 @@ public interface UserAccountRepository extends JpaRepository<UserAccount, String
     Optional<UserAccount> findByEmail(String email);
 
     Optional<UserAccount> findByPlayerId(String playerId);
+
+    List<UserAccount> findByPendingPlayerIdNot(String none);
 }

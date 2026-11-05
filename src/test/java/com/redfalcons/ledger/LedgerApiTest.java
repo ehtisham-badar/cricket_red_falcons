@@ -31,10 +31,12 @@ class LedgerApiTest {
 
     private final HttpClient http = HttpClient.newHttpClient();
 
-    /** Signs up a player account; its name links it to that squad player. Returns the session token. */
-    private String signup(String name, String email) throws Exception {
+    /** Signs up a player account; its name asks for that squad player and the admin approves. Returns the session token. */
+    private String signup(String name, String email, String admin) throws Exception {
         String body = send("POST", "/api/account/signup", "{\"email\":\"" + email + "\",\"password\":\"secret123\",\"name\":\"" + name + "\"}", null).body();
-        assertThat(body).contains("\"playerName\":\"" + name + "\"");
+        assertThat(body).contains("\"pendingPlayerName\":\"" + name + "\"");
+        String id = body.replaceAll("(?s).*?\"id\":\"([^\"]+)\".*", "$1");
+        assertThat(send("POST", "/api/account/users/" + id + "/approve", null, admin).body()).contains("\"playerName\":\"" + name + "\"");
         return body.replaceAll(".*\"token\":\"([0-9a-f]+)\".*", "$1");
     }
 
@@ -71,7 +73,7 @@ class LedgerApiTest {
 
         // The ledger is only for the admin, managers and signed-in squad players.
         assertThat(send("GET", "/api/ledger", null, null).statusCode()).isEqualTo(401);
-        String babar = signup("Babar", "babar@example.com");
+        String babar = signup("Babar", "babar@example.com", token);
         assertThat(asPlayer(babar).statusCode()).isEqualTo(200);
         // A browser can't claim to be a player any more: X-Viewer alone is ignored.
         assertThat(http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/ledger")).header("X-Viewer", "p1").GET().build(),
@@ -153,7 +155,7 @@ class LedgerApiTest {
                             {"id":"p2","name":"Rizwan","paid":"2000","att":{}}]}
                 """;
         assertThat(send("PUT", "/api/ledger", withPayments, token).statusCode()).isEqualTo(200);
-        String rizwan = signup("Rizwan", "rizwan@example.com");
+        String rizwan = signup("Rizwan", "rizwan@example.com", token);
         assertThat(send("GET", "/api/ledger", null, token).body())
                 .contains("\"paid\":\"2000.5\"")
                 .contains("{\"id\":\"x1\",\"date\":\"2026-10-12\",\"amount\":\"1500\",\"method\":\"Cash\",\"note\":\"first\"}")

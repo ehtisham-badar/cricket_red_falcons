@@ -239,6 +239,25 @@ public class AccountController {
         }).toList());
     }
 
+    /** Accounts waiting for the admin to approve which squad player they are. */
+    @GetMapping("/links")
+    public ResponseEntity<?> links(@RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token) {
+        if (!auth.isValidToken(token)) return adminOnly();
+        return ResponseEntity.ok(accounts.pendingLinks().stream().map(this::me).toList());
+    }
+
+    @PostMapping("/users/{id}/approve")
+    public ResponseEntity<?> approve(@RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token, @PathVariable String id) {
+        if (!auth.isValidToken(token)) return adminOnly();
+        return run(() -> me(accounts.approveLink(id)));
+    }
+
+    @PostMapping("/users/{id}/decline")
+    public ResponseEntity<?> declineLink(@RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token, @PathVariable String id) {
+        if (!auth.isValidToken(token)) return adminOnly();
+        return run(() -> me(accounts.declineLink(id)));
+    }
+
     @PostMapping("/requests/{id}/decline")
     public ResponseEntity<?> decline(@RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token, @PathVariable String id) {
         if (!auth.isValidToken(token)) return adminOnly();
@@ -261,6 +280,10 @@ public class AccountController {
         var p = pid.isEmpty() ? java.util.Optional.<com.redfalcons.ledger.model.Player>empty() : players.findById(pid);
         m.put("playerId", p.isPresent() ? pid : "");
         m.put("playerName", p.map(x -> x.getName()).orElse(""));
+        String pending = a.getPendingPlayerId();
+        var pp = pending.isEmpty() ? java.util.Optional.<com.redfalcons.ledger.model.Player>empty() : players.findById(pending);
+        m.put("pendingPlayerId", pp.isPresent() ? pending : "");
+        m.put("pendingPlayerName", pp.map(x -> x.getName()).orElse(""));
         m.put("mustChange", a.isMustChange());
         m.put("createdAt", a.getCreatedAt());
         return m;

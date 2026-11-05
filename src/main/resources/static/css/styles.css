@@ -2365,3 +2365,5 @@ a.btn { text-decoration: none; }
 .acc-req > span:first-child { display: flex; flex-direction: column; }
 .temp-pw { margin: 12px 0; padding: 14px; border-radius: 14px; background: rgba(0, 0, 0, .35); border: 1px dashed rgba(var(--gold-rgb), .6); text-align: center;
   font: 800 26px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .12em; color: var(--gold); user-select: all; }
+.acc-approve { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(var(--gold-rgb), .45); background: rgba(var(--gold-rgb), .08); }
+.acc-approve > span { flex: 1; min-width: 150px; }

@@ -30,8 +30,9 @@ import java.util.stream.Collectors;
 
 /**
  * Player accounts: sign up with email, password and full name; sign in with email and password (or the
- * device's biometrics once turned on). A name that is a squad player's links the account to that player;
- * a near match is only linked once they confirm it. The admin and managers keep signing in as before.
+ * device's biometrics once turned on). A name that is a squad player's (or a near match they confirm) asks
+ * to be that player, and the admin approves before the account is linked. The admin and managers keep
+ * signing in as before.
  */
 @Service
 public class AccountService {
@@ -92,7 +93,7 @@ public class AccountService {
         boolean taken = false;
         List<NameMatch.Squad> possible = List.of();
         if (m.exact() != null && !claimed.contains(m.exact().id())) {
-            link(a, m.exact());
+            a.setPendingPlayerId(m.exact().id());
         } else {
             taken = m.exact() != null;
             possible = m.possible().stream().filter(p -> !claimed.contains(p.id())).toList();
@@ -147,24 +148,48 @@ public class AccountService {
         if (token != null && !token.isBlank()) sessions.deleteById(AdminAuth.hash(token));
     }
 
-    /** Squad players an unlinked account's name may be (none for a linked one). */
+    /** Squad players an unlinked account's name may be (none for a linked one, or one already waiting for approval). */
     @Transactional(readOnly = true)
     public List<NameMatch.Squad> possibleFor(UserAccount a) {
         if (!a.getPlayerId().isEmpty() && players.existsById(a.getPlayerId())) return List.of();
+        if (!a.getPendingPlayerId().isEmpty() && players.existsById(a.getPendingPlayerId())) return List.of();
         Set<String> claimed = claimed();
         NameMatch.Result m = NameMatch.match(a.getName(), squad());
         List<NameMatch.Squad> all = m.exact() != null ? List.of(m.exact()) : m.possible();
         return all.stream().filter(p -> !claimed.contains(p.id())).toList();
     }
 
-    /** "Yes, I'm Ehtisham Badar": links the account to a player its name may be, and takes the squad's spelling. */
+    /** "Yes, I'm Ehtisham Badar": asks to be a player its name may be; the admin approves it. */
     @Transactional
     public UserAccount claim(UserAccount a, String playerId) {
         NameMatch.Squad p = possibleFor(a).stream().filter(x -> x.id().equals(playerId)).findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("That player can't be linked to your account. Ask the admin."));
         UserAccount fresh = accounts.findById(a.getId()).orElseThrow();
-        link(fresh, p);
+        fresh.setPendingPlayerId(p.id());
         return fresh;
+    }
+
+    /** Accounts waiting for the admin to approve the player they asked to be. */
+    @Transactional(readOnly = true)
+    public List<UserAccount> pendingLinks() {
+        return accounts.findByPendingPlayerIdNot("").stream().filter(a -> players.existsById(a.getPendingPlayerId()))
+                .sorted(Comparator.comparing(UserAccount::getCreatedAt)).toList();
+    }
+
+    /** The admin approves: the account becomes that player, with the squad's spelling of the name. */
+    @Transactional
+    public UserAccount approveLink(String userId) {
+        UserAccount a = accounts.findById(userId).orElseThrow(() -> new IllegalArgumentException("No such account."));
+        if (a.getPendingPlayerId().isEmpty()) throw new IllegalArgumentException("This account isn't waiting for approval.");
+        return setPlayer(userId, a.getPendingPlayerId());
+    }
+
+    /** The admin declines: the account stays unlinked and sees the "coming soon" screen. */
+    @Transactional
+    public UserAccount declineLink(String userId) {
+        UserAccount a = accounts.findById(userId).orElseThrow(() -> new IllegalArgumentException("No such account."));
+        a.setPendingPlayerId("");
+        return a;
     }
 
     @Transactional
@@ -284,6 +309,7 @@ public class AccountService {
     @Transactional
     public UserAccount setPlayer(String userId, String playerId) {
         UserAccount a = accounts.findById(userId).orElseThrow(() -> new IllegalArgumentException("No such account."));
+        a.setPendingPlayerId("");
         if (playerId == null || playerId.isBlank()) {
             a.setPlayerId("");
             return a;
@@ -317,8 +343,10 @@ public class AccountService {
         return players.findAll().stream().map(p -> new NameMatch.Squad(p.getId(), p.getName())).toList();
     }
 
+    /** Players already linked to an account, or asked for by one waiting for approval. */
     private Set<String> claimed() {
-        return accounts.findAll().stream().map(UserAccount::getPlayerId).filter(s -> !s.isEmpty()).collect(Collectors.toSet());
+        return accounts.findAll().stream().flatMap(a -> java.util.stream.Stream.of(a.getPlayerId(), a.getPendingPlayerId()))
+                .filter(s -> !s.isEmpty()).collect(Collectors.toSet());
     }
 
     private String startSession(UserAccount a, boolean remember, String label) {

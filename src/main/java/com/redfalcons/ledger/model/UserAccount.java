@@ -4,8 +4,9 @@ import jakarta.persistence.*;
 
 /**
  * A player's sign-in: email, password and full name. When the name is a squad player's (or they confirm
- * which one they are) {@code playerId} links the account to that player and they see the app as them;
- * an account that isn't linked sees only a "coming soon" screen. The password is stored as a salted hash.
+ * which one they are) the account asks for that player ({@code pendingPlayerId}); once the admin approves,
+ * {@code playerId} links it and they see the app as that player. Until then, or without a squad match, they see
+ * only a waiting / "coming soon" screen. The password is stored as a salted hash.
  */
 @Entity
 @Table(name = "user_accounts", uniqueConstraints = @UniqueConstraint(columnNames = "email"))
@@ -28,6 +29,10 @@ public class UserAccount {
     /** The squad player this account is, or '' when it isn't linked. */
     @Column(name = "player_id", nullable = false, length = 64)
     private String playerId = "";
+
+    /** The squad player this account asked to be, waiting for the admin's approval ('' when none). */
+    @Column(name = "pending_player_id", length = 64)
+    private String pendingPlayerId = "";
 
     /** Set when the admin has reset the password: the next sign-in must choose a new one. */
     @Column(name = "must_change", nullable = false)
@@ -69,6 +74,7 @@ public class UserAccount {
     public String getName() { return name; }
     public String getPasswordHash() { return passwordHash; }
     public String getPlayerId() { return playerId == null ? "" : playerId; }
+    public String getPendingPlayerId() { return pendingPlayerId == null ? "" : pendingPlayerId; }
     public boolean isMustChange() { return mustChange; }
     public String getCreatedAt() { return createdAt; }
     public String getLastLoginAt() { return lastLoginAt == null ? "" : lastLoginAt; }
@@ -80,6 +86,7 @@ public class UserAccount {
     public void setName(String name) { this.name = name; }
     public void setPasswordHash(String hash) { this.passwordHash = hash; }
     public void setPlayerId(String playerId) { this.playerId = playerId == null ? "" : playerId; }
+    public void setPendingPlayerId(String id) { this.pendingPlayerId = id == null ? "" : id; }
     public void setMustChange(boolean mustChange) { this.mustChange = mustChange; }
 
     public void loggedIn(String at, String method) {
