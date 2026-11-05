@@ -797,7 +797,7 @@
       toast(`Your manager request was declined${note ? `: ${note}` : '.'}`);
     } else {
       setMgr({ ...mgr, status });
-      toast('Approved! Switch user and enter your phrase on the start screen to sign in as manager.');
+      toast('Approved! Log out, then tap “Admin or manager?” on the sign-in screen and enter your phrase.');
     }
     renderIfSettings();
   }
@@ -1463,7 +1463,7 @@
     if (isManager()) {
       body = `<p class="muted">You’re signed in as an app manager. Open a match on the Days tab to set the playing XI and 12th man. Everything else stays view-only.</p>`;
     } else if (mgr && mgr.status === 'approved') {
-      body = `<p class="muted">Approved! Switch user, then type your phrase on the start screen to sign in as manager.</p>`;
+      body = `<p class="muted">Approved! Log out, then tap “Admin or manager?” on the sign-in screen and type your phrase.</p>`;
     } else if (mgr && mgr.status === 'declined') {
       body = `<p class="muted">The admin declined your request${mgr.note ? `: “${esc(mgr.note)}”` : '.'}</p>
         <button class="btn btn-ghost" data-action="mgr-cancel">Ask again</button>`;
@@ -1502,7 +1502,7 @@
     } else if (isUser()) {
       let me;
       try { me = await api('GET', '/api/account/me'); } catch (e) {
-        if (e.status === 401) return end('signin', 'You’ve been signed out. Please sign in again.');
+        if (e.status === 401) return end('signin', 'You’ve been logged out. Please sign in again.');
         return false;
       }
       if ((me.playerId || '') !== (session.playerId || '')) {
@@ -1738,7 +1738,7 @@
         ${pw('again', 'New password again', 'new-password')}
         <button type="submit" class="btn btn-primary btn-block" ${busy}>Save and continue</button>
         ${err}
-        <div class="acct-links"><button type="button" data-action="acct-signout">Sign out</button></div>
+        <div class="acct-links"><button type="button" data-action="acct-signout">Log out</button></div>
       </form>`;
     }
     root.innerHTML = html;
@@ -2359,7 +2359,6 @@
       </div>
       <div class="me-actions">
         <button class="btn btn-gold" data-action="open-player" data-id="${esc(me.id)}">See breakdown</button>
-        <button class="btn btn-ghost small" data-action="not-me">Not you?</button>
       </div>
     </section>`;
   }
@@ -3816,8 +3815,7 @@
     }
     return `${head}
       <div class="sheet-body pf">
-        <div class="pf-who inline"><span>Ordering for <strong>${esc(me.name)}</strong></span>
-          <label class="pf-notyou">Not you? Choose from the squad ${chooser}</label></div>
+        <div class="pf-who inline"><span>Ordering for <strong>${esc(me.name)}</strong></span></div>
         <h3 class="sub first">Size chart <span class="muted">Chest × Length</span></h3>
         <div class="size-grid" role="radiogroup" aria-label="Shirt size">${SIZE_CHART.map(([sz, c, l]) => `<button type="button" class="size-opt ${kForm.size === sz ? 'on' : ''}" role="radio" aria-checked="${kForm.size === sz}" data-action="kit-size" data-size="${sz}">
             <strong>${sz}</strong><small>${c} × ${l}</small></button>`).join('')}</div>
@@ -3876,8 +3874,6 @@
     }
     return `${head}
       <div class="sheet-body pf">
-        ${isUser() ? '' : `<div class="pf-who inline"><span>Updating <strong>${esc(me.name)}</strong></span>
-          <label class="pf-notyou">Not you? Choose from the squad ${chooser}</label></div>`}
         ${profileFields(me)}
       </div>`;
   }
@@ -4420,7 +4416,7 @@ ${tabRows.map(r => {
       <section class="panel account-card">
         <span class="account-avatar">${admin ? icon('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>', 22) : esc((session.name || '?').trim().charAt(0).toUpperCase())}</span>
         <span class="account-text"><strong>${admin ? 'Admin' : esc(session.name)}</strong><small>${admin ? 'Can change everything' : isManager() ? 'App manager · can set the playing XI' : 'View only · this page refreshes by itself'}</small></span>
-        <button class="btn btn-ghost" data-action="logout">Switch user</button>
+        <button class="btn btn-ghost" data-action="logout">Log out</button>
       </section>`;
 
     // Each section lays its cards out on a 12-column grid: [html, span]. A cell can hold a stack of cards.
@@ -4446,7 +4442,7 @@ ${tabRows.map(r => {
         <span class="hero-chip"><b>${realMatchCount()}</b> match${realMatchCount() === 1 ? '' : 'es'}</span>
         <span class="hero-chip">${icon('<circle cx="12" cy="12" r="9"/><path d="M12 3v18"/>', 14)} ${esc(THEMES.find(x => x.id === currentTheme()).name)}</span>
       </span>
- <button class="btn btn-ghost" data-action="logout">${isUser() ? 'Sign out' : 'Switch user'}</button>
+ <button class="btn btn-ghost" data-action="logout">Log out</button>
     </section>`;
     const cell = (html, span) => html ? `<div class="set-cell span-${span}">${html}</div>` : '';
     const stack = (...cards) => cards.filter(Boolean).join('');
@@ -4537,7 +4533,7 @@ ${tabRows.map(r => {
       ${others.length ? `<ul class="sec-devices">${others.map(p => `<li><span>${icon(FINGER_ICON, 16)} ${esc(p.label)}<small class="muted">added ${ago(p.createdAt)}${p.lastUsedAt ? ` · used ${ago(p.lastUsedAt)}` : ''}</small></span>
           <button class="btn btn-ghost small" data-action="passkey-remove" data-id="${esc(p.id)}">Remove</button></li>`).join('')}</ul>` : ''}
       ${row('Password', 'Change it on your Profile tab.', '<button class="btn btn-ghost small" data-action="tab" data-tab="profile">Change password</button>')}
-      ${row(esc(session.email || ''), session.remember ? 'Remembered on this device.' : 'Signed in until you close the browser.', '<button class="btn btn-ghost small" data-action="logout">Sign out</button>')}
+      ${row(esc(session.email || ''), session.remember ? 'Remembered on this device.' : 'Signed in until you close the browser.', '<button class="btn btn-ghost small" data-action="logout">Log out</button>')}
     </section>`;
   }
 
@@ -5603,7 +5599,7 @@ ${tabRows.map(r => {
       showSplash();
     },
     async logout() {
-      const ok = await confirmDialog('Switch user?', 'You will go back to the start screen.', 'Switch user');
+      const ok = await confirmDialog('Log out?', 'You’ll go back to the sign-in screen.', 'Log out');
       if (!ok) return;
       if (saveTimer) { clearTimeout(saveTimer); await flushSave(); }
       if (session && session.token) await api('POST', '/api/logout').catch(() => {});
@@ -6441,7 +6437,6 @@ ${tabRows.map(r => {
         el.innerHTML = label;
       }
     },
-    'not-me'() { writeStore(ME_KEY, NOT_ME); refetchForViewer(); },
     'add-expense'(el) {
       if (!isAdmin()) return;
       const day = el.dataset.day;
@@ -6699,6 +6694,6 @@ ${tabRows.map(r => {
   }
 
   wireEvents();
-  // Returning visitors go straight back in; the name screen is only for first visits and "Switch user".
+  // Returning visitors go straight back in; the sign-in screen is only for first visits and after "Log out".
   if (session) enterApp(); else showSplash();
 })();

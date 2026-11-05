@@ -17,7 +17,7 @@
   const DICT = {
     // navigation and chrome
     'Summary': 'خلاصہ', 'Home': 'ہوم', 'Money': 'رقم', 'Team': 'ٹیم', 'For you': 'آپ کے لیے', 'Open Money': 'رقم کھولیں', 'Choose name': 'نام چنیں', 'No upcoming match yet': 'ابھی کوئی آنے والا میچ نہیں', 'Polls': 'پولز', 'Home cards': 'ہوم کارڈ', 'Days': 'دن', 'Stats': 'اعداد و شمار', 'Players': 'کھلاڑی', 'Announce': 'اعلانات', 'Settings': 'ترتیبات',
-    'Admin': 'ایڈمن', 'Switch user': 'صارف تبدیل کریں', 'Notifications': 'اطلاعات', 'Close': 'بند کریں', 'Back': 'واپس',
+    'Admin': 'ایڈمن', 'Switch user': 'صارف تبدیل کریں', 'Log out': 'لاگ آؤٹ', 'Log out?': 'لاگ آؤٹ کریں؟', 'Notifications': 'اطلاعات', 'Close': 'بند کریں', 'Back': 'واپس',
     'Cricket Club Ledger': 'کرکٹ کلب لیجر', 'Red Falcons': 'ریڈ فالکنز', 'Cricket Club': 'کرکٹ کلب', 'Cricket Club · Team Ledger': 'کرکٹ کلب · ٹیم لیجر',
     'Loading the ledger…': 'لیجر لوڈ ہو رہا ہے…', 'Enter': 'داخل ہوں', 'Enter your name': 'اپنا نام لکھیں', 'Verify': 'تصدیق کریں',
     'Which player are you?': 'آپ کون سے کھلاڑی ہیں؟', 'Choose your name': 'اپنا نام چنیں', 'Choose your name…': 'اپنا نام چنیں…',
