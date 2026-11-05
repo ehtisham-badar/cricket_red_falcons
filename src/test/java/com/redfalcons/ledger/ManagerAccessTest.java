@@ -95,7 +95,7 @@ class ManagerAccessTest {
         assertThat(send("GET", pendingUrl + viewerDevice, null, null, null).body()).isEqualTo("[]");
         String lineupId = field(sent, "id");
         assertThat(send("PUT", "/api/ledger", STATE, null, mgr).statusCode()).isEqualTo(403);
-        assertThat(send("GET", "/api/ledger", null, null, null).body()).doesNotContain("\"m1\":true").contains("\"twelfth\":{}");
+        assertThat(send("GET", "/api/ledger", null, admin, null).body()).doesNotContain("\"m1\":true").contains("\"twelfth\":{}");
         assertThat(send("GET", "/api/manager/inbox", null, null, mgr).statusCode()).isEqualTo(403);
         assertThat(send("GET", "/api/manager/inbox", null, admin, null).body()).contains("\"lineups\":[{\"id\":\"" + lineupId);
 
@@ -107,7 +107,7 @@ class ManagerAccessTest {
         assertThat(send("POST", "/api/manager/lineups/" + lineupId + "/approve", null, null, mgr).statusCode()).isEqualTo(403);
         assertThat(send("POST", "/api/manager/lineups/" + lineupId + "/decline", "{\"note\":\"Babar is injured\"}", admin, null).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/manager/lineups", null, null, mgr).body()).contains("\"status\":\"declined\"").contains("Babar is injured");
-        assertThat(send("GET", "/api/ledger", null, null, null).body()).doesNotContain("\"m1\":true");
+        assertThat(send("GET", "/api/ledger", null, admin, null).body()).doesNotContain("\"m1\":true");
 
         // Approving applies it to the ledger, batting order included (players outside the XI are dropped).
         String withOrder = "{\"matchId\":\"m1\",\"playing\":[\"p1\",\"p2\"],\"batting\":[\"p2\",\"ghost\",\"p1\"]}";
@@ -115,13 +115,13 @@ class ManagerAccessTest {
         String third = send("POST", "/api/manager/lineups", withOrder, null, mgr).body();
         assertThat(third).contains("\"batting\":[\"p2\",\"p1\"]");
         assertThat(send("POST", "/api/manager/lineups/" + field(third, "id") + "/approve", null, admin, null).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/ledger", null, null, null).body()).contains("\"battingOrder\":{\"m1\":[\"p2\",\"p1\"]}");
+        assertThat(send("GET", "/api/ledger", null, admin, null).body()).contains("\"battingOrder\":{\"m1\":[\"p2\",\"p1\"]}");
         assertThat(send("PUT", "/api/ledger", STATE, admin, null).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/ledger", null, null, null).body()).contains("\"battingOrder\":{}");
+        assertThat(send("GET", "/api/ledger", null, admin, null).body()).contains("\"battingOrder\":{}");
 
         String second = send("POST", "/api/manager/lineups", xi, null, mgr).body();
         assertThat(send("POST", "/api/manager/lineups/" + field(second, "id") + "/approve", null, admin, null).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/ledger", null, null, null).body()).contains("\"att\":{\"m1\":true}").contains("\"twelfth\":{\"m1\":\"p2\"}");
+        assertThat(send("GET", "/api/ledger", null, admin, null).body()).contains("\"att\":{\"m1\":true}").contains("\"twelfth\":{\"m1\":\"p2\"}");
 
         // Changing the phrase signs the manager out; only the new phrase works.
         assertThat(send("PUT", "/api/manager/requests/" + id + "/phrase", "{\"phrase\":\"short\"}", admin, null).statusCode()).isEqualTo(400);

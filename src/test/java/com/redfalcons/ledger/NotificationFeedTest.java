@@ -82,19 +82,19 @@ class NotificationFeedTest {
         String body = "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{\"x1\":true}}],\"trainings\":[{\"id\":\"t1\"}],"
                 + "\"matches\":[{\"id\":\"x1\",\"test\":true,\"finished\":true},{\"id\":\"m1\",\"finished\":true}]}";
         assertThat(send("PUT", "/api/ledger", body, admin).statusCode()).isEqualTo(200);
-        String loaded = send("GET", "/api/ledger", null, null).body();
+        String loaded = send("GET", "/api/ledger", null, admin).body();
         assertThat(loaded).contains("{\"id\":\"x1\",\"date\":\"\",\"opponent\":\"\",\"venue\":\"\",\"finished\":false,\"test\":true,\"time\":\"\",\"announced\":false,\"result\":\"\",\"twelfthPlayed\":false,\"extras\":\"\",\"twelfthShares\":false}")
                 .contains("\"id\":\"m1\",\"date\":\"\",\"opponent\":\"\",\"venue\":\"\",\"finished\":true,\"test\":false");
         // The kick-off time is kept when valid, blanked when not, and kept when a save doesn't mention it.
         send("PUT", "/api/ledger", body.replace("\"id\":\"m1\",", "\"id\":\"m1\",\"time\":\"14:30\","), admin);
-        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"time\":\"14:30\"");
+        assertThat(send("GET", "/api/ledger", null, admin).body()).contains("\"time\":\"14:30\"");
         send("PUT", "/api/ledger", body.replace("\"id\":\"m1\",", "\"id\":\"m1\",\"time\":\"25:99\","), admin);
-        assertThat(send("GET", "/api/ledger", null, null).body()).doesNotContain("25:99").doesNotContain("14:30");
+        assertThat(send("GET", "/api/ledger", null, admin).body()).doesNotContain("25:99").doesNotContain("14:30");
         send("PUT", "/api/ledger", body.replace("\"id\":\"m1\",", "\"id\":\"m1\",\"time\":\"09:05\","), admin);
         send("PUT", "/api/ledger", body, admin);
-        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"time\":\"09:05\"");
+        assertThat(send("GET", "/api/ledger", null, admin).body()).contains("\"time\":\"09:05\"");
         // A save that doesn't mention the flag keeps it.
         send("PUT", "/api/ledger", body.replace("\"test\":true,", ""), admin);
-        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"finished\":false,\"test\":true");
+        assertThat(send("GET", "/api/ledger", null, admin).body()).contains("\"finished\":false,\"test\":true");
     }
 }
