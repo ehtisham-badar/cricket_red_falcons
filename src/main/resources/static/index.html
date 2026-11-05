@@ -18,6 +18,17 @@
   <link href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Figtree:wght@400;500;600;700;800&family=Noto+Naskh+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css?v=6">
   <script>/* Apply the saved theme before first paint. */try{var t=JSON.parse(localStorage.getItem('rf.theme'));if(t&&t!=='night')document.documentElement.dataset.theme=t;}catch(e){}try{if(JSON.parse(localStorage.getItem('rf.lang'))==='ur'){document.documentElement.lang='ur';document.documentElement.dir='rtl';}}catch(e){}</script>
+  <!-- Microsoft Clarity (usage recordings and heatmaps): live site only, never on localhost test runs.
+       The app's own screens are masked (data-clarity-mask), so recordings show layout and clicks, not balances or numbers. -->
+  <script>
+    if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
+      (function(c,l,a,r,i,t,y){
+        c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+        t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+        y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+      })(window, document, "clarity", "script", "z91q4sah3z");
+    }
+  </script>
 </head>
 <body>
 
@@ -57,6 +68,7 @@
       <button type="button" class="lang-link" data-action="acct-mode" data-mode="signin">← Back to player sign in</button>
     </form>
     <button type="button" class="lang-link splash-lang" data-lang-toggle></button>
+    <p class="usage-note">We record how the app is used (no balances or passwords) to make it better.</p>
 
     <!-- Second step for the admin when two-factor is on -->
     <form id="code-form" class="login code-step" autocomplete="off" hidden>
@@ -74,7 +86,7 @@
 </section>
 
 <!-- Main app -->
-<div id="app" class="app" hidden>
+<div id="app" class="app" hidden data-clarity-mask="True">
   <header class="topbar">
     <div class="brand">
       <img src="img/logo.jpeg" alt="" class="brand-logo">
@@ -100,9 +112,9 @@
   <main id="view" class="view"></main>
 </div>
 
-<div id="sheet-root"></div>
+<div id="sheet-root" data-clarity-mask="True"></div>
 <datalist id="hpl-teams"><option value="Pak 11"><option value="Anggler"><option value="Rage Rovers"><option value="Raptors"><option value="Galacticos"></datalist>
-<div id="dialog-root"></div>
+<div id="dialog-root" data-clarity-mask="True"></div>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <input type="file" id="import-file" accept="application/json,.json" hidden>
 <input type="file" id="photo-file" accept="image/*" hidden>
