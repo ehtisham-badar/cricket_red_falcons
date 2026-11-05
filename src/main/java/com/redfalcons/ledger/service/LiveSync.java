@@ -23,16 +23,21 @@ public class LiveSync implements ApplicationRunner {
 
     private final LedgerService service;
     private final String source;
+    /** An admin session token for the live app: the ledger is only sent to signed-in people. */
+    private final String token;
 
-    public LiveSync(LedgerService service, @Value("${ledger.sync-from}") String source) {
+    public LiveSync(LedgerService service, @Value("${ledger.sync-from}") String source, @Value("${ledger.sync-token:}") String token) {
         this.service = service;
         this.source = source.replaceAll("/+$", "");
+        this.token = token == null ? "" : token.trim();
     }
 
     @Override
     public void run(ApplicationArguments args) {
         try {
-            LedgerDto live = RestClient.create(source).get().uri("/api/ledger").retrieve().body(LedgerDto.class);
+            var request = RestClient.create(source).get().uri("/api/ledger");
+            if (!token.isEmpty()) request = request.header("X-Admin-Token", token);
+            LedgerDto live = request.retrieve().body(LedgerDto.class);
             if (live == null || live.players() == null) {
                 log.warn("Live sync: {} returned no ledger; keeping local data.", source);
                 return;
@@ -40,7 +45,8 @@ public class LiveSync implements ApplicationRunner {
             service.save(live);
             log.info("Live sync: copied {} players from {} into the local database.", live.players().size(), source);
         } catch (Exception e) {
-            log.warn("Live sync: could not fetch {} ({}); keeping local data.", source, e.getMessage());
+            log.warn("Live sync: could not fetch {} ({}); keeping local data.{}", source, e.getMessage(),
+                    token.isEmpty() ? " The live ledger needs a sign-in: set ledger.sync-token to an admin session token." : "");
         }
     }
 }

@@ -75,7 +75,7 @@ public class AdminAuth {
         }
     }
 
-    static String clip(String label) {
+    public static String clip(String label) {
         String t = label == null ? "" : label.trim();
         if (t.isEmpty()) t = "Browser";
         return t.length() > 80 ? t.substring(0, 80) : t;

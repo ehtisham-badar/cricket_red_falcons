@@ -22,13 +22,20 @@ class PlayerProfileTest {
     int port;
 
     private final HttpClient http = HttpClient.newHttpClient();
+    private PlayerLogins logins;
+
+    /** Acting as a squad player means signing in as one. */
+    private PlayerLogins logins() {
+        if (logins == null) logins = new PlayerLogins(port, "test-key");
+        return logins;
+    }
 
     private HttpResponse<String> send(String method, String path, String body, String token, String viewer) throws Exception {
         HttpRequest.Builder b = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
                 .header("Content-Type", "application/json")
                 .method(method, body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body));
         if (token != null) b.header("X-Admin-Token", token);
-        if (viewer != null) b.header("X-Viewer", viewer);
+        if (viewer != null) b.header("X-User-Token", logins().token(viewer));
         return http.send(b.build(), HttpResponse.BodyHandlers.ofString());
     }
 
@@ -37,7 +44,7 @@ class PlayerProfileTest {
                 .header("Content-Type", "image/jpeg")
                 .method(method, body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofByteArray(body));
         if (token != null) b.header("X-Admin-Token", token);
-        if (viewer != null) b.header("X-Viewer", viewer);
+        if (viewer != null) b.header("X-User-Token", logins().token(viewer));
         return http.send(b.build(), HttpResponse.BodyHandlers.ofByteArray());
     }
 
@@ -49,15 +56,15 @@ class PlayerProfileTest {
                 + "\"bowlingStyle\":\"Off spin\",\"keeper\":true,\"captain\":true,\"viceCaptain\":false,\"jersey\":\"56x\"},"
                 + "{\"id\":\"p2\",\"name\":\"Rizwan\",\"att\":{}}],\"trainings\":[{\"id\":\"t1\",\"desc\":\"\"}],\"matches\":[]}";
         assertThat(send("PUT", "/api/ledger", saved, admin, null).statusCode()).isEqualTo(200);
-        String viewer = send("GET", "/api/ledger", null, null, null).body();
+        String viewer = send("GET", "/api/ledger", null, null, "p1").body();
         assertThat(viewer).contains("\"battingHand\":\"left\"").contains("\"bowlingArm\":\"right\"").contains("\"bowlingStyle\":\"Off spin\"")
                 .contains("\"keeper\":true").contains("\"captain\":true").contains("\"jersey\":\"56\"").contains("\"photoAt\":\"\"");
 
         // A save from an older app (no profile fields) keeps the stored profile; bad values are cleaned.
         assertThat(send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{}}],\"trainings\":[{\"id\":\"t1\"}],\"matches\":[]}", admin, null).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/ledger", null, null, null).body()).contains("\"battingHand\":\"left\"").contains("\"jersey\":\"56\"");
+        assertThat(send("GET", "/api/ledger", null, admin, null).body()).contains("\"battingHand\":\"left\"").contains("\"jersey\":\"56\"");
         send("PUT", "/api/ledger", saved.replace("\"left\"", "\"sideways\""), admin, null);
-        assertThat(send("GET", "/api/ledger", null, null, null).body()).doesNotContain("sideways");
+        assertThat(send("GET", "/api/ledger", null, admin, null).body()).doesNotContain("sideways");
 
         // A player sets their own batting hand, bowling arm and style; captain and keeper stay as the admin set them.
         String mine = "{\"battingHand\":\"right\",\"bowlingArm\":\"left\",\"bowlingStyle\":\"Leg spin\"}";
@@ -65,7 +72,7 @@ class PlayerProfileTest {
         assertThat(send("PUT", "/api/players/p1/profile", mine, null, "p2").statusCode()).isEqualTo(403);
         assertThat(send("PUT", "/api/players/p1/profile", mine.replace("Leg spin", "Googly"), null, "p1").statusCode()).isEqualTo(400);
         assertThat(send("PUT", "/api/players/p1/profile", mine, null, "p1").statusCode()).isEqualTo(200);
-        String after = send("GET", "/api/ledger", null, null, null).body();
+        String after = send("GET", "/api/ledger", null, admin, null).body();
         assertThat(after).contains("\"battingHand\":\"right\"").contains("\"bowlingArm\":\"left\"").contains("\"bowlingStyle\":\"Leg spin\"")
                 .contains("\"captain\":true").contains("\"keeper\":true").contains("\"jersey\":\"56\"");
         assertThat(send("PUT", "/api/players/p2/profile", mine, admin, null).statusCode()).isEqualTo(200);
@@ -83,7 +90,7 @@ class PlayerProfileTest {
         assertThat(got.statusCode()).isEqualTo(200);
         assertThat(got.headers().firstValue("Content-Type")).contains("image/jpeg");
         assertThat(got.body()).isEqualTo(jpeg);
-        String ledger = send("GET", "/api/ledger", null, null, null).body();
+        String ledger = send("GET", "/api/ledger", null, admin, null).body();
         assertThat(ledger).doesNotContain("\"photoAt\":\"\"");
 
         // Removing it, or removing the player, takes the picture away.

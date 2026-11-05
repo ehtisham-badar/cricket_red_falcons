@@ -1,6 +1,7 @@
 package com.redfalcons.ledger.web;
 
 import com.redfalcons.ledger.service.LedgerService;
+import com.redfalcons.ledger.service.ManagerAccessService;
 import com.redfalcons.ledger.service.SeasonService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -20,11 +21,13 @@ public class LedgerController {
     private final LedgerService service;
     private final SeasonService seasons;
     private final AdminAuth auth;
+    private final ManagerAccessService managers;
 
-    public LedgerController(LedgerService service, SeasonService seasons, AdminAuth auth) {
+    public LedgerController(LedgerService service, SeasonService seasons, AdminAuth auth, ManagerAccessService managers) {
         this.service = service;
         this.seasons = seasons;
         this.auth = auth;
+        this.managers = managers;
     }
 
     public record ArchiveRequest(String name) {
@@ -33,15 +36,31 @@ public class LedgerController {
     private static final ResponseEntity<?> FORBIDDEN = ResponseEntity.status(HttpStatus.FORBIDDEN)
             .body(Map.of("error", "View-only access. Only the admin can make changes."));
 
+    /**
+     * The ledger is for the team: the admin, a manager, or a signed-in player whose account is linked to a squad
+     * player (X-Viewer is then set from their sign-in by {@link AccountFilter}). Everyone else is asked to sign in.
+     */
+    private boolean canRead(String token, String manager, String viewer) {
+        return auth.isValidToken(token) || (viewer != null && !viewer.isBlank()) || managers.find(manager).isPresent();
+    }
+
+    private static final ResponseEntity<?> SIGN_IN = ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+            .body(Map.of("error", "Sign in to see the team's ledger.", "signIn", true));
+
     @GetMapping("/seasons")
-    public List<SeasonService.SeasonInfo> listSeasons() {
-        return seasons.list();
+    public ResponseEntity<?> listSeasons(@RequestHeader(value = TOKEN_HEADER, required = false) String token,
+                                         @RequestHeader(value = ManagerController.MANAGER_HEADER, required = false) String manager,
+                                         @RequestHeader(value = VIEWER_HEADER, required = false) String viewer) {
+        if (!canRead(token, manager, viewer)) return SIGN_IN;
+        return ResponseEntity.ok(seasons.list());
     }
 
     @GetMapping("/seasons/{id}")
     public ResponseEntity<?> season(@PathVariable String id,
                                     @RequestHeader(value = TOKEN_HEADER, required = false) String token,
+                                    @RequestHeader(value = ManagerController.MANAGER_HEADER, required = false) String manager,
                                     @RequestHeader(value = VIEWER_HEADER, required = false) String viewer) {
+        if (!canRead(token, manager, viewer)) return SIGN_IN;
         return seasons.get(id, auth.isValidToken(token), viewer)
                 .<ResponseEntity<?>>map(ResponseEntity::ok)
                 .orElse(ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "No such season.")));
@@ -63,9 +82,11 @@ public class LedgerController {
     }
 
     @GetMapping("/ledger")
-    public LedgerDto get(@RequestHeader(value = TOKEN_HEADER, required = false) String token,
-                         @RequestHeader(value = VIEWER_HEADER, required = false) String viewer) {
-        return service.load(auth.isValidToken(token), viewer);
+    public ResponseEntity<?> get(@RequestHeader(value = TOKEN_HEADER, required = false) String token,
+                                 @RequestHeader(value = ManagerController.MANAGER_HEADER, required = false) String manager,
+                                 @RequestHeader(value = VIEWER_HEADER, required = false) String viewer) {
+        if (!canRead(token, manager, viewer)) return SIGN_IN;
+        return ResponseEntity.ok(service.load(auth.isValidToken(token), viewer));
     }
 
     @PutMapping("/ledger")

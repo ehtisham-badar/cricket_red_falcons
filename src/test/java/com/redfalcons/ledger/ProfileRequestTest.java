@@ -22,13 +22,20 @@ class ProfileRequestTest {
     int port;
 
     private final HttpClient http = HttpClient.newHttpClient();
+    private PlayerLogins logins;
+
+    /** Acting as a squad player means signing in as one. */
+    private PlayerLogins logins() {
+        if (logins == null) logins = new PlayerLogins(port, "test-key");
+        return logins;
+    }
 
     private HttpResponse<String> send(String method, String path, String body, String admin, String viewer) throws Exception {
         HttpRequest.Builder b = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
                 .header("Content-Type", "application/json")
                 .method(method, body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body));
         if (admin != null) b.header("X-Admin-Token", admin);
-        if (viewer != null) b.header("X-Viewer", viewer);
+        if (viewer != null) b.header("X-User-Token", logins().token(viewer));
         return http.send(b.build(), HttpResponse.BodyHandlers.ofString());
     }
 
@@ -66,9 +73,9 @@ class ProfileRequestTest {
         String view = send("GET", "/api/ledger", null, null, "p1").body();
         assertThat(view).contains("\"jersey\":\"56\"").contains("\"jerseyName\":\"BABAR\"");
         assertThat(view.substring(view.indexOf("\"id\":\"p1\""), view.indexOf("\"id\":\"p2\""))).containsPattern("\"profileAt\":\"20");
-        // Others (and anonymous viewers) don't learn who has updated; the admin does.
+        // Others don't learn who has updated (and anonymous visitors can't read the ledger at all); the admin does.
         assertThat(send("GET", "/api/ledger", null, null, "p2").body()).doesNotContainPattern("\"profileAt\":\"20");
-        assertThat(send("GET", "/api/ledger", null, null, null).body()).doesNotContainPattern("\"profileAt\":\"20");
+        assertThat(send("GET", "/api/ledger", null, null, null).statusCode()).isEqualTo(401);
         assertThat(send("GET", "/api/ledger", null, admin, null).body()).containsPattern("\"profileAt\":\"20");
 
         // Saving without "submit" (or by the admin) stays quiet, and a full admin save keeps the name and the saved time.
@@ -81,9 +88,9 @@ class ProfileRequestTest {
         assertThat(send("PUT", "/api/players/p1/profile", "{\"name\":\"rizwan\"}", null, "p1").statusCode()).isEqualTo(400);
         assertThat(send("PUT", "/api/players/p1/profile", "{\"name\":\"  \"}", null, "p1").statusCode()).isEqualTo(400);
         assertThat(send("PUT", "/api/players/p1/profile", "{\"name\":\"Babar  Azam (Roxy)\",\"submit\":true}", null, "p1").statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/ledger", null, null, null).body()).contains("\"name\":\"Babar Azam (Roxy)\"");
+        assertThat(send("GET", "/api/ledger", null, admin, null).body()).contains("\"name\":\"Babar Azam (Roxy)\"");
         assertThat(send("GET", "/api/notifications/admin", null, admin, null).body()).contains("Babar Azam (Roxy) updated their profile").contains("name changed from Babar");
-        String after = send("GET", "/api/ledger", null, null, null).body();
+        String after = send("GET", "/api/ledger", null, admin, null).body();
         assertThat(after).contains("\"jerseyName\":\"BABAR\"").contains("\"jersey\":\"56\"");
     }
 }
