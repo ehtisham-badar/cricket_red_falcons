@@ -42,21 +42,16 @@
     <h1 class="wordmark">Red Falcons</h1>
     <p class="tagline">Cricket Club &middot; Team Ledger</p>
 
-    <!-- Players: email and password (sign in, create an account, forgot password); drawn by app.js -->
-    <div id="acct" class="acct"></div>
-
-    <!-- The admin and managers sign in as before: the admin key or the manager's phrase -->
-    <form id="login-form" class="login" autocomplete="off" hidden>
+    <form id="login-form" class="login" autocomplete="off">
       <button type="button" id="continue-btn" class="btn btn-ghost continue" hidden></button>
-      <label for="login-name" class="login-label">Admin key or manager phrase</label>
+      <label for="login-name" class="login-label">Enter your name</label>
       <div class="login-row">
-        <input id="login-name" name="name" type="password" maxlength="60" placeholder="Admin key or phrase" autocapitalize="off" spellcheck="false" required>
+        <input id="login-name" name="name" type="text" maxlength="60" placeholder="Your name" autocapitalize="words" spellcheck="false" required>
         <button type="submit" class="btn btn-primary">Enter</button>
       </div>
       <p id="login-error" class="login-error" role="alert"></p>
-      <button type="button" class="lang-link" data-action="acct-mode" data-mode="signin">← Back to player sign in</button>
+      <button type="button" class="lang-link" data-lang-toggle></button>
     </form>
-    <button type="button" class="lang-link splash-lang" data-lang-toggle></button>
 
     <!-- Second step for the admin when two-factor is on -->
     <form id="code-form" class="login code-step" autocomplete="off" hidden>

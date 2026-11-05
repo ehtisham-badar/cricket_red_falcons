@@ -31,22 +31,9 @@ class LedgerApiTest {
 
     private final HttpClient http = HttpClient.newHttpClient();
 
-    /** Signs up a player account; its name asks for that squad player and the admin approves. Returns the session token. */
-    private String signup(String name, String email, String admin) throws Exception {
-        String body = send("POST", "/api/account/signup", "{\"email\":\"" + email + "\",\"password\":\"secret123\",\"name\":\"" + name + "\"}", null).body();
-        assertThat(body).contains("\"pendingPlayerName\":\"" + name + "\"");
-        String id = body.replaceAll("(?s).*?\"id\":\"([^\"]+)\".*", "$1");
-        assertThat(send("POST", "/api/account/users/" + id + "/approve", null, admin).body()).contains("\"playerName\":\"" + name + "\"");
-        return body.replaceAll(".*\"token\":\"([0-9a-f]+)\".*", "$1");
-    }
-
-    private HttpResponse<String> asPlayer(String userToken) throws Exception {
-        return asPlayer(userToken, "/api/ledger");
-    }
-
-    private HttpResponse<String> asPlayer(String userToken, String path) throws Exception {
-        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
-                .header("X-User-Token", userToken).GET().build(), HttpResponse.BodyHandlers.ofString());
+    private HttpResponse<String> viewerGet(String viewer) throws Exception {
+        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/ledger"))
+                .header("X-Viewer", viewer).GET().build(), HttpResponse.BodyHandlers.ofString());
     }
 
     private HttpResponse<String> send(String method, String path, String body, String token) throws Exception {
@@ -71,15 +58,7 @@ class LedgerApiTest {
         HttpResponse<String> saved = send("PUT", "/api/ledger", STATE, token);
         assertThat(saved.statusCode()).isEqualTo(200);
 
-        // The ledger is only for the admin, managers and signed-in squad players.
-        assertThat(send("GET", "/api/ledger", null, null).statusCode()).isEqualTo(401);
-        String babar = signup("Babar", "babar@example.com", token);
-        assertThat(asPlayer(babar).statusCode()).isEqualTo(200);
-        // A browser can't claim to be a player any more: X-Viewer alone is ignored.
-        assertThat(http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/ledger")).header("X-Viewer", "p1").GET().build(),
-                HttpResponse.BodyHandlers.ofString()).statusCode()).isEqualTo(401);
-
-        String loaded = send("GET", "/api/ledger", null, token).body();
+        String loaded = send("GET", "/api/ledger", null, null).body();
         assertThat(loaded)
                 .contains("\"name\":\"Babar\"")
                 .contains("\"m1\":true")
@@ -102,7 +81,7 @@ class LedgerApiTest {
                  "tournament":{"fee":"65000"}}
                 """;
         assertThat(send("PUT", "/api/ledger", v3, token).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/ledger", null, token).body())
+        assertThat(send("GET", "/api/ledger", null, null).body())
                 .contains("\"tournament\":{\"name\":\"\",\"fee\":\"65000\",\"advance\":\"\",\"payments\":[],\"matchCount\":5}")
                 .contains("\"name\":\"Rizwan\",\"role\":\"\",\"paid\":\"2000\",\"tournament\":false")
                 // "Divide money" is saved per player; off unless set
@@ -120,21 +99,21 @@ class LedgerApiTest {
                 "\"tournament\":{\"fee\":\"65000\"},\"charges\":[{\"id\":\"c1\",\"title\":\" Shirt \",\"amount\":\"2500\",\"players\":[\"p2\",\"ghost\",\"p2\",\"p1\"],\"received\":[\"p1\",\"ghost\",\"p1\"]}]");
         assertThat(send("PUT", "/api/ledger", withCharges, token).statusCode()).isEqualTo(200);
         String charged = "\"charges\":[{\"id\":\"c1\",\"title\":\"Shirt\",\"amount\":\"2500\",\"players\":[\"p2\",\"p1\"],\"received\":[\"p1\"]}]";
-        assertThat(send("GET", "/api/ledger", null, token).body()).contains(charged);
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains(charged);
         assertThat(send("PUT", "/api/ledger", v3, token).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/ledger", null, token).body()).contains(charged);
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains(charged);
 
         // Money sent to the shirt maker is its own list, apart from management; a save without it keeps it.
         String withShirt = v3.replace("\"tournament\":{\"fee\":\"65000\"}",
                 "\"tournament\":{\"fee\":\"65000\"},\"shirtPayments\":[{\"id\":\"s1\",\"date\":\"2026-10-30\",\"amount\":\"10000\",\"method\":\"Cash\",\"note\":\"Advance\"},{\"id\":\"s1\",\"amount\":\"5\"}]");
         assertThat(send("PUT", "/api/ledger", withShirt, token).statusCode()).isEqualTo(200);
         String shirtSent = "\"shirtPayments\":[{\"id\":\"s1\",\"date\":\"2026-10-30\",\"amount\":\"10000\",\"method\":\"Cash\",\"note\":\"Advance\"}]";
-        String afterShirt = send("GET", "/api/ledger", null, token).body();
+        String afterShirt = send("GET", "/api/ledger", null, null).body();
         assertThat(afterShirt).contains(shirtSent).contains("\"tournament\":{\"name\":\"\",\"fee\":\"65000\",\"advance\":\"\",\"payments\":[]");
         assertThat(send("PUT", "/api/ledger", v3, token).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/ledger", null, token).body()).contains(shirtSent);
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains(shirtSent);
         assertThat(send("PUT", "/api/ledger", v3.replace("\"tournament\":{\"fee\":\"65000\"}", "\"tournament\":{\"fee\":\"65000\"},\"shirtPayments\":[]"), token).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/ledger", null, token).body()).contains("\"shirtPayments\":[]");
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"shirtPayments\":[]");
 
         // League fee name, advance, transfers to the tournament management and the payment account round-trip.
         String withManagement = """
@@ -143,7 +122,7 @@ class LedgerApiTest {
                  "settings":{"payBank":"NayaPay","payTitle":"Team Admin","payAccount":"03001234567"}}
                 """;
         assertThat(send("PUT", "/api/ledger", withManagement, token).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/ledger", null, token).body()).contains(
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains(
                 "\"tournament\":{\"name\":\"Hundred Premier League\",\"fee\":\"65000\",\"advance\":\"1200\",\"payments\":[{\"id\":\"m1\",\"date\":\"2026-10-05\",\"amount\":\"20000\",\"method\":\"Bank transfer\",\"note\":\"First instalment\"}],\"matchCount\":6}")
                 .contains("\"payBank\":\"NayaPay\",\"payTitle\":\"Team Admin\",\"payAccount\":\"03001234567\"");
 
@@ -155,8 +134,7 @@ class LedgerApiTest {
                             {"id":"p2","name":"Rizwan","paid":"2000","att":{}}]}
                 """;
         assertThat(send("PUT", "/api/ledger", withPayments, token).statusCode()).isEqualTo(200);
-        String rizwan = signup("Rizwan", "rizwan@example.com", token);
-        assertThat(send("GET", "/api/ledger", null, token).body())
+        assertThat(send("GET", "/api/ledger", null, null).body())
                 .contains("\"paid\":\"2000.5\"")
                 .contains("{\"id\":\"x1\",\"date\":\"2026-10-12\",\"amount\":\"1500\",\"method\":\"Cash\",\"note\":\"first\"}")
                 .contains("{\"id\":\"x2\",\"date\":\"\",\"amount\":\"500.5\"")
@@ -170,10 +148,10 @@ class LedgerApiTest {
                  "settings":{"viewerAccess":"own"}}
                 """;
         assertThat(send("PUT", "/api/ledger", privateLedger, token).statusCode()).isEqualTo(200);
-        assertThat(asPlayer(rizwan).body()).contains("\"viewerAccess\":\"own\"").contains("\"900\"").doesNotContain("\"700\"");
-        assertThat(asPlayer(babar).body()).contains("\"amount\":\"700\"").doesNotContain("\"900\"");
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"viewerAccess\":\"own\"").doesNotContain("\"700\"").doesNotContain("\"900\"");
+        assertThat(viewerGet("p1").body()).contains("\"amount\":\"700\"").doesNotContain("\"900\"");
         // Who has sent money for an order: a viewer only learns about themselves.
-        assertThat(asPlayer(babar).body()).contains("\"players\":[\"p1\",\"p2\"],\"received\":[\"p1\"]");
+        assertThat(viewerGet("p1").body()).contains("\"players\":[\"p1\",\"p2\"],\"received\":[\"p1\"]");
         assertThat(send("GET", "/api/ledger", null, token).body()).contains("\"received\":[\"p1\",\"p2\"]");
         assertThat(send("GET", "/api/ledger", null, token).body()).contains("\"700\"").contains("\"900\"");
         assertThat(send("PUT", "/api/ledger", "{\"players\":[],\"settings\":{\"viewerAccess\":\"all\"}}", token).statusCode()).isEqualTo(200);
@@ -183,7 +161,7 @@ class LedgerApiTest {
                 {"players":[{"id":"p1","name":"Babar","att":{},"payments":[],"phone":"03119876543"}]}
                 """;
         assertThat(send("PUT", "/api/ledger", withPhone, token).statusCode()).isEqualTo(200);
-        assertThat(asPlayer(babar).body()).doesNotContain("03119876543").contains("\"phone\":null");
+        assertThat(send("GET", "/api/ledger", null, null).body()).doesNotContain("03119876543").contains("\"phone\":null");
         assertThat(send("GET", "/api/ledger", null, token).body()).contains("\"phone\":\"03119876543\"");
         assertThat(send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{}}]}", token).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/ledger", null, token).body()).contains("\"phone\":\"03119876543\"");
@@ -196,10 +174,10 @@ class LedgerApiTest {
                  "twelfth":{"m1":"p2","m2":"p1","m3":"ghost","t1":"p2"}}
                 """;
         assertThat(send("PUT", "/api/ledger", withTwelfth, token).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/ledger", null, token).body()).contains("\"twelfth\":{\"m1\":\"p2\",\"m2\":\"p1\"}");
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"twelfth\":{\"m1\":\"p2\",\"m2\":\"p1\"}");
         // A save without twelfth keeps them; one where the 12th man now plays drops that match.
         assertThat(send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{\"m1\":true,\"m2\":true}},{\"id\":\"p2\",\"name\":\"Rizwan\",\"att\":{}}]}", token).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/ledger", null, token).body()).contains("\"twelfth\":{\"m1\":\"p2\"}");
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"twelfth\":{\"m1\":\"p2\"}");
 
         // A batting order keeps only that match's players, once each; a save without it keeps it.
         String withOrder = """
@@ -208,9 +186,9 @@ class LedgerApiTest {
                  "battingOrder":{"m1":["p2","p3","p1","p2"],"t1":["p1"]}}
                 """;
         assertThat(send("PUT", "/api/ledger", withOrder, token).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/ledger", null, token).body()).contains("\"battingOrder\":{\"m1\":[\"p2\",\"p1\"]}");
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"battingOrder\":{\"m1\":[\"p2\",\"p1\"]}");
         assertThat(send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{\"m1\":true}},{\"id\":\"p2\",\"name\":\"Rizwan\",\"att\":{\"m1\":true}}]}", token).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/ledger", null, token).body()).contains("\"battingOrder\":{\"m1\":[\"p2\",\"p1\"]}");
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"battingOrder\":{\"m1\":[\"p2\",\"p1\"]}");
 
         // Match stats: admin only, kept per match and player; negatives clamp to 0, unknown players drop,
         // and a save without stats keeps them.
@@ -224,28 +202,28 @@ class LedgerApiTest {
         String statsJson = "\"stats\":{\"m1\":{\"p1\":{\"balls\":18,\"ones\":5,\"twos\":0,\"threes\":0,\"fours\":3,\"sixes\":1,\"out\":true,"
                 + "\"bowlBalls\":10,\"bowlRuns\":14,\"wickets\":2,\"catches\":1,\"drops\":0,\"misfields\":0,\"goodFielding\":0,\"wides\":2,\"noBalls\":1,\"dismissal\":\"\",\"bowler\":\"\",\"fielder\":\"\",\"fowScore\":null,\"fowOver\":\"\"}}}";
         assertThat(send("GET", "/api/ledger", null, token).body()).contains(statsJson).doesNotContain("ghost");
-        assertThat(asPlayer(babar).body()).contains("\"stats\":{}");
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"stats\":{}");
         assertThat(send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{\"m1\":true}}]}", token).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/ledger", null, token).body()).contains(statsJson);
         // With stats shown to everyone, viewers get them too.
         assertThat(send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{\"m1\":true}}],\"settings\":{\"statsVisibility\":\"all\"}}", token).statusCode()).isEqualTo(200);
-        assertThat(asPlayer(babar).body()).contains(statsJson).contains("\"statsVisibility\":\"all\"").contains("\"daysVisibility\":\"admin\"");
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains(statsJson).contains("\"statsVisibility\":\"all\"").contains("\"daysVisibility\":\"admin\"");
         assertThat(send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{\"m1\":true}}],\"settings\":{\"statsVisibility\":\"admin\"}}", token).statusCode()).isEqualTo(200);
         // The Summary cards: Next match is on and the fixtures calendar is off until the admin says otherwise.
-        String cards = send("GET", "/api/ledger", null, token).body();
+        String cards = send("GET", "/api/ledger", null, null).body();
         assertThat(cards).contains("\"showNextMatch\":true").contains("\"showFixtures\":false").contains("\"adminShowFixtures\":true");
         assertThat(send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{}}],\"settings\":{\"showNextMatch\":false,\"showFixtures\":true}}", token).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/ledger", null, token).body()).contains("\"showNextMatch\":false").contains("\"showFixtures\":true");
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"showNextMatch\":false").contains("\"showFixtures\":true");
         // The admin can hide the fixtures calendar from themselves too; it doesn't change what players see.
         assertThat(send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{}}],\"settings\":{\"adminShowFixtures\":false}}", token).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/ledger", null, token).body()).contains("\"adminShowFixtures\":false").contains("\"showFixtures\":true");
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"adminShowFixtures\":false").contains("\"showFixtures\":true");
         send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{}}],\"settings\":{\"currency\":\"Rs \"}}", token);
-        assertThat(send("GET", "/api/ledger", null, token).body()).contains("\"showNextMatch\":false").contains("\"showFixtures\":true");
-        assertThat(asPlayer(babar).body()).contains("\"stats\":{}");
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"showNextMatch\":false").contains("\"showFixtures\":true");
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"stats\":{}");
 
         // Removing a match drops its attendance, 12th man and batting order.
         assertThat(send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{\"m1\":true}},{\"id\":\"p2\",\"name\":\"Rizwan\",\"att\":{\"m1\":true}}],\"matches\":[]}", token).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/ledger", null, token).body())
+        assertThat(send("GET", "/api/ledger", null, null).body())
                 .contains("\"matches\":[]").contains("\"twelfth\":{}").contains("\"battingOrder\":{}").doesNotContain("\"m1\":true");
         assertThat(send("GET", "/api/ledger", null, token).body()).contains("\"stats\":{}");
 
@@ -256,33 +234,33 @@ class LedgerApiTest {
         String archived = send("POST", "/api/seasons", "{\"name\":\"Spring Cup\"}", token).body();
         assertThat(archived).contains("\"name\":\"Spring Cup\"");
         String seasonId = archived.replaceAll(".*\"id\":\"([^\"]+)\".*", "$1");
-        assertThat(send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{}}]}", token).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/seasons", null, token).body()).contains("\"id\":\"" + seasonId + "\"");
+        assertThat(send("PUT", "/api/ledger", "{\"players\":[]}", token).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/seasons", null, null).body()).contains("\"id\":\"" + seasonId + "\"");
         assertThat(send("GET", "/api/seasons/" + seasonId, null, token).body()).contains("Fakhar").contains("03001112223");
-        assertThat(asPlayer(babar, "/api/seasons/" + seasonId).body()).contains("Fakhar").doesNotContain("03001112223");
+        assertThat(send("GET", "/api/seasons/" + seasonId, null, null).body()).contains("Fakhar").doesNotContain("03001112223");
         assertThat(send("DELETE", "/api/seasons/" + seasonId, null, null).statusCode()).isEqualTo(403);
         assertThat(send("DELETE", "/api/seasons/" + seasonId, null, token).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/seasons/" + seasonId, null, token).statusCode()).isEqualTo(404);
 
         // Announcing a match's Playing XI is kept, also by saves that don't send the flag.
         assertThat(send("PUT", "/api/ledger", "{\"players\":[],\"matches\":[{\"id\":\"mA\",\"announced\":true}]}", token).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/ledger", null, token).body()).contains("\"id\":\"mA\"").contains("\"announced\":true");
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"id\":\"mA\"").contains("\"announced\":true");
         assertThat(send("PUT", "/api/ledger", "{\"players\":[],\"matches\":[{\"id\":\"mA\"}]}", token).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/ledger", null, token).body()).contains("\"announced\":true");
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"announced\":true");
         assertThat(send("PUT", "/api/ledger", "{\"players\":[],\"matches\":[{\"id\":\"mA\",\"announced\":false,\"result\":\"\",\"twelfthPlayed\":false,\"extras\":\"\",\"twelfthShares\":false}]}", token).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/ledger", null, token).body()).contains("\"announced\":false");
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"announced\":false");
 
         // A 12th man who only fields isn't flagged; once he bats or bowls, every viewer is told (stats or not).
         String tw = "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{\"mT\":true}},{\"id\":\"p2\",\"name\":\"Rizwan\",\"att\":{}}],"
                 + "\"matches\":[{\"id\":\"mT\"}],\"twelfth\":{\"mT\":\"p2\"},\"stats\":{\"mT\":{\"p2\":{%s}}},\"settings\":{\"statsVisibility\":\"admin\"}}";
         assertThat(send("PUT", "/api/ledger", String.format(tw, "\"catches\":2"), token).statusCode()).isEqualTo(200);
-        assertThat(asPlayer(babar).body()).contains("\"twelfthPlayed\":false").contains("\"stats\":{}");
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"twelfthPlayed\":false").contains("\"stats\":{}");
         assertThat(send("PUT", "/api/ledger", String.format(tw, "\"balls\":6,\"fours\":1"), token).statusCode()).isEqualTo(200);
-        assertThat(asPlayer(babar).body()).contains("\"twelfthPlayed\":true").contains("\"stats\":{}");
+        assertThat(send("GET", "/api/ledger", null, null).body()).contains("\"twelfthPlayed\":true").contains("\"stats\":{}");
 
         // Replacing again with fewer players removes the old ones and their attendance.
         assertThat(send("PUT", "/api/ledger", "{\"players\":[]}", token).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/ledger", null, token).body())
+        assertThat(send("GET", "/api/ledger", null, null).body())
                 .doesNotContain("Babar")
                 .contains("\"trainings\":[{\"id\":\"t1\",\"desc\":\"\"}]")
                 .contains("\"expenses\":{}");

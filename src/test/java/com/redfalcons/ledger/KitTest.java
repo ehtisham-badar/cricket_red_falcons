@@ -22,20 +22,13 @@ class KitTest {
     int port;
 
     private final HttpClient http = HttpClient.newHttpClient();
-    private PlayerLogins logins;
-
-    /** Acting as a squad player means signing in as one. */
-    private PlayerLogins logins() {
-        if (logins == null) logins = new PlayerLogins(port, "test-key");
-        return logins;
-    }
 
     private HttpResponse<String> send(String method, String path, String body, String admin, String viewer) throws Exception {
         HttpRequest.Builder b = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
                 .header("Content-Type", "application/json")
                 .method(method, body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body));
         if (admin != null) b.header("X-Admin-Token", admin);
-        if (viewer != null) b.header("X-User-Token", logins().token(viewer));
+        if (viewer != null) b.header("X-Viewer", viewer);
         return http.send(b.build(), HttpResponse.BodyHandlers.ofString());
     }
 

@@ -23,20 +23,13 @@ class EngageTest {
     int port;
 
     private final HttpClient http = HttpClient.newHttpClient();
-    private PlayerLogins logins;
-
-    /** Acting as a squad player means signing in as one. */
-    private PlayerLogins logins() {
-        if (logins == null) logins = new PlayerLogins(port, "test-key");
-        return logins;
-    }
 
     private HttpResponse<String> send(String method, String path, String body, String admin, String viewer) throws Exception {
         HttpRequest.Builder b = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
                 .header("Content-Type", "application/json")
                 .method(method, body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body));
         if (admin != null) b.header("X-Admin-Token", admin);
-        if (viewer != null) b.header("X-User-Token", logins().token(viewer));
+        if (viewer != null) b.header("X-Viewer", viewer);
         return http.send(b.build(), HttpResponse.BodyHandlers.ofString());
     }
 
@@ -80,7 +73,7 @@ class EngageTest {
         assertThat(send("PUT", "/api/ledger", ledger("win", true), admin, null).statusCode()).isEqualTo(200);
         assertThat(send("PUT", "/api/engage/predict/m1", "{\"pick\":\"loss\"}", null, "p1").statusCode()).isEqualTo(400);
         assertThat(send("GET", "/api/engage", null, null, null).body()).contains("\"leaderboard\":[{\"playerId\":\"p1\",\"points\":1,\"correct\":1,\"played\":1}]");
-        assertThat(send("GET", "/api/ledger", null, admin, null).body()).contains("\"result\":\"win\"");
+        assertThat(send("GET", "/api/ledger", null, null, null).body()).contains("\"result\":\"win\"");
         // The admin still sees who guessed a finished match, with its result; players don't get that row.
         assertThat(send("GET", "/api/engage", null, admin, null).body()).contains("\"finished\":true,\"result\":\"win\"");
         assertThat(send("GET", "/api/engage", null, null, "p1").body()).doesNotContain("\"finished\":true");
