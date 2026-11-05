@@ -122,6 +122,26 @@ public class LedgerService {
     }
 
     /**
+     * For a signed-in account the admin hasn't linked to a squad player yet: just enough for the Home tab (the
+     * squad's names, matches and results, the settings that shape Home). No money, payments, attendance,
+     * expenses, orders or stats, and no payment account details.
+     */
+    @Transactional(readOnly = true)
+    public LedgerDto loadForGuest() {
+        LedgerDto full = load();
+        List<PlayerDto> ps = full.players() == null ? List.of() : full.players().stream().map(p -> new PlayerDto(p.id(), p.name(), p.role(), "",
+                p.tournament(), Map.of(), List.of(), null, p.battingHand(), p.bowlingArm(), p.bowlingStyle(), p.keeper(), p.captain(), p.viceCaptain(),
+                p.jersey(), p.photoAt(), p.jerseyName(), "", "", "", p.divide())).toList();
+        SettingsDto s = full.settings();
+        SettingsDto st = s == null ? null : new SettingsDto(s.currency(), s.maxPerMatch(), s.roundUp(), null, null, null, "own",
+                "admin", "admin", s.showNextMatch(), s.showFixtures(), s.adminShowFixtures());
+        TournamentDto t = full.tournament();
+        TournamentDto tour = t == null ? null : new TournamentDto(t.name(), "", "", List.of(), t.matchCount());
+        return new LedgerDto(full.app(), full.version(), full.savedAt(), ps, Map.of(), full.trainings(), Map.of(), tour, st,
+                Map.of(), Map.of(), full.matches(), Map.of(), List.of(), List.of());
+    }
+
+    /**
      * What a viewer may see of a ledger (the live one or an archived season): never phone numbers; with
      * viewer access "own" only the payments of the player they say they are ({@code viewerId}); stats only
      * when they are shown to everyone. Attendance stays, since everyone's shares depend on it.

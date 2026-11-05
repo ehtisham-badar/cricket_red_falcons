@@ -5,8 +5,8 @@ import jakarta.persistence.*;
 /**
  * A player's sign-in: email, password and full name. When the name is a squad player's (or they confirm
  * A name that is exactly a squad player's links the account ({@code playerId}) and they see the app as that
- * player; a near match they confirm asks for the player ({@code pendingPlayerId}) and waits for the admin's
- * approval. Until then, or without a squad match, they see only a waiting / "coming soon" screen. The password
+ * player. Any other account sees only the Home tab until the admin links it to a squad player from Requests.
+ * ({@code pendingPlayerId} is a player they once asked to be, kept only as the admin's suggestion.) The password
  * is stored as a salted hash.
  */
 @Entity
@@ -34,6 +34,10 @@ public class UserAccount {
     /** The squad player this account asked to be, waiting for the admin's approval ('' when none). */
     @Column(name = "pending_player_id", length = 64)
     private String pendingPlayerId = "";
+
+    /** The admin said this account isn't anyone in the squad: it stays on Home only, off the Requests list. */
+    @Column(name = "dismissed")
+    private Boolean dismissed = false;
 
     /** Set when the admin has reset the password: the next sign-in must choose a new one. */
     @Column(name = "must_change", nullable = false)
@@ -76,6 +80,8 @@ public class UserAccount {
     public String getPasswordHash() { return passwordHash; }
     public String getPlayerId() { return playerId == null ? "" : playerId; }
     public String getPendingPlayerId() { return pendingPlayerId == null ? "" : pendingPlayerId; }
+    public boolean isDismissed() { return Boolean.TRUE.equals(dismissed); }
+    public void setDismissed(boolean dismissed) { this.dismissed = dismissed; }
     public boolean isMustChange() { return mustChange; }
     public String getCreatedAt() { return createdAt; }
     public String getLastLoginAt() { return lastLoginAt == null ? "" : lastLoginAt; }

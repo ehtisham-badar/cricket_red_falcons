@@ -2375,3 +2375,11 @@ a.btn { text-decoration: none; }
 .req-page { display: flex; flex-direction: column; gap: 10px; max-width: 760px; }
 .req-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; color: var(--gold); }
 .req-empty p { margin: 0; color: var(--muted); }
+
+/* Accounts not linked yet: Home only */
+.guest-note { display: flex; align-items: center; gap: 14px; border-color: rgba(var(--gold-rgb), .45); background: linear-gradient(90deg, rgba(var(--gold-rgb), .12), rgba(var(--hi-rgb), .02)); color: var(--gold); }
+.guest-note > div { display: flex; flex-direction: column; gap: 2px; color: var(--text); }
+.guest-note small { color: var(--muted); line-height: 1.45; }
+.link-pick { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 10px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.link-pick .select { text-transform: none; letter-spacing: 0; font-size: 15px; max-width: 360px; }
+.acc-hint { margin: -4px 0 12px; }

@@ -20,9 +20,9 @@ import java.util.Map;
 import java.util.function.Supplier;
 
 /**
- * Player accounts: sign up, sign in (password or biometrics), the "Are you …?" step, password changes and
- * "forgot password". The admin's side: the list of accounts with their sign-in record, password resets,
- * linking an account to a squad player, and removing accounts.
+ * Player accounts: sign up, sign in (password or biometrics), password changes and "forgot password". The
+ * admin's side: new accounts to link to a squad player, the list of accounts with their sign-in record,
+ * password resets and removing accounts.
  */
 @RestController
 @RequestMapping("/api/account")
@@ -44,9 +44,6 @@ public class AccountController {
     }
 
     public record LoginBody(String email, String password, Boolean remember, String label) {
-    }
-
-    public record ClaimBody(String playerId) {
     }
 
     public record PasswordBody(String current, String next) {
@@ -100,15 +97,6 @@ public class AccountController {
         out.put("possible", a.isMustChange() ? List.of() : accounts.possibleFor(a).stream().map(AccountController::squad).toList());
         out.put("passkeys", accounts.passkeysOf(a).stream().map(AccountController::passkey).toList());
         return ResponseEntity.ok(out);
-    }
-
-    /** "Yes, I'm …": link to a squad player the account's name may be. */
-    @PostMapping("/claim")
-    public ResponseEntity<?> claim(HttpServletRequest req, @RequestBody ClaimBody b) {
-        UserAccount a = account(req);
-        if (a == null) return signIn();
-        if (a.isMustChange()) return mustChange();
-        return run(() -> me(accounts.claim(a, b == null ? null : b.playerId())));
     }
 
     @PutMapping("/password")
@@ -239,23 +227,22 @@ public class AccountController {
         }).toList());
     }
 
-    /** Accounts waiting for the admin to approve which squad player they are. */
+    /** New accounts not linked to a squad player yet, for the admin's Requests, each with a suggested player. */
     @GetMapping("/links")
     public ResponseEntity<?> links(@RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token) {
         if (!auth.isValidToken(token)) return adminOnly();
-        return ResponseEntity.ok(accounts.pendingLinks().stream().map(this::me).toList());
+        return ResponseEntity.ok(accounts.unlinked().stream().map(a -> {
+            Map<String, Object> m = me(a);
+            m.put("suggested", accounts.suggestionFor(a));
+            return m;
+        }).toList());
     }
 
-    @PostMapping("/users/{id}/approve")
-    public ResponseEntity<?> approve(@RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token, @PathVariable String id) {
+    /** "Not in the squad": the account stays on Home only and leaves the Requests list. */
+    @PostMapping("/users/{id}/dismiss")
+    public ResponseEntity<?> dismiss(@RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token, @PathVariable String id) {
         if (!auth.isValidToken(token)) return adminOnly();
-        return run(() -> me(accounts.approveLink(id)));
-    }
-
-    @PostMapping("/users/{id}/decline")
-    public ResponseEntity<?> declineLink(@RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token, @PathVariable String id) {
-        if (!auth.isValidToken(token)) return adminOnly();
-        return run(() -> me(accounts.declineLink(id)));
+        return run(() -> me(accounts.dismiss(id)));
     }
 
     @PostMapping("/requests/{id}/decline")
@@ -280,10 +267,7 @@ public class AccountController {
         var p = pid.isEmpty() ? java.util.Optional.<com.redfalcons.ledger.model.Player>empty() : players.findById(pid);
         m.put("playerId", p.isPresent() ? pid : "");
         m.put("playerName", p.map(x -> x.getName()).orElse(""));
-        String pending = a.getPendingPlayerId();
-        var pp = pending.isEmpty() ? java.util.Optional.<com.redfalcons.ledger.model.Player>empty() : players.findById(pending);
-        m.put("pendingPlayerId", pp.isPresent() ? pending : "");
-        m.put("pendingPlayerName", pp.map(x -> x.getName()).orElse(""));
+        m.put("dismissed", a.isDismissed());
         m.put("mustChange", a.isMustChange());
         m.put("createdAt", a.getCreatedAt());
         return m;

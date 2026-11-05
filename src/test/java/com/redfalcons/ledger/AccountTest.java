@@ -68,58 +68,51 @@ class AccountTest {
         HttpResponse<String> exact = signup("Roxy@Example.com ", "secret123", "  ehtisham   BADAR ");
         assertThat(exact.statusCode()).isEqualTo(200);
         assertThat(exact.body()).contains("\"email\":\"roxy@example.com\"").contains("\"name\":\"Ehtisham Badar\"")
-                .contains("\"playerId\":\"p1\"").contains("\"pendingPlayerId\":\"\"").contains("\"taken\":false");
+                .contains("\"playerId\":\"p1\"").contains("\"dismissed\":false").contains("\"taken\":false");
         String roxy = field(exact.body(), "token");
         assertThat(send("GET", "/api/ledger", null, null, roxy).statusCode()).isEqualTo(200);
-        // Nothing to approve for it; only the admin sees the list.
+        // Nothing to link for it; only the admin sees the list.
         assertThat(send("GET", "/api/account/links", null, null, roxy).statusCode()).isEqualTo(403);
         assertThat(send("GET", "/api/account/links", null, admin, null).body()).isEqualTo("[]");
-        assertThat(send("POST", "/api/account/users/" + field(exact.body(), "id") + "/approve", null, admin, null).statusCode()).isEqualTo(400);
 
         // The same email can't sign up twice; weak passwords and bad emails are refused.
         assertThat(signup("roxy@example.com", "secret123", "Someone").statusCode()).isEqualTo(400);
         assertThat(signup("new@example.com", "123", "Someone").body()).contains("at least 6");
         assertThat(signup("not-an-email", "secret123", "Someone").statusCode()).isEqualTo(400);
 
-        // Only a first name: not linked yet, sees nothing, and is asked "Are you Talha Ramzan?".
+        // Only a first name: an account at once, but just the Home tab's share of the ledger (no money, no stats).
         HttpResponse<String> partial = signup("talha@example.com", "secret123", "Talha");
         assertThat(partial.body()).contains("\"playerId\":\"\"").contains("\"possible\":[{\"id\":\"p4\",\"name\":\"Talha Ramzan\"}]");
         String talha = field(partial.body(), "token");
-        assertThat(send("GET", "/api/ledger", null, null, talha).statusCode()).isEqualTo(401);
-        assertThat(send("GET", "/api/account/me", null, null, talha).body()).contains("\"possible\":[{\"id\":\"p4\",\"name\":\"Talha Ramzan\"}]");
-        // They can't claim someone their name isn't; "yes" asks for that player, and the admin approves it.
-        assertThat(send("POST", "/api/account/claim", "{\"playerId\":\"p5\"}", null, talha).statusCode()).isEqualTo(400);
-        assertThat(send("POST", "/api/account/claim", "{\"playerId\":\"p4\"}", null, talha).body())
-                .contains("\"playerId\":\"\"").contains("\"pendingPlayerName\":\"Talha Ramzan\"");
-        assertThat(send("GET", "/api/ledger", null, null, talha).statusCode()).isEqualTo(401);
-        assertThat(send("GET", "/api/account/me", null, null, talha).body()).contains("\"possible\":[]");
+        HttpResponse<String> home = send("GET", "/api/ledger", null, null, talha);
+        assertThat(home.statusCode()).isEqualTo(200);
+        assertThat(home.body()).contains("\"name\":\"Talha Ramzan\"").contains("\"expenses\":{}").contains("\"stats\":{}").contains("\"charges\":[]")
+                .contains("\"payAccount\":null").contains("\"payments\":[]").doesNotContain("\"att\":{\"");
+        // The admin sees it in Requests with the player its name suggests, and links it; then it's that player.
         String talhaId = field(partial.body(), "id");
-        assertThat(send("GET", "/api/account/links", null, admin, null).body()).contains("\"email\":\"talha@example.com\"").contains("\"pendingPlayerId\":\"p4\"");
-        assertThat(send("POST", "/api/account/users/" + talhaId + "/approve", null, null, talha).statusCode()).isEqualTo(403);
-        assertThat(send("POST", "/api/account/users/" + talhaId + "/approve", null, admin, null).body())
+        assertThat(send("GET", "/api/account/links", null, admin, null).body()).contains("\"email\":\"talha@example.com\"").contains("\"suggested\":\"p4\"");
+        assertThat(send("PUT", "/api/account/users/" + talhaId + "/player", "{\"playerId\":\"p4\"}", null, talha).statusCode()).isEqualTo(403);
+        assertThat(send("PUT", "/api/account/users/" + talhaId + "/player", "{\"playerId\":\"p4\"}", admin, null).body())
                 .contains("\"name\":\"Talha Ramzan\"").contains("\"playerId\":\"p4\"");
-        assertThat(send("GET", "/api/ledger", null, null, talha).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/account/me", null, null, talha).body()).contains("\"playerId\":\"p4\"");
+        assertThat(send("GET", "/api/account/links", null, admin, null).body()).doesNotContain("talha@example.com");
 
-        // A first name two players share offers both.
+        // A first name two players share offers both as possible matches.
         assertThat(signup("nabeel@example.com", "secret123", "nabeel").body())
                 .contains("{\"id\":\"p2\",\"name\":\"Nabeel Yousaf\"}").contains("{\"id\":\"p3\",\"name\":\"Nabeel Sohail\"}");
 
         // A player already linked can't be taken by another account with the same name.
         HttpResponse<String> copy = signup("fake@example.com", "secret123", "Ehtisham Badar");
         assertThat(copy.body()).contains("\"playerId\":\"\"").contains("\"taken\":true").contains("\"possible\":[]");
-        // Someone not in the squad: an account, but nothing to see ("coming soon").
+        // Someone not in the squad: Home only; "Not in the squad" takes them off the Requests list (Home stays).
         HttpResponse<String> stranger = signup("guest@example.com", "secret123", "Imran Khan");
-        assertThat(stranger.body()).contains("\"playerId\":\"\"").contains("\"pendingPlayerId\":\"\"").contains("\"possible\":[]").contains("\"taken\":false");
-
-        // A near match waits; a player someone asked for can't be asked for again; a declined request stays unlinked.
-        HttpResponse<String> nabeelY = signup("nabeel.y.p@example.com", "secret123", "Yousaf");
-        String nyToken = field(nabeelY.body(), "token");
-        assertThat(send("POST", "/api/account/claim", "{\"playerId\":\"p2\"}", null, nyToken).body()).contains("\"pendingPlayerId\":\"p2\"");
-        assertThat(signup("nabeel.copy@example.com", "secret123", "Nabeel Yousaf").body()).contains("\"playerId\":\"\"").contains("\"taken\":true");
-        assertThat(send("POST", "/api/account/users/" + field(nabeelY.body(), "id") + "/decline", null, admin, null).body()).contains("\"pendingPlayerId\":\"\"");
-        assertThat(send("GET", "/api/account/links", null, admin, null).body()).doesNotContain("nabeel.y.p@example.com");
-        assertThat(send("GET", "/api/ledger", null, null, nyToken).statusCode()).isEqualTo(401);
-        send("DELETE", "/api/account/users/" + field(nabeelY.body(), "id"), null, admin, null);
+        assertThat(stranger.body()).contains("\"playerId\":\"\"").contains("\"possible\":[]").contains("\"taken\":false");
+        String links = send("GET", "/api/account/links", null, admin, null).body();
+        assertThat(links).contains("\"email\":\"guest@example.com\"").contains("\"email\":\"fake@example.com\"");
+        assertThat(send("POST", "/api/account/users/" + field(stranger.body(), "id") + "/dismiss", null, null, field(stranger.body(), "token")).statusCode()).isEqualTo(403);
+        assertThat(send("POST", "/api/account/users/" + field(stranger.body(), "id") + "/dismiss", null, admin, null).body()).contains("\"dismissed\":true");
+        assertThat(send("GET", "/api/account/links", null, admin, null).body()).doesNotContain("guest@example.com");
+        assertThat(send("GET", "/api/ledger", null, null, field(stranger.body(), "token")).statusCode()).isEqualTo(200);
 
         // Players change only their own profile.
         assertThat(send("PUT", "/api/players/p1/profile", "{\"battingHand\":\"left\"}", null, roxy).statusCode()).isEqualTo(200);

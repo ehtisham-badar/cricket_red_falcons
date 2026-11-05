@@ -11,5 +11,4 @@ public interface UserAccountRepository extends JpaRepository<UserAccount, String
 
     Optional<UserAccount> findByPlayerId(String playerId);
 
-    List<UserAccount> findByPendingPlayerIdNot(String none);
 }

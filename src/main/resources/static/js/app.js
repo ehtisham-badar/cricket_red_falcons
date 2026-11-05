@@ -24,7 +24,6 @@
   const MGR_KEY = 'rf.manager';              // this browser's pending manager request: { token, name, status }
   const ME_KEY = 'rf.me';                     // viewer's chosen player id, or NOT_ME to show the picker
   const PASSKEY_KEY = 'rf.passkey';          // this device's biometric sign-in: { id, email, name }
-  const NOT_ME_KEY = 'rf.notMe';             // account ids that said "No, that's not me" on this device
   const NOT_ME = '__none';
   const POLL_MS = 15000;
 
@@ -380,6 +379,8 @@
   const isManager = () => !archive && !!(session && session.managerToken);
   // A player signed in with their email; the server knows which squad player they are from that sign-in.
   const isUser = () => !!(session && session.user && session.userToken);
+  // A player account the admin hasn't linked to a squad player yet: it sees the Home tab only.
+  const isGuest = () => isUser() && !session.playerId;
   const canPickXi = d => !!d && d.type === 'match' && (isAdmin() || (isManager() && !d.finished));
   // Plain viewers see a match only once the admin has finished it. A manager also sees open matches (they
   // set the XI there); test matches are the admin's alone.
@@ -1385,12 +1386,19 @@
       ...(inbox ? inbox.access.filter(m => m.status === 'pending').map(m => ({ kind: 'access', at: m.createdAt, m })) : []),
       ...(inbox ? inbox.lineups.map(l => ({ kind: 'lineup', at: l.createdAt, l })) : [])
     ].sort((a, b) => a.at.localeCompare(b.at));
-    const links = (inbox && inbox.links || []).map(a => `<article class="note-card">
-        <div class="note-head"><strong>${esc(a.name)} says they’re ${esc(a.pendingPlayerName)}</strong><small>${esc(a.email)} · signed up ${ago(a.createdAt)}</small></div>
-        <p class="note-detail muted">Approve and their account shows ${esc(a.pendingPlayerName)}’s balance, matches and profile. Decline and they only see the coming soon screen.</p>
-        <div class="note-actions"><button class="btn btn-gold small" data-action="link-approve" data-id="${esc(a.id)}">Approve</button>
-          <button class="btn btn-ghost small" data-action="link-decline" data-id="${esc(a.id)}">Decline</button></div>
-      </article>`).join('');
+    const taken = new Set((accountList || []).map(x => x.playerId).filter(Boolean));
+    const links = (inbox && inbox.links || []).map(a => {
+      const pick = linkPick[a.id] !== undefined ? linkPick[a.id] : (a.suggested || '');
+      return `<article class="note-card">
+        <div class="note-head"><strong>${esc(a.name)} signed up</strong><small>${esc(a.email)} · ${ago(a.createdAt)}</small></div>
+        <p class="note-detail muted">They see the Home tab only until you link them to a squad player.</p>
+        <label class="link-pick"><span>Link to</span><select class="field select" data-input="link-pick" data-id="${esc(a.id)}" aria-label="Squad player for ${esc(a.name)}">
+          <option value="">Choose a squad player…</option>
+          ${state.players.map(p => `<option value="${esc(p.id)}" ${pick === p.id ? 'selected' : ''} ${taken.has(p.id) ? 'disabled' : ''}>${esc(p.name)}${taken.has(p.id) ? ' (has an account)' : p.id === a.suggested ? ' (name match)' : ''}</option>`).join('')}</select></label>
+        <div class="note-actions"><button class="btn btn-gold small" data-action="link-approve" data-id="${esc(a.id)}" ${pick ? '' : 'disabled'}>Link</button>
+          <button class="btn btn-ghost small" data-action="link-decline" data-id="${esc(a.id)}">Not in the squad</button></div>
+      </article>`;
+    }).join('');
     const resets = (inbox && inbox.resets || []).map(r => `<article class="note-card">
         <div class="note-head"><strong>${esc(r.name || r.email)} forgot their password</strong><small>${esc(r.email || '')} · ${ago(r.createdAt)}</small></div>
         ${r.note ? `<p class="note-detail">“${esc(r.note)}”</p>` : ''}
@@ -1437,13 +1445,13 @@
     };
     if (asPage) {
       const waiting = inboxCount();
-      return `${pageHead('Requests', 'Everything waiting for your decision: accounts to approve, password resets, manager requests and lineup changes.')}
+      return `${pageHead('Requests', 'Everything waiting for your decision: new accounts to link, password resets, manager requests and lineup changes.')}
         <div class="req-page">${links}${resets}${inbox === null ? '<p class="muted">Loading…</p>' : items.map(card).join('')}
           ${inbox !== null && !waiting ? `<section class="panel req-empty">${icon('<path d="M20 6 9 17l-5-5"/>', 28)}<p>Nothing waiting. You’re all caught up.</p></section>` : ''}</div>`;
     }
     return `<header class="sheet-head">
         <div><span class="day-kind">Admin</span><h2>Notifications</h2>
-          <p class="muted">New accounts to approve, password resets, manager requests and lineup changes wait here for your decision, and you see when players update their profile.</p></div>
+          <p class="muted">New accounts to link, password resets, manager requests and lineup changes wait here for your decision, and you see when players update their profile.</p></div>
         <button class="icon-btn" data-action="close-sheet" aria-label="Close">${X_ICON}</button>
       </header>
       <div class="sheet-body">${links}${resets}${inbox === null ? '<p class="muted center">Loading…</p>' : items.length ? items.map(card).join('') : (links || resets || (adminUpdates && adminUpdates.length) ? '' : '<p class="muted center">Nothing waiting. You’re all caught up.</p>')}
@@ -1492,8 +1500,15 @@
       const s = await api('GET', '/api/manager/session').catch(() => null);
       if (s && !s.manager) return end('staff', 'Your manager sign-in has ended. Enter your phrase again.');
     } else if (isUser()) {
-      try { await api('GET', '/api/account/me'); } catch (e) {
+      let me;
+      try { me = await api('GET', '/api/account/me'); } catch (e) {
         if (e.status === 401) return end('signin', 'You’ve been signed out. Please sign in again.');
+        return false;
+      }
+      if ((me.playerId || '') !== (session.playerId || '')) {
+        if (me.playerId) toast(`You’re in! Linked to ${me.playerName}.`);
+        await enterApp();
+        return true;
       }
     }
     return false;
@@ -1648,13 +1663,12 @@
   }
 
   // ---------- player accounts: sign in, create an account, forgot password ----------
-  // mode: signin | signup | forgot | sent | claim | newpass | staff (the admin key / manager phrase form)
-  let acct = { mode: 'signin', err: '', email: '', name: '', possible: [], taken: false, busy: false };
+  // mode: signin | signup | forgot | sent | newpass | staff (the admin key / manager phrase form)
+  let acct = { mode: 'signin', err: '', email: '', name: '', busy: false };
   let acctMe = null;                          // GET /api/account/me for the signed-in player
 
   const PERSON_ICON = '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>';
   const FINGER_ICON = '<path d="M12 11c0 3.5-1 6.5-3 9"/><path d="M8.5 8.5A4 4 0 0 1 16 11c0 2-.3 4-1 6"/><path d="M5 9a7 7 0 0 1 14 1.5c0 1.5-.1 3-.4 4.5"/><path d="M12 15c-.3 2-1 3.8-2 5.5"/><path d="M18 19c.4-1 .7-2 .9-3"/>';
-  const notMe = () => readStore(NOT_ME_KEY) || [];
 
   function setAcct(next) {
     acct = { ...acct, err: '', ...next };
@@ -1716,19 +1730,6 @@
         <h2 class="acct-title">Request sent</h2>
         <p class="acct-note">The admin has your request. Once they reset your password they’ll send you a temporary one — sign in with it and you’ll be asked to choose a new password.</p>
         <button type="button" class="btn btn-primary btn-block" data-action="acct-mode" data-mode="signin">Back to sign in</button></div>`;
-    } else if (acct.mode === 'claim') {
-      const list = acct.possible || [];
-      html = `<div class="login acct-form acct-claim">
-        ${list.length === 1
-          ? `<h2 class="acct-title">Are you ${esc(list[0].name)}?</h2>
-            <p class="acct-note">That’s the squad player your name matches. Say yes and the admin will confirm it; then your account shows your own balance, matches and profile.</p>
-            <button type="button" class="btn btn-primary btn-block" data-action="acct-claim" data-id="${esc(list[0].id)}" ${busy}>Yes, I’m ${esc(list[0].name)}</button>
-            <button type="button" class="btn btn-ghost btn-block" data-action="acct-notme" ${busy}>No, that’s not me</button>`
-          : `<h2 class="acct-title">Which one are you?</h2>
-            <p class="acct-note">A few squad players match your name.</p>
-            ${list.map(p => `<button type="button" class="btn btn-ghost btn-block claim-pick" data-action="acct-claim" data-id="${esc(p.id)}" ${busy}>${esc(p.name)}</button>`).join('')}
-            <button type="button" class="btn btn-ghost btn-block" data-action="acct-notme" ${busy}>None of these</button>`}
-        ${err}</div>`;
     } else if (acct.mode === 'newpass') {
       html = `<form class="login acct-form" data-acct-form="newpass" novalidate>
         <h2 class="acct-title">Choose a new password</h2>
@@ -1779,7 +1780,7 @@
       } else if (kind === 'signup') {
         const r = await api('POST', '/api/account/signup', { email: acct.email, password: f.password, name: acct.name, remember, label: deviceLabel() });
         acct.busy = false;
-        if (r.taken) toast(`${r.name} already has an account. If that’s you, ask the admin.`);
+        if (r.taken) toast('That squad player already has an account. The admin will sort it out.');
         await startUserSession(r, remember);
       } else if (kind === 'forgot') {
         await api('POST', '/api/account/forgot', { email: acct.email, note: f.note || '' });
@@ -1854,36 +1855,6 @@
     }
   }
 
-  // Signed in, but not a squad player (or said "not me"): a "coming soon" screen and nothing else.
-  // With {@code waitingFor} (the squad player they asked to be) it says the admin still has to approve.
-  function showComingSoon(waitingFor) {
-    hideLoader();
-    clearInterval(pollTimer);
-    $('#splash').hidden = true;
-    $('#app').hidden = false;
-    $('#tabs').innerHTML = '';
-    $('#bell').hidden = true;
-    $('#sheet-root').innerHTML = '';
-    $('#who-badge').innerHTML = `<span class="badge badge-view">${icon(PERSON_ICON, 14)} ${esc(session.name)}</span>`;
-    const first = esc((session.name || '').split(' ')[0] || 'there');
-    $('#view').innerHTML = waitingFor ? `<section class="soon">
-        <img class="soon-logo" src="img/logo.jpeg" alt="">
-        <span class="soon-tag">Waiting for approval</span>
-        <h2>Almost there, ${first}</h2>
-        <p class="muted">The admin will confirm you’re <strong>${esc(waitingFor)}</strong>. As soon as they approve, you’ll see your balance, matches and profile here.</p>
-        <div class="settings-actions"><button class="btn btn-primary" data-action="acct-recheck">Check again</button>
-          <button class="btn btn-ghost" data-action="acct-signout">Sign out</button></div>
-      </section>` : `<section class="soon">
-        <img class="soon-logo" src="img/logo.jpeg" alt="">
-        <span class="soon-tag">Coming soon</span>
-        <h2>Hi ${first}, good to have you here</h2>
-        <p class="muted">Your account isn’t linked to a Red Falcons squad player, so there’s nothing to show yet. New things for supporters are on the way.</p>
-        <p class="muted small">In the squad? Ask the admin to link your account, then sign in again.</p>
-        <button class="btn btn-ghost" data-action="acct-signout">Sign out</button>
-      </section>`;
-    setTopbarHeight();
-  }
-
   async function enterApp() {
     showLoader();
     restoreTab();
@@ -1915,13 +1886,6 @@
       const mine = readStore(PASSKEY_KEY);
       if (mine && mine.email === acctMe.email && !(acctMe.passkeys || []).some(p => p.id === mine.id)) writeStore(PASSKEY_KEY, null);
       if (acctMe.mustChange) { showSplash('newpass'); return; }
-      if (!acctMe.playerId && acctMe.pendingPlayerId) { showComingSoon(acctMe.pendingPlayerName); return; }
-      if (!acctMe.playerId) {
-        const possible = acctMe.possible || [];
-        if (possible.length && !notMe().includes(acctMe.id)) { acct.possible = possible; showSplash('claim'); return; }
-        showComingSoon();
-        return;
-      }
     }
     try {
       if (session.token) {
@@ -1972,6 +1936,7 @@
     loadAnnouncements();
     refreshManager().then(loadMyLineups);
     if (isUser()) checkBio().then(() => { if (tab === 'settings') render(); });
+    if (realAdmin()) loadAccounts();
     startPolling();
   }
 
@@ -2030,7 +1995,7 @@
     bell.hidden = false;
     bell.dataset.count = bellCount;
     bell.setAttribute('aria-label', bellCount ? `Notifications, ${bellCount} new` : 'Notifications');
-    const shown = t => (!t.adminTab || realAdmin()) && (!t.userTab || isUser()) && (!t.staffTab || isStaff()) && (!t.statsTab || statsVisible()) && (!t.daysTab || daysVisible()) && !(archive && t.id === 'settings');
+    const shown = t => (!isGuest() || t.id === 'summary') && (!t.adminTab || realAdmin()) && (!t.userTab || isUser()) && (!t.staffTab || isStaff()) && (!t.statsTab || statsVisible()) && (!t.daysTab || daysVisible()) && !(archive && t.id === 'settings');
     if (TABS.some(t => t.id === tab && !shown(t))) tab = 'summary';
     const tabDef = id => TABS.find(t => t.id === id);
     const visibleIn = g => g.tabs.filter(id => shown(tabDef(id)));
@@ -3124,6 +3089,15 @@
 
   function viewHome() {
     const next = nextMatchCard();
+    if (isGuest()) {
+      return `<section class="panel guest-note">${icon(PERSON_ICON, 22)}
+          <div><strong>Welcome, ${esc((session.name || '').split(' ')[0] || 'there')}!</strong>
+          <small>The admin will link your account to your name in the Red Falcons squad. Then you’ll see your balance, matches, stats and everything else here.</small></div></section>
+        ${homeHero()}
+        ${next || ''}
+        ${fixturesPanel()}
+        ${hplPanel()}`;
+    }
     return `
       ${homeHero()}
       ${quickTiles()}
@@ -4570,7 +4544,8 @@ ${tabRows.map(r => {
   // ---------- Accounts (admin): who has signed up, their sign-in record, resets ----------
   let accountList = null;                     // GET /api/account/users
   let resetRequests = [];                     // open "forgot password" requests
-  let linkRequests = [];                      // accounts waiting for approval of the squad player they asked to be
+  let linkRequests = [];                      // new accounts not linked to a squad player yet
+  const linkPick = {};                        // account id -> the squad player chosen for it in Requests
   let accOpen = null;                         // the account whose sign-in history is open
 
   async function loadAccounts() {
@@ -4587,6 +4562,7 @@ ${tabRows.map(r => {
     const linked = list.filter(a => a.playerId).length;
     const head = pageHead('Accounts', 'Players who have signed up, when they last signed in, and password resets.');
     if (accountList === null) return `${head}<section class="panel"><p class="muted">Loading…</p></section>`;
+    const linkFirst = list.some(a => !a.playerId && !a.dismissed) ? `<p class="muted acc-hint">New accounts are linked from the Requests tab, or with the Squad player box on each card.</p>` : '';
     const taken = new Set(list.map(a => a.playerId).filter(Boolean));
     const requests = resetRequests.length ? `<section class="panel acc-requests">
         <div class="panel-head"><h3>Password reset requests <span class="muted">${resetRequests.length}</span></h3></div>
@@ -4599,8 +4575,7 @@ ${tabRows.map(r => {
       const opts = `<option value="">Not linked</option>${state.players.map(p => `<option value="${esc(p.id)}" ${a.playerId === p.id ? 'selected' : ''} ${taken.has(p.id) && a.playerId !== p.id ? 'disabled' : ''}>${esc(p.name)}${taken.has(p.id) && a.playerId !== p.id ? ' (has an account)' : ''}</option>`).join('')}`;
       const flags = [a.resetRequested && '<span class="acc-flag warn">Forgot password</span>', a.mustChange && '<span class="acc-flag">Setting a new password</span>',
         a.passkeys > 0 && `<span class="acc-flag ok">${icon(FINGER_ICON, 12)} Biometrics on ${a.passkeys} device${a.passkeys === 1 ? '' : 's'}</span>`,
-        a.pendingPlayerId && `<span class="acc-flag warn">Waiting for approval: ${esc(a.pendingPlayerName)}</span>`,
-        !a.playerId && !a.pendingPlayerId && '<span class="acc-flag">Coming soon screen</span>'].filter(Boolean).join('');
+        !a.playerId && (a.dismissed ? '<span class="acc-flag">Not in the squad · Home only</span>' : '<span class="acc-flag warn">Not linked yet · Home only</span>')].filter(Boolean).join('');
       return `<article class="acc-card ${a.playerId ? '' : 'unlinked'}">
         <div class="acc-top">
           <span class="acc-who">${a.playerId && findPlayer(a.playerId) ? avatar(findPlayer(a.playerId), 40) : `<span class="avatar ph" style="--s:40px">${icon(PERSON_ICON, 20)}</span>`}
@@ -4613,9 +4588,6 @@ ${tabRows.map(r => {
           <div><span>Sign-ins</span><strong>${a.loginCount}</strong>${a.failedSinceLogin ? `<small class="neg">${a.failedSinceLogin} wrong password${a.failedSinceLogin === 1 ? '' : 's'} since</small>` : '<small class="muted">&nbsp;</small>'}</div>
           <div><span>Joined</span><strong>${ago(a.createdAt)}</strong><small class="muted">${when(a.createdAt)}</small></div>
         </div>
-        ${a.pendingPlayerId ? `<div class="acc-approve"><span>Says they’re <strong>${esc(a.pendingPlayerName)}</strong></span>
-          <button class="btn btn-gold small" data-action="link-approve" data-id="${esc(a.id)}">Approve</button>
-          <button class="btn btn-ghost small" data-action="link-decline" data-id="${esc(a.id)}">Decline</button></div>` : ''}
         <div class="acc-btns">
           <button class="btn btn-ghost small" data-action="acc-history" data-id="${esc(a.id)}" aria-expanded="${open}">${open ? 'Hide record' : 'Sign-in record'}</button>
           <button class="btn btn-ghost small" data-action="acc-reset" data-id="${esc(a.id)}">Reset password</button>
@@ -4626,9 +4598,9 @@ ${tabRows.map(r => {
     };
     return `${head}
       <div class="acc-chips"><span class="hero-chip"><b>${list.length}</b> account${list.length === 1 ? '' : 's'}</span>
-        <span class="hero-chip"><b>${linked}</b> linked to the squad</span>${list.some(a => a.pendingPlayerId) ? `<span class="hero-chip"><b>${list.filter(a => a.pendingPlayerId).length}</b> waiting for approval</span>` : ''}<span class="hero-chip"><b>${list.length - linked}</b> not linked</span>
+        <span class="hero-chip"><b>${linked}</b> linked to the squad</span><span class="hero-chip"><b>${list.length - linked}</b> not linked</span>
         <span class="hero-chip"><b>${state.players.filter(p => !taken.has(p.id)).length}</b> squad players without an account</span></div>
-      ${requests}
+      ${requests}${linkFirst}
       ${list.length ? `<div class="acc-list">${list.map(card).join('')}</div>` : '<section class="panel"><p class="muted">Nobody has signed up yet. Players create an account on the start screen with their email and full name.</p></section>'}`;
   }
 
@@ -5318,7 +5290,7 @@ ${tabRows.map(r => {
   function findExpense(el) { return (state.expenses[el.dataset.day] || []).find(e => e.id === el.dataset.id); }
 
   const actions = {
-    tab(el) { tab = el.dataset.tab; saveTab(); sheet = null; render(); animateView(); window.scrollTo({ top: 0 }); if (tab === 'announce') loadAnnouncements(); if (tab === 'news') { loadNews(); loadHpl(); } if (tab === 'accounts') loadAccounts(); if (tab === 'requests') loadInbox(); if (tab === 'settings' && isUser()) refreshMe(); },
+    tab(el) { tab = el.dataset.tab; saveTab(); sheet = null; render(); animateView(); window.scrollTo({ top: 0 }); if (tab === 'announce') loadAnnouncements(); if (tab === 'news') { loadNews(); loadHpl(); } if (tab === 'accounts') loadAccounts(); if (tab === 'requests') { loadInbox(); loadAccounts(); } if (tab === 'settings' && isUser()) refreshMe(); },
     'ann-template'(el) {
       const x = ANN_TEMPLATES.find(y => y.id === el.dataset.t);
       if (!x) return;
@@ -5544,11 +5516,6 @@ ${tabRows.map(r => {
       el.setAttribute('aria-label', input.type === 'password' ? 'Show password' : 'Hide password');
     },
     'acct-bio'() { bioSignIn(); },
-    async 'acct-recheck'(el) {
-      el.disabled = true;
-      await enterApp();
-      if (acctMe && !acctMe.playerId && acctMe.pendingPlayerId) toast('Not approved yet. You’ll get in as soon as the admin approves.');
-    },
     async 'pw-save'() {
       if (pwDraft.next.length < 6) { toast('Use a new password of at least 6 characters.'); return; }
       if (pwDraft.next !== pwDraft.again) { toast('The two new passwords don’t match.'); return; }
@@ -5599,15 +5566,19 @@ ${tabRows.map(r => {
       } catch (e) { toast(e.message || 'Could not reset the password.'); }
     },
     async 'link-approve'(el) {
-      try { const r = await api('POST', `/api/account/users/${encodeURIComponent(el.dataset.id)}/approve`); toast(`Approved: ${r.email} is now ${r.playerName}.`); }
-      catch (e) { toast(e.message || 'Could not approve it.'); }
+      const a = (linkRequests || []).find(x => x.id === el.dataset.id);
+      const pick = linkPick[el.dataset.id] !== undefined ? linkPick[el.dataset.id] : (a && a.suggested) || '';
+      if (!pick) { toast('Choose the squad player first.'); return; }
+      el.disabled = true;
+      try { const r = await api('PUT', `/api/account/users/${encodeURIComponent(el.dataset.id)}/player`, { playerId: pick }); toast(`Linked: ${r.email} is now ${r.playerName}.`); delete linkPick[el.dataset.id]; }
+      catch (e) { toast(e.message || 'Could not link it.'); el.disabled = false; }
       loadInbox();
       loadAccounts();
     },
     async 'link-decline'(el) {
-      const ok = await confirmDialog('Decline this account?', 'It stays unlinked and only sees the coming soon screen. You can link it later on the Accounts screen.', 'Decline', true);
+      const ok = await confirmDialog('Not in the squad?', 'They keep seeing the Home tab only, and leave your requests. You can still link them later on the Accounts screen.', 'Not in the squad');
       if (!ok) return;
-      try { await api('POST', `/api/account/users/${encodeURIComponent(el.dataset.id)}/decline`); toast('Declined.'); } catch (e) { toast(e.message || 'Could not decline it.'); }
+      try { await api('POST', `/api/account/users/${encodeURIComponent(el.dataset.id)}/dismiss`); toast('Done.'); } catch (e) { toast(e.message || 'Could not change that.'); }
       loadInbox();
       loadAccounts();
     },
@@ -5623,18 +5594,6 @@ ${tabRows.map(r => {
       if (!ok) return;
       try { await api('DELETE', `/api/account/users/${encodeURIComponent(a.id)}`); toast('Account removed.'); } catch (e) { toast(e.message || 'Could not remove it.'); }
       loadAccounts();
-    },
-    async 'acct-claim'(el) {
-      setAcct({ busy: true });
-      try {
-        await api('POST', '/api/account/claim', { playerId: el.dataset.id });
-        acct.busy = false;
-        await enterApp();
-      } catch (e) { setAcct({ busy: false, err: e.message }); }
-    },
-    'acct-notme'() {
-      if (acctMe) writeStore(NOT_ME_KEY, [...new Set([...notMe(), acctMe.id])]);
-      showComingSoon();
     },
     async 'acct-signout'() {
       if (isUser()) await api('POST', '/api/account/logout').catch(() => {});
@@ -6671,6 +6630,7 @@ ${tabRows.map(r => {
       if (el.dataset && /^tfa-/.test(el.dataset.input || '')) { tfaDraft[el.dataset.input.slice(4)] = el.value; return; }
       if (el.dataset && /^pw-/.test(el.dataset.input || '')) { pwDraft[el.dataset.input.slice(3)] = el.value; return; }
       if (el.dataset && el.dataset.input === 'acc-link') { linkAccount(el.dataset.id, el.value); return; }
+      if (el.dataset && el.dataset.input === 'link-pick') { linkPick[el.dataset.id] = el.value; render(); return; }
       if (el.dataset && el.dataset.input === 'squad-text') { squadDraft = el.value; return; }
       if (el.dataset && /^news-/.test(el.dataset.input || '')) {
         const key = el.dataset.input.slice(5);

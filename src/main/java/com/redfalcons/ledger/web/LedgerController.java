@@ -38,7 +38,8 @@ public class LedgerController {
 
     /**
      * The ledger is for the team: the admin, a manager, or a signed-in player whose account is linked to a squad
-     * player (X-Viewer is then set from their sign-in by {@link AccountFilter}). Everyone else is asked to sign in.
+     * player (X-Viewer is then set from their sign-in by {@link AccountFilter}). An account not linked yet gets the
+     * Home tab's share only; anyone not signed in is asked to sign in.
      */
     private boolean canRead(String token, String manager, String viewer) {
         return auth.isValidToken(token) || (viewer != null && !viewer.isBlank()) || managers.find(manager).isPresent();
@@ -84,9 +85,14 @@ public class LedgerController {
     @GetMapping("/ledger")
     public ResponseEntity<?> get(@RequestHeader(value = TOKEN_HEADER, required = false) String token,
                                  @RequestHeader(value = ManagerController.MANAGER_HEADER, required = false) String manager,
-                                 @RequestHeader(value = VIEWER_HEADER, required = false) String viewer) {
-        if (!canRead(token, manager, viewer)) return SIGN_IN;
-        return ResponseEntity.ok(service.load(auth.isValidToken(token), viewer));
+                                 @RequestHeader(value = VIEWER_HEADER, required = false) String viewer,
+                                 jakarta.servlet.http.HttpServletRequest request) {
+        if (canRead(token, manager, viewer)) return ResponseEntity.ok(service.load(auth.isValidToken(token), viewer));
+        // Signed in but not linked to a squad player yet: just what the Home tab needs.
+        if (request.getAttribute(AccountFilter.ACCOUNT) instanceof com.redfalcons.ledger.model.UserAccount a && !a.isMustChange()) {
+            return ResponseEntity.ok(service.loadForGuest());
+        }
+        return SIGN_IN;
     }
 
     @PutMapping("/ledger")
