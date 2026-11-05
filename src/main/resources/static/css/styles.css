@@ -2383,3 +2383,125 @@ a.btn { text-decoration: none; }
 .link-pick { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 10px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 .link-pick .select { text-transform: none; letter-spacing: 0; font-size: 15px; max-width: 360px; }
 .acc-hint { margin: -4px 0 12px; }
+
+/* ---------- Cricbuzz-style everywhere ----------
+   The flat, data-first look of Stats and Money for the whole app (every screen is wrapped in .cb, and so are
+   sheets): plain bold headings, header strips, ruled grids and divided rows, thin borders, no glows. */
+
+/* Type: one plain sans-serif for every heading; no slab display font or gradient text. */
+.cb :is(h2, h3, h4, .fx-heading, .news-title, .nm-team strong, .glance-row strong, .lg-title h3, .lg-name, .hpl-title h3,
+  .set-hero-text strong, .set-head h3, .fx-day b, .hero-fig strong, .mp-figs strong, .nm-badge.opp, .nm-vs span, .sheet-head h2) {
+  font-family: var(--body-font); letter-spacing: -.01em; text-shadow: none;
+}
+.cb :is(.fx-heading, .hero-title h2, .hero-fig.pos strong) { background: none; -webkit-text-fill-color: currentColor; color: var(--text); }
+.cb .hero-fig.pos strong { color: var(--gold); }
+.cb h2 { font-weight: 800; }
+.cb h3 { font-weight: 800; }
+
+/* Section titles inside panels: the small uppercase strip with a red marker (as in Stats and Money). */
+.cb :is(.fx-kicker, .nm-kicker, .hpl-title .day-kind, .lg-title .day-kind, .hero-hello) { color: var(--muted); letter-spacing: .12em; }
+
+/* Surfaces: flat panels with a thin border; no gradients, glows or lifting on hover. */
+.cb :is(.home-hero, .nm-card, .fx-panel, .tour-panel, .news-card, .news-card.pinned, .me-player, .me-player.neg, .set-hero, .acc-card, .note-card, .day-card, .day-card.match, .day-card.training) {
+  background: var(--card); box-shadow: none; border: 1px solid var(--line); border-radius: 10px;
+}
+.cb :is(.day-card, .qt, .fx-row, .hero-fig):hover { transform: none; box-shadow: none; }
+.cb :is(.hero-pitch, .hero-mark, .nm-sweep) { display: none; }
+.cb .nm-card::before, .cb .day-card::before { height: 3px; background: var(--red); opacity: 1; }
+.cb .day-card.match::before { background: var(--gold); }
+
+/* Home hero: a scoreboard strip, not a poster. */
+.cb .home-hero { padding: 16px; margin-bottom: 14px; }
+.cb .hero-crest { width: 56px; height: 56px; padding: 0; background: none; animation: none; box-shadow: 0 0 0 2px var(--line-2); }
+.cb .hero-crest img { animation: none; border: 0; }
+.cb .hero-title h2 { font-size: clamp(22px, 5vw, 28px); }
+.cb .hero-strip { gap: 0; margin-top: 14px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.cb .hero-fig { max-width: none; border: 0; border-radius: 0; background: none; backdrop-filter: none; box-shadow: inset -1px 0 0 var(--line); padding: 10px 6px; }
+.cb .hero-fig:last-child { box-shadow: none; }
+.cb .hero-fig.pos { background: rgba(var(--gold-rgb), .08); }
+.cb .hero-form i { border-radius: 4px; width: 24px; height: 24px; }
+.cb .hero-form i.f-win { background: #2f9e5e; }
+.cb .hero-form i.f-loss { background: var(--red); }
+.cb .hero-form i.f-tie { background: var(--gold); }
+
+/* Shortcut tiles: one ruled row of links. */
+.cb .quick-tiles { gap: 0; margin: 0 0 14px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--card); }
+.cb .qt { border: 0; border-radius: 0; background: none; box-shadow: inset -1px 0 0 var(--line); padding: 12px 4px 10px; }
+.cb .qt:last-child { box-shadow: none; }
+.cb .qt:hover { background: var(--row-hover); }
+.cb .qt-ico, .cb .qt:nth-child(odd) .qt-ico { width: 36px; height: 36px; border-radius: 8px; box-shadow: none; background: rgba(var(--red-rgb), .16); color: var(--red-soft); }
+.cb .qt:nth-child(even) .qt-ico { background: rgba(var(--gold-rgb), .16); color: var(--gold); }
+
+/* Next match: teams, VS and the countdown, all flat. */
+.cb .nm-card { padding: 16px; }
+.cb .nm-status, .cb .nm-card.today .nm-status { box-shadow: none; animation: none; border-radius: 4px; }
+.cb .nm-badge.crest { box-shadow: 0 0 0 2px var(--line-2); }
+.cb .nm-badge.opp { background: var(--card-2); box-shadow: 0 0 0 2px var(--line-2); }
+.cb .nm-vs span { background: none; box-shadow: none; color: var(--muted); font-size: 18px; font-weight: 800; width: auto; aspect-ratio: auto; }
+.cb .nm-block { border-radius: 6px; background: var(--card-2); box-shadow: none; border: 1px solid var(--line); }
+
+/* Fixtures and results: divided rows, the date as a plain block. */
+.cb .fx-panel { padding: 14px; }
+.cb .fx-heading { font-size: 20px; }
+.cb .fx-list { gap: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.cb .fx-row, .cb .fx-row.played { border: 0; border-radius: 0; background: none; border-bottom: 1px solid var(--line); padding: 10px 12px; }
+.cb .fx-list > li:last-child .fx-row, .cb .fx-row:last-child { border-bottom: 0; }
+.cb .fx-row:hover { background: var(--row-hover); }
+.cb .fx-day, .cb .fx-row.played .fx-day { border-radius: 6px; box-shadow: none; background: var(--red); color: #fff; width: 46px; }
+.cb .fx-row.played .fx-day { background: var(--card-2); color: var(--muted); }
+.cb .fx-day b { font-size: 20px; }
+.cb .fx-badge { box-shadow: 0 0 0 1px var(--line-2); }
+.cb .fx-tag, .cb .fx-tag.now { border-radius: 4px; background: rgba(var(--gold-rgb), .14); color: var(--gold); }
+.cb .fx-tag.done { background: var(--card-2); color: var(--muted); }
+
+/* Days: flat match and training cards with a coloured top rule. */
+.cb .tour-panel { padding: 16px; }
+.cb .lg-tiles { gap: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.cb .lg-tile, .cb .lg-tile.lg-result { border: 0; border-radius: 0; background: none; box-shadow: inset -1px 0 0 var(--line); }
+.cb .lg-title h3, .cb .lg-name { font-size: 22px; }
+.cb .day-card { padding: 14px; }
+.cb .day-card h3 { font-size: 18px; }
+.cb .day-grid { gap: 12px; }
+
+/* Lists of things (requests, news, accounts, settings): flat cards, smaller radius. */
+.cb .note-card { padding: 12px 14px; }
+.cb .news-card { padding: 16px 18px; }
+.cb .news-card.pinned { border-left: 3px solid var(--gold); }
+.cb .news-title { font-size: 20px; }
+.cb .set-hero { padding: 14px 16px; }
+.cb .set-hero-text strong { font-size: 18px; }
+.cb .set-head h3 { font-size: 18px; }
+.cb .set-head { border-bottom: 2px solid var(--line-2); }
+.cb .set-nav { border-radius: 10px; }
+.cb .set-nav-btn { border-radius: 6px; }
+.cb .set-sections .panel-head h3::before { background: var(--red); }
+.cb .set-sections .panel { padding: 14px 16px; }
+.cb .soon { border-radius: 10px; background: var(--card); }
+.cb .hpl-title h3 { font-size: 18px; }
+.cb .glance-row strong { font-size: 20px; }
+.cb .mp-figs strong { font-size: 24px; }
+.cb .acc-figs > div, .cb .sec-devices li { border-radius: 6px; }
+
+/* The switch between related screens (Matches · Stats, Team · Shirt money · …): an underlined bar. */
+.cb .seg-tabs, .cb .seg { display: flex; gap: 0; padding: 0; margin: 0 0 16px; border: 0; border-bottom: 1px solid var(--line-2); border-radius: 0; background: none; }
+.cb .seg-tabs .seg-btn, .cb .seg .seg-btn { min-height: 44px; padding: 4px 16px; border-radius: 0; border-bottom: 3px solid transparent; background: none; box-shadow: none; font-size: 14px; }
+.cb .seg-tabs .seg-btn.on, .cb .seg .seg-btn.on { color: var(--text); background: none; box-shadow: none; border-bottom-color: var(--gold); }
+.cb .seg-tabs .seg-btn:hover, .cb .seg .seg-btn:hover { background: rgba(var(--hi-rgb), .04); }
+
+/* Sheets (match details, player cards…): a flat header strip. */
+.sheet.cb .sheet-head { background: var(--head-1); border-bottom: 1px solid var(--line); }
+.sheet.cb .sheet-head::after { display: none; }
+.sheet.cb .sheet-head h2 { font-size: 24px; }
+.sheet.cb .sheet-head.match { background: var(--head-1); box-shadow: inset 0 3px 0 var(--gold); }
+.sheet.cb .sheet-head.training { box-shadow: inset 0 3px 0 var(--red); }
+
+@media (max-width: 520px) {
+  .cb .quick-tiles { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .cb .qt { font-size: 11px; padding: 10px 2px 8px; }
+  .cb .lg-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.cb .group-head { font-family: var(--body-font); font-weight: 800; font-size: 18px; letter-spacing: 0; text-transform: none; }
+.cb .group-head.training, .cb .group-head.match { color: var(--text); }
+.cb .group-head.training::before, .cb .group-head.match::before { content: ''; display: inline-block; width: 4px; height: 16px; margin-right: 8px; border-radius: 2px; background: var(--red); vertical-align: -2px; }
+.cb .group-head.match::before { background: var(--gold); }
+.cb .size-tot strong, .cb .size-opt strong { font-family: var(--body-font); font-weight: 800; }

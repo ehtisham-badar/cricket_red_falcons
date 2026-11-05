@@ -2022,7 +2022,8 @@
       : `<span class="badge badge-view">${icon('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>', 14)} ${esc(session.name)} · ${isManager() ? 'manager' : 'view only'}</span>`;
 
     const views = { news: viewNews, summary: viewHome, money: viewMoney, days: viewDays, stats: viewStats, players: viewPlayers, announce: viewAnnounce, polls: viewPolls, kit: viewKit, shirtpay: viewShirtMoney, accounts: viewAccounts, requests: () => sheetInbox(true), profile: viewProfile, settings: viewSettings };
-    $('#view').innerHTML = archiveBar() + groupSeg() + (views[tab] || viewHome)();
+    // Every screen gets the flat, Cricbuzz-style look (.cb).
+    $('#view').innerHTML = `<div class="cb cb-${tab}">${archiveBar()}${groupSeg()}${(views[tab] || viewHome)()}</div>`;
     $('#sheet-root').innerHTML = sheet ? renderSheet() : '';
     document.body.classList.toggle('sheet-open', !!sheet);
     markSettingsNav();
@@ -3435,7 +3436,7 @@
     const att = C.attendance(state).filter(a => a.trainings > 0 || a.matches > 0)
       .sort((a, b) => b.trainings - a.trainings || b.longest - a.longest || b.matches - a.matches);
     if (!awards.length && !att.length) return '';
-    const share = awards.length ? `<button class="btn btn-gold" data-action="share-awards">${IMAGE_ICON} Share awards as image</button>` : '';
+    const share = awards.length && isAdmin() ? `<button class="btn btn-gold" data-action="share-awards">${IMAGE_ICON} Share awards as image</button>` : '';
     return `<section class="panel st-table">
       <div class="panel-head"><h3>Season awards</h3><p class="muted">Leaders so far, including who turns up.</p></div>
       ${awards.length ? `<div class="st-leaders aw-grid">${awards.map(a => `<div class="stat pos"><span>${esc(a.title)}</span>
@@ -4655,7 +4656,7 @@ ${tabRows.map(r => {
     if (sheet.type === 'hpl-match') body = sheetHplMatch();
     if (!body) { sheet = null; return ''; }
     return `<div class="sheet-backdrop" data-action="close-sheet"></div>
-      <div class="sheet" role="dialog" aria-modal="true">${body}</div>`;
+      <div class="sheet cb" role="dialog" aria-modal="true">${body}</div>`;
   }
 
   const isTwelfth = (p, d) => d.type === 'match' && state.twelfth[d.id] === p.id;
@@ -6351,6 +6352,7 @@ ${tabRows.map(r => {
       }
     },
     async 'share-awards'(el) {
+      if (!isAdmin()) return;
       const awards = seasonAwards();
       if (!awards.length) { toast('No awards yet.'); return; }
       const label = el.innerHTML;
