@@ -1473,10 +1473,37 @@
   }
 
   // ---------- polling (viewers) ----------
+  // Signed out from elsewhere (or everyone was signed out): back to the start screen to sign in again.
+  async function sessionEnded() {
+    const end = (mode, msg) => {
+      clearInterval(pollTimer);
+      session = null;
+      saveSession(null);
+      acctMe = null;
+      state = null;
+      showSplash(mode);
+      if (mode === 'staff') $('#login-error').textContent = msg; else setAcct({ err: msg });
+      return true;
+    };
+    if (session && session.token) {
+      const s = await api('GET', '/api/session').catch(() => null);
+      if (s && !s.admin) return end('staff', 'Your admin sign-in has ended. Enter the admin key again.');
+    } else if (session && session.managerToken) {
+      const s = await api('GET', '/api/manager/session').catch(() => null);
+      if (s && !s.manager) return end('staff', 'Your manager sign-in has ended. Enter your phrase again.');
+    } else if (isUser()) {
+      try { await api('GET', '/api/account/me'); } catch (e) {
+        if (e.status === 401) return end('signin', 'You’ve been signed out. Please sign in again.');
+      }
+    }
+    return false;
+  }
+
   function startPolling() {
     clearInterval(pollTimer);
     pollTimer = setInterval(async () => {
       if (archive || document.visibilityState !== 'visible') return;
+      if (await sessionEnded()) return;
       loadGallery();
       loadEngage();
       if (isStaff() && tab === 'announce') loadAnnouncements();
