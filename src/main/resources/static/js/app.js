@@ -2600,7 +2600,7 @@
         </div>
       </section>` : '';
 
-    return `
+    return `<div class="cb cb-money">
       ${pageHead('Money', `${C.leagueMatchCount(state) ? leagueName() + ' · ' : ''}${state.players.length} player${state.players.length === 1 ? '' : 's'} · ${realMatchCount()} match${realMatchCount() === 1 ? '' : 'es'}`,
         admin && state.players.length ? `<div class="share-row">
           <button class="btn btn-gold" data-action="share-image">${IMAGE_ICON} Share as image</button></div>` : '')}
@@ -2616,7 +2616,7 @@
           ${rows ? `<div class="plist">${rows}</div>` : emptyPlayers()}
         </section>
         ${table}
-      </div>`;
+      </div></div>`;
   }
 
   // ---------- Home: what's coming up, and anything that needs you ----------
@@ -2964,8 +2964,8 @@
     </div>`;
     const body = statsSel === 'league' ? leagueStatsView() : matchStatsView(ms.find(m => m.id === statsSel));
     const sub = 'The Hundred: 5-ball overs, 20 overs an innings.' + (isAdmin() ? (state.settings.statsVisibility === 'all' ? ' Players can see these too.' : ' Only you can see these — change it in Settings.') : '');
-    return `${pageHead('Stats', sub)}
-      ${seg}${body}`;
+    return `<div class="cb cb-stats">${pageHead('Stats', sub)}
+      ${seg}${body}</div>`;
   }
 
   function stepper(m, pid, key, label, value) {

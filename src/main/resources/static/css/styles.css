@@ -2201,3 +2201,81 @@ a.btn { text-decoration: none; }
 /* Season awards (Stats) */
 .st-table .aw-grid { margin: 12px 0 14px; }
 .st-table .share-row { margin: 0 0 14px; }
+
+/* ---------- Cricbuzz-style Stats and Money ----------
+   Flat, compact and data-first: a plain title, underlined tabs, strip headers over dense rows and
+   tables with the key number in bold, and thin dividers instead of raised cards. Scoped to .cb. */
+.cb .page-head { margin-bottom: 14px; }
+.cb .page-head h2 {
+  font-family: var(--body-font); font-weight: 800; font-size: clamp(24px, 3vw, 30px); letter-spacing: -.01em;
+  color: var(--text); background: none; -webkit-text-fill-color: currentColor; filter: none;
+}
+.cb .page-head h2::after { width: 36px; height: 3px; margin-top: 8px; }
+.cb .page-head p { margin-top: 6px; font-size: 14px; }
+
+.cb .panel { padding: 14px; border-radius: 10px; background: var(--card); box-shadow: none; margin-bottom: 14px; }
+.cb .panel-head { margin: -14px -14px 12px; padding: 10px 14px; border-radius: 10px 10px 0 0; background: var(--head-1); border-bottom: 1px solid var(--line); }
+.cb .panel-head::after { display: none; }
+.cb .panel-head h3 {
+  display: flex; align-items: center; gap: 8px; font-family: var(--body-font); font-size: 13px; font-weight: 800;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--text);
+}
+.cb .panel-head h3::before { content: ''; width: 4px; height: 14px; border-radius: 2px; background: var(--red); }
+.cb .panel-head p { margin: 2px 0 0; font-size: 12px; }
+
+/* Tabs: a plain bar with an underline on the open one. */
+.cb .seg { gap: 0; padding: 0; margin-bottom: 14px; border: 0; border-bottom: 1px solid var(--line-2); border-radius: 0; background: none; }
+.cb .seg-btn { min-height: 46px; padding: 4px 16px; border-radius: 0; border-bottom: 3px solid transparent; font-size: 14px; }
+.cb .seg-btn:hover { background: rgba(var(--hi-rgb), .04); }
+.cb .seg-btn.on { color: var(--text); background: none; box-shadow: none; border-bottom-color: var(--gold); }
+:root[data-theme="day"] .cb .seg-btn.on { background: none; }
+
+/* Top performers and money figures: a list or a ruled grid, not floating cards. */
+.cb .st-leaders, .cb .stats { gap: 0; margin-bottom: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.cb .st-leaders { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.cb .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.cb .stat, .cb .stat.pos, .cb .stat.neg { border: 0; border-radius: 0; box-shadow: inset -1px -1px 0 var(--line); background: var(--card); padding: 12px 14px; transform: none; }
+.cb .stat:hover { transform: none; box-shadow: inset -1px -1px 0 var(--line); }
+.cb .pl-name { min-height: 0; padding: 0; }
+.cb .stat::before { display: none; }
+.cb .stat span { font-size: 11px; letter-spacing: .08em; font-weight: 700; }
+.cb .stat strong { margin-top: 4px; font-size: clamp(18px, 2vw, 24px); }
+.cb .stat small { margin-top: 2px; }
+.cb .st-leaders .stat { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "label value" "name value"; align-items: center; column-gap: 12px; }
+.cb .st-leaders .stat span { grid-area: label; }
+.cb .st-leaders .stat strong { grid-area: value; margin: 0; font-size: 24px; color: var(--gold); }
+.cb .st-leaders .stat small { grid-area: name; margin: 0; font-size: 15px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cb .panel .st-leaders { margin: 0 -14px 12px; border-width: 1px 0; border-radius: 0; }
+
+/* Tables: flat header strip, the main number in bold gold, a divider between rows. */
+.cb .table-wrap { border: 0; border-radius: 0; background: none; }
+.cb .panel > .table-wrap { margin: 0 -14px -14px; }
+.cb .sheet-table { font-size: 14px; }
+.cb .sheet-table thead th { background: var(--card-2); border-bottom: 1px solid var(--line-2); font-size: 11px; letter-spacing: .08em; }
+.cb .sheet-table th, .cb .sheet-table td { padding: 9px 10px; }
+.cb .sheet-table tbody tr:nth-child(even) td { background: none; }
+.cb .sheet-table tbody tr:hover td { background: var(--row-hover); }
+.cb .st-stats .sheet-table tbody tr, .cb .st-table .sheet-table tbody tr { cursor: default; }
+.cb .st-table .sheet-table td.strong { color: var(--gold); font-weight: 800; }
+.cb .st-table .st-name, .cb .st-table thead .st-name { background: var(--card); }
+.cb .st-table thead .st-name { background: var(--card-2); }
+.cb .st-table .sheet-table td, .cb .st-table .sheet-table th { padding: 9px 10px; }
+
+/* Player rows (Money): divided rows with a colour marker, amount on the right. */
+.cb .plist { gap: 0; margin: 0 -14px -14px; }
+.cb .prow { min-height: 56px; padding: 8px 14px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: none; transform: none; }
+.cb .prow:last-child { border-bottom: 0; }
+.cb .prow:hover { background: var(--row-hover); transform: none; }
+.cb .sr { width: 24px; height: auto; border-radius: 0; background: none; box-shadow: none; color: var(--muted); font-size: 13px; }
+.cb .pnet strong { font-size: 16px; }
+
+@media (max-width: 820px) {
+  .cb .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 520px) {
+  .cb .st-leaders { grid-template-columns: minmax(0, 1fr); }
+  .cb .panel { padding: 12px; }
+  .cb .panel-head { margin: -12px -12px 10px; }
+  .cb .panel .st-leaders, .cb .panel > .table-wrap, .cb .plist { margin-left: -12px; margin-right: -12px; }
+  .cb .panel > .table-wrap, .cb .plist { margin-bottom: -12px; }
+}
