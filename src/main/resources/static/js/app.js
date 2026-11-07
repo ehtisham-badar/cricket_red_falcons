@@ -378,7 +378,7 @@
   const isManager = () => !archive && !!(session && session.managerToken);
   // A player signed in with their email; the server knows which squad player they are from that sign-in.
   const isUser = () => !!(session && session.user && session.userToken);
-  // A player account the admin hasn't linked to a squad player yet: it sees the Home tab only.
+  // A guest: an account the admin hasn't linked to a squad player. It sees the Tournament and its own Profile only.
   const isGuest = () => isUser() && !session.playerId;
   const canPickXi = d => !!d && d.type === 'match' && (isAdmin() || (isManager() && !d.finished));
   // Plain viewers see a match only once the admin has finished it. A manager also sees open matches (they
@@ -998,7 +998,10 @@
   }
 
   function viewTournament() {
-    const head = pageHead('Tournament', hpl && hpl.available ? `${esc(hpl.title)} · every fixture and result, with full scorecards` : 'Fixtures, results and scorecards from Crickslab');
+    const guestNote = isGuest() ? `<section class="panel guest-note">${icon(PERSON_ICON, 22)}
+        <div><strong>Welcome, ${esc((session.name || '').split(' ')[0] || 'there')}!</strong>
+        <small>You’re signed in as a guest: follow the league here and make your profile. If you play for Red Falcons, the admin will link your account to the squad.</small></div></section>` : '';
+    const head = guestNote + pageHead('Tournament', hpl && hpl.available ? `${esc(hpl.title)} · every fixture and result, with full scorecards` : 'Fixtures, results and scorecards from Crickslab');
     if (hpl === null) { loadHpl(); return `${head}<section class="panel"><p class="muted">Loading the league…</p></section>`; }
     if (!hpl.available) return `${head}<section class="panel"><p class="muted">The league isn’t available right now.</p></section>`;
     const seg = `<div class="seg tour-seg">${[['fixtures', 'Fixtures'], ['table', 'Table'], ['leaders', 'Leaders']].map(([id, label]) =>
@@ -1472,7 +1475,7 @@
       const pick = linkPick[a.id] !== undefined ? linkPick[a.id] : (a.suggested || '');
       return `<article class="note-card">
         <div class="note-head"><strong>${esc(a.name)} signed up</strong><small>${esc(a.email)} · ${ago(a.createdAt)}</small></div>
-        <p class="note-detail muted">They see the Home tab only until you link them to a squad player.</p>
+        <p class="note-detail muted">They’re a guest (Tournament and their profile only) until you link them to a squad player.</p>
         <label class="link-pick"><span>Link to</span><select class="field select" data-input="link-pick" data-id="${esc(a.id)}" aria-label="Squad player for ${esc(a.name)}">
           <option value="">Choose a squad player…</option>
           ${state.players.map(p => `<option value="${esc(p.id)}" ${pick === p.id ? 'selected' : ''} ${taken.has(p.id) ? 'disabled' : ''}>${esc(p.name)}${taken.has(p.id) ? ' (has an account)' : p.id === a.suggested ? ' (name match)' : ''}</option>`).join('')}</select></label>
@@ -2003,7 +2006,7 @@
     loadEngage();
     loadAnnouncements();
     refreshManager().then(loadMyLineups);
-    if (isUser()) checkBio().then(() => { if (tab === 'settings') render(); });
+    if (isUser()) checkBio().then(() => { if (tab === 'settings' || tab === 'profile') render(); });
     if (realAdmin()) loadAccounts();
     startPolling();
   }
@@ -2063,8 +2066,8 @@
     bell.hidden = false;
     bell.dataset.count = bellCount;
     bell.setAttribute('aria-label', bellCount ? `Notifications, ${bellCount} new` : 'Notifications');
-    const shown = t => (!isGuest() || t.id === 'summary' || t.id === 'tournament') && (!t.adminTab || realAdmin()) && (!t.userTab || isUser()) && (!t.playerTab || (!realAdmin() && !isManager())) && (!t.staffTab || isStaff()) && (!t.statsTab || statsVisible()) && (!t.daysTab || daysVisible()) && !(archive && t.id === 'settings');
-    if (TABS.some(t => t.id === tab && !shown(t))) tab = 'summary';
+    const shown = t => (!isGuest() || t.id === 'tournament' || t.id === 'profile') && (!t.adminTab || realAdmin()) && (!t.userTab || isUser()) && (!t.playerTab || (!realAdmin() && !isManager())) && (!t.staffTab || isStaff()) && (!t.statsTab || statsVisible()) && (!t.daysTab || daysVisible()) && !(archive && t.id === 'settings');
+    if (TABS.some(t => t.id === tab && !shown(t))) tab = isGuest() ? 'tournament' : 'summary';
     const tabDef = id => TABS.find(t => t.id === id);
     const visibleIn = g => g.tabs.filter(id => shown(tabDef(id)));
     const here = GROUPS.find(g => g.tabs.includes(tab));
@@ -2932,7 +2935,32 @@
 
   const realMatchCount = () => state.matches.filter(m => !m.test && matchVisible(m)).length;
 
+  // Settings → Who can see what → "Only their own": a player's Money tab is just their own balance, payments and costs.
+  function viewMyMoney() {
+    const me = myPlayer();
+    if (!me) return `${pageHead('My money', '')}<section class="panel"><p class="muted">Your account isn’t linked to a squad player yet.</p></section>`;
+    const c = C.playerCalc(state, me, C.allStats(state), fmt);
+    const to = payTo();
+    return `${pageHead('My money', 'Your own balance, payments and costs.')}
+      <section class="panel">
+        <div class="net-hero ${netClass(c.net)}"><span>${netText(c.net)}</span><strong>${fmtNet(c.net)}</strong>
+          <small>Paid ${fmt(c.paid)}${c.credit > 0 ? ` + Bought ${fmt(c.credit)}` : ''} − Cost ${fmt(c.cost)}</small></div>
+        ${c.usedSoFar < c.cost ? `<div class="so-far">
+          <div><span>Used so far</span><strong>${fmt(c.usedSoFar)}</strong><small>Matches played, trainings and expenses</small></div>
+          <div class="${netClass(c.left)}"><span>${c.left >= 0 ? 'Left of your money' : 'Short so far'}</span><strong>${fmtNet(c.left)}</strong><small>${c.left > 0 ? 'Paid back if you leave now' : c.left < 0 ? 'Owed even without future matches' : 'All used'}</small></div>
+        </div>` : ''}
+        ${advanceStatus(me, c.net)}
+        ${c.net < 0 && to.length ? `<p class="pay-to-line">Pay to ${to.map(f => esc(f.value)).join(' · ')}</p>` : ''}
+      </section>
+      <section class="panel"><div class="panel-head"><h3>Payments <span class="muted">${fmt(c.paid)}</span></h3></div>${paymentEditor(me.id, me.payments, '')}</section>
+      <section class="panel"><div class="panel-head"><h3>Costs <span class="muted">${fmt(c.cost)}</span></h3><p>How your share is worked out.</p></div>
+        <ul class="breakdown">${c.lines.length ? c.lines.map(l => `<li class="${l.type}">${esc(l.text)}</li>`).join('') : '<li class="none">No cost yet</li>'}</ul></section>
+      ${c.creditLines.length ? `<section class="panel"><div class="panel-head"><h3>Bought for the team <span class="muted">${fmt(c.credit)}</span></h3></div>
+        <ul class="breakdown credit">${c.creditLines.map(l => `<li class="${l.type}">${esc(l.text)}</li>`).join('')}</ul></section>` : ''}`;
+  }
+
   function viewMoney() {
+    if (ownOnly()) return viewMyMoney();
     const t = C.totals(state, fmt);
     const stats = C.allStats(state);
     const tour = C.tournamentStats(state);
@@ -3162,14 +3190,6 @@
 
   function viewHome() {
     const next = nextMatchCard();
-    if (isGuest()) {
-      return `<section class="panel guest-note">${icon(PERSON_ICON, 22)}
-          <div><strong>Welcome, ${esc((session.name || '').split(' ')[0] || 'there')}!</strong>
-          <small>The admin will link your account to your name in the Red Falcons squad. Then you’ll see your balance, matches, stats and everything else here.</small></div></section>
-        ${homeHero()}
-        ${next || ''}
-        ${fixturesPanel()}`;
-    }
     return `
       ${homeHero()}
       ${quickTiles()}
@@ -4413,12 +4433,12 @@
       </section>`;
 
     const access = [
-      { id: 'all', name: 'Everyone’s balances', note: 'Viewers see the whole team’s money' },
-      { id: 'own', name: 'Only their own', note: 'Viewers see just their balance and payments' }
+      { id: 'all', name: 'Everyone’s balances', note: 'Players see the whole team’s money' },
+      { id: 'own', name: 'Only their own', note: 'Players see just their own balance, payments and costs' }
     ];
     const accessPanel = admin ? `
       <section class="panel">
-        <div class="panel-head"><h3>Viewer access</h3><p class="muted">What players see when they sign in with their name. Attendance and expenses stay visible to all.</p></div>
+        <div class="panel-head"><h3>Players’ money</h3><p class="muted">What players see on the Money tab once you’ve linked their account. Guests never see any money.</p></div>
         <div class="theme-list" role="radiogroup" aria-label="Viewer access">
           ${access.map(a => `<button class="theme-opt access-opt ${s.viewerAccess === a.id ? 'on' : ''}" role="radio" aria-checked="${s.viewerAccess === a.id}" data-action="set-access" data-access="${a.id}">
             <span class="access-icon">${icon(a.id === 'all' ? '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>' : '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>', 20)}</span>
@@ -4426,7 +4446,7 @@
             <span class="theme-check">${icon('<path d="M20 6 9 17l-5-5"/>', 16)}</span>
           </button>`).join('')}
         </div>
-        <p class="muted access-hint">Players pick their name to sign in, so this keeps balances out of casual view — it isn’t a password lock.</p>
+        <p class="muted access-hint">With “Only their own”, each player’s Money tab shows just their balance, payments and the costs that make up their share. The server only sends them their own payments.</p>
       </section>` : '';
 
     const tabRows = [
@@ -4532,7 +4552,7 @@ ${tabRows.map(r => {
         cells: cell(themePanel, 7) + cell(installPanel(), 5) },
       { id: 'team', icon: SI.team, title: 'Team & payments', note: admin ? 'Where players pay and how shares are worked out.' : 'Where to send your payments.',
         cells: admin ? cell(payPanel, 6) + cell(prefs, 6) : cell(payPanel, 12) },
-      admin && { id: 'access', icon: SI.access, title: 'Who can see what', note: 'What players see when they sign in with their name.',
+      admin && { id: 'access', icon: SI.access, title: 'Who can see what', note: 'What players see once they’re signed in.',
         cells: cell(accessPanel, 6) + cell(statsPanel, 6) + cell(cardsPanel, 12) },
       { id: 'notify', icon: SI.notify, title: 'Notifications', note: realAdmin() ? 'Turn them on for this device, and message the team.' : 'Turn them on for this device.', top: true,
         cells: isAdmin() ? cell(notify.device, 5) + cell(notify.compose, 7) : cell(notify.device, 12) },
@@ -4570,8 +4590,43 @@ ${tabRows.map(r => {
   // ---------- Profile tab (signed-in players) ----------
   let pwDraft = { current: '', next: '', again: '' };
 
+  let gForm = null;                           // a guest's profile draft
+
+  function guestProfile() {
+    const prof = (acctMe && acctMe.profile) || {};
+    if (!gForm) gForm = { name: session.name || '', role: prof.role || '', bat: prof.battingHand || '', arm: prof.bowlingArm || '', style: prof.bowlingStyle || '', about: prof.about || '' };
+    const since = acctMe && acctMe.createdAt ? new Date(acctMe.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+    const pw = (k, label, auto) => `<label><span>${label}</span><input class="field" type="password" maxlength="200" autocomplete="${auto}" value="${esc(pwDraft[k])}" data-input="pw-${k}" data-focus="pw-${k}"></label>`;
+    const sel = (key, label, options) => `<label><span>${label}</span><select class="field select" data-input="gp-${key}">
+      ${options.map(([v, l]) => `<option value="${esc(v)}" ${gForm[key] === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`;
+    return `${pageHead('My profile', 'You’re signed in as a guest.')}
+      <div class="profile-layout">
+        <section class="panel myacc-card">
+          <div class="myacc-head"><span class="avatar ph" style="--s:64px">${icon(PERSON_ICON, 30)}</span>
+            <div><strong>${esc(session.name || '')}</strong><small>${esc(session.email || '')}</small>${since ? `<small class="muted">Member since ${since}</small>` : ''}<small class="muted">Guest</small></div></div>
+          <h3 class="sub">Change password</h3>
+          <div class="form-grid pw-grid">${pw('current', 'Current password', 'current-password')}${pw('next', 'New password', 'new-password')}${pw('again', 'New password again', 'new-password')}</div>
+          <div class="settings-actions"><button class="btn btn-primary" data-action="pw-save">Save new password</button></div>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><h3>Your profile</h3><p class="muted">Optional. Fill in as much as you like; the admin sees it with your account.</p></div>
+          <div class="pf"><div class="form-grid">
+            <label class="pf-wide"><span>Full name</span><input class="field" type="text" maxlength="60" value="${esc(gForm.name)}" data-input="gp-name" data-focus="gp-name" autocomplete="name"></label>
+            ${sel('role', 'Playing role', [['', 'Not set'], ['Batsman', 'Batsman'], ['Bowler', 'Bowler'], ['All-rounder', 'All-rounder'], ['Wicket-keeper', 'Wicket-keeper']])}
+            ${sel('bat', 'Batting hand', [['', 'Not set'], ['right', 'Right-hand'], ['left', 'Left-hand']])}
+            ${sel('arm', 'Bowling arm', [['', 'Not set'], ['right', 'Right-arm'], ['left', 'Left-arm']])}
+            ${sel('style', 'Bowling style', BOWL_STYLES.map(x => [x, x || 'Not set']))}
+            <label class="pf-wide"><span>About you <small class="muted">(optional)</small></span><input class="field" type="text" maxlength="200" value="${esc(gForm.about)}" placeholder="e.g. Weekend cricketer, open to play" data-input="gp-about" data-focus="gp-about"></label>
+          </div>
+          <button class="btn btn-gold btn-block" data-action="guest-profile-save">${icon('<path d="M20 6 9 17l-5-5"/>', 18)} Save profile</button></div>
+        </section>
+        <section class="panel"><div class="panel-head"><h3>Sign-in</h3></div>${securityPanel(true)}</section>
+      </div>`;
+  }
+
   function viewProfile() {
     const me = myPlayer();
+    if (isGuest()) return guestProfile();
     if (!me) return `${pageHead('My profile', '')}<section class="panel"><p class="muted">Your account isn’t linked to a squad player yet.</p></section>`;
     if (!pForm || pForm.id !== me.id) pForm = formFor(me);
     const since = acctMe && acctMe.createdAt ? new Date(acctMe.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
@@ -4599,7 +4654,7 @@ ${tabRows.map(r => {
   }
 
   // Settings → Sign-in & security, for players: biometrics on this device, password, signing out.
-  function securityPanel() {
+  function securityPanel(onProfile = false) {
     const mine = readStore(PASSKEY_KEY);
     const on = !!(mine && acctMe && (acctMe.passkeys || []).some(p => p.id === mine.id));
     const others = acctMe ? (acctMe.passkeys || []).filter(p => !mine || p.id !== mine.id) : [];
@@ -4610,7 +4665,7 @@ ${tabRows.map(r => {
         bioAvailable === false ? '' : `<button class="switch ${on ? 'on' : ''}" role="switch" aria-checked="${on}" data-action="bio-toggle" aria-label="Face ID or fingerprint sign-in"><span></span></button>`)}
       ${others.length ? `<ul class="sec-devices">${others.map(p => `<li><span>${icon(FINGER_ICON, 16)} ${esc(p.label)}<small class="muted">added ${ago(p.createdAt)}${p.lastUsedAt ? ` · used ${ago(p.lastUsedAt)}` : ''}</small></span>
           <button class="btn btn-ghost small" data-action="passkey-remove" data-id="${esc(p.id)}">Remove</button></li>`).join('')}</ul>` : ''}
-      ${row('Password', 'Change it on your Profile tab.', '<button class="btn btn-ghost small" data-action="tab" data-tab="profile">Change password</button>')}
+      ${onProfile ? '' : row('Password', 'Change it on your Profile tab.', '<button class="btn btn-ghost small" data-action="tab" data-tab="profile">Change password</button>')}
       ${row(esc(session.email || ''), session.remember ? 'Remembered on this device.' : 'Signed in until you close the browser.', '<button class="btn btn-ghost small" data-action="logout">Log out</button>')}
     </section>`;
   }
@@ -4621,6 +4676,7 @@ ${tabRows.map(r => {
   let linkRequests = [];                      // new accounts not linked to a squad player yet
   const linkPick = {};                        // account id -> the squad player chosen for it in Requests
   let accOpen = null;                         // the account whose sign-in history is open
+  let accFilter = 'all';                      // Accounts: all | players | guests | tolink
 
   async function loadAccounts() {
     if (!realAdmin()) return;
@@ -4649,11 +4705,15 @@ ${tabRows.map(r => {
       const opts = `<option value="">Not linked</option>${state.players.map(p => `<option value="${esc(p.id)}" ${a.playerId === p.id ? 'selected' : ''} ${taken.has(p.id) && a.playerId !== p.id ? 'disabled' : ''}>${esc(p.name)}${taken.has(p.id) && a.playerId !== p.id ? ' (has an account)' : ''}</option>`).join('')}`;
       const flags = [a.role === 'admin' && '<span class="acc-flag ok">Admin</span>', a.role === 'manager' && '<span class="acc-flag ok">Manager</span>', a.resetRequested && '<span class="acc-flag warn">Forgot password</span>', a.mustChange && '<span class="acc-flag">Setting a new password</span>',
         a.passkeys > 0 && `<span class="acc-flag ok">${icon(FINGER_ICON, 12)} Biometrics on ${a.passkeys} device${a.passkeys === 1 ? '' : 's'}</span>`,
-        !a.playerId && (a.dismissed ? '<span class="acc-flag">Not in the squad · Home only</span>' : '<span class="acc-flag warn">Not linked yet · Home only</span>')].filter(Boolean).join('');
+        !a.playerId && (a.dismissed ? '<span class="acc-flag">Not in the squad</span>' : '<span class="acc-flag warn">Waiting for you to link</span>')].filter(Boolean).join('');
+      const prof = a.profile || {};
+      const guestInfo = !a.playerId ? [prof.role, prof.battingHand && `${prof.battingHand === 'left' ? 'Left' : 'Right'}-hand bat`,
+        (prof.bowlingArm || prof.bowlingStyle) && [prof.bowlingArm && `${prof.bowlingArm === 'left' ? 'Left' : 'Right'}-arm`, prof.bowlingStyle].filter(Boolean).join(' ')].filter(Boolean).join(' · ') : '';
       return `<article class="acc-card ${a.playerId ? '' : 'unlinked'}">
         <div class="acc-top">
           <span class="acc-who">${a.playerId && findPlayer(a.playerId) ? avatar(findPlayer(a.playerId), 40) : `<span class="avatar ph" style="--s:40px">${icon(PERSON_ICON, 20)}</span>`}
-            <span><strong>${esc(a.name)}</strong><small class="muted">${esc(a.email)}</small></span></span>
+            <span><strong>${esc(a.name)} <span class="acc-cat ${a.playerId ? 'player' : 'guest'}">${a.playerId ? 'Player' : 'Guest'}</span></strong><small class="muted">${esc(a.email)}</small>
+              ${guestInfo || (!a.playerId && prof.about) ? `<small class="acc-guest">${esc(guestInfo)}${guestInfo && prof.about ? ' · ' : ''}${prof.about ? `“${esc(prof.about)}”` : ''}</small>` : ''}</span></span>
           <label class="acc-link"><span>Squad player</span><select class="field select" data-input="acc-link" data-id="${esc(a.id)}" aria-label="Squad player for ${esc(a.name)}">${opts}</select></label>
           <label class="acc-link"><span>Rights</span><select class="field select" data-input="acc-role" data-id="${esc(a.id)}" aria-label="Rights for ${esc(a.name)}">
             <option value="" ${!a.role ? 'selected' : ''}>Player</option><option value="manager" ${a.role === 'manager' ? 'selected' : ''}>Manager</option><option value="admin" ${a.role === 'admin' ? 'selected' : ''}>Admin</option></select></label>
@@ -4672,12 +4732,16 @@ ${tabRows.map(r => {
         ${open ? `<ol class="acc-history">${(a.recent || []).length ? a.recent.map(e => `<li class="${e.ok ? '' : 'bad'}"><span>${when(e.at)}</span><span>${esc(METHOD[e.method] || e.method)}${e.ok ? '' : ' · failed'}</span><span class="muted">${esc(e.label)}</span></li>`).join('') : '<li class="muted">No sign-ins yet.</li>'}</ol>` : ''}
       </article>`;
     };
-    return `${head}
+    const cats = { all: list, players: list.filter(a => a.playerId), guests: list.filter(a => !a.playerId), tolink: list.filter(a => !a.playerId && !a.dismissed) };
+    const shownList = cats[accFilter] || list;
+    const filters = `<div class="seg acc-filter">${[['all', 'All'], ['players', 'Players'], ['guests', 'Guests'], ['tolink', 'To link']].map(([id, label]) =>
+      `<button class="seg-btn ${accFilter === id ? 'on' : ''}" data-action="acc-filter" data-id="${id}">${label} <span class="muted">${cats[id].length}</span></button>`).join('')}</div>`;
+    return `${head}${filters}
       <div class="acc-chips"><span class="hero-chip"><b>${list.length}</b> account${list.length === 1 ? '' : 's'}</span>
         <span class="hero-chip"><b>${linked}</b> linked to the squad</span><span class="hero-chip"><b>${list.length - linked}</b> not linked</span>
         <span class="hero-chip"><b>${state.players.filter(p => !taken.has(p.id)).length}</b> squad players without an account</span></div>
       ${requests}${linkFirst}
-      ${list.length ? `<div class="acc-list">${list.map(card).join('')}</div>` : '<section class="panel"><p class="muted">Nobody has signed up yet. Players create an account on the start screen with their email and full name.</p></section>'}`;
+      ${shownList.length ? `<div class="acc-list">${shownList.map(card).join('')}</div>` : list.length ? '<section class="panel"><p class="muted">No accounts in this group.</p></section>' : '<section class="panel"><p class="muted">Nobody has signed up yet. Players create an account on the start screen with their email and full name.</p></section>'}`;
   }
 
   // The admin gives an account manager or admin rights, or takes them away. They apply the next time the person signs in.
@@ -5609,6 +5673,19 @@ ${tabRows.map(r => {
       el.setAttribute('aria-label', input.type === 'password' ? 'Show password' : 'Hide password');
     },
     'acct-bio'() { bioSignIn(); },
+    async 'guest-profile-save'(el) {
+      if (!isGuest() || !gForm) return;
+      if (!gForm.name.trim()) { toast('Enter your name.'); return; }
+      el.disabled = true;
+      try {
+        acctMe = { ...acctMe, ...(await api('PUT', '/api/account/profile', { name: gForm.name, role: gForm.role, battingHand: gForm.bat, bowlingArm: gForm.arm, bowlingStyle: gForm.style, about: gForm.about })) };
+        session = { ...session, name: acctMe.name };
+        saveSession(session);
+        gForm = null;
+        toast('Profile saved.');
+        render();
+      } catch (e) { toast(e.message || 'Could not save your profile.'); el.disabled = false; }
+    },
     async 'pw-save'() {
       if (pwDraft.next.length < 6) { toast('Use a new password of at least 6 characters.'); return; }
       if (pwDraft.next !== pwDraft.again) { toast('The two new passwords don’t match.'); return; }
@@ -5645,6 +5722,7 @@ ${tabRows.map(r => {
       if (mine && mine.id === el.dataset.id) writeStore(PASSKEY_KEY, null);
       await refreshMe();
     },
+    'acc-filter'(el) { accFilter = el.dataset.id; render(); },
     'acc-history'(el) { accOpen = accOpen === el.dataset.id ? null : el.dataset.id; render(); },
     async 'acc-reset'(el) {
       const a = (accountList || []).find(x => x.id === el.dataset.id) || (resetRequests.find(r => r.userId === el.dataset.id) && { id: el.dataset.id, ...resetRequests.find(r => r.userId === el.dataset.id) });
@@ -5669,7 +5747,7 @@ ${tabRows.map(r => {
       loadAccounts();
     },
     async 'link-decline'(el) {
-      const ok = await confirmDialog('Not in the squad?', 'They keep seeing the Home tab only, and leave your requests. You can still link them later on the Accounts screen.', 'Not in the squad');
+      const ok = await confirmDialog('Not in the squad?', 'They stay a guest (Tournament and their profile only) and leave your requests. You can still link them later on the Accounts screen.', 'Not in the squad');
       if (!ok) return;
       try { await api('POST', `/api/account/users/${encodeURIComponent(el.dataset.id)}/dismiss`); toast('Done.'); } catch (e) { toast(e.message || 'Could not change that.'); }
       loadInbox();
@@ -6710,6 +6788,7 @@ ${tabRows.map(r => {
       if (el.dataset && el.dataset.input === 'decline-note') { declineDraft[el.dataset.key] = el.value; return; }
       if (el.dataset && /^tfa-/.test(el.dataset.input || '')) { tfaDraft[el.dataset.input.slice(4)] = el.value; return; }
       if (el.dataset && /^pw-/.test(el.dataset.input || '')) { pwDraft[el.dataset.input.slice(3)] = el.value; return; }
+      if (el.dataset && /^gp-/.test(el.dataset.input || '')) { if (gForm) gForm[el.dataset.input.slice(3)] = el.value; return; }
       if (el.dataset && el.dataset.input === 'acc-link') { linkAccount(el.dataset.id, el.value); return; }
       if (el.dataset && el.dataset.input === 'acc-role') { setAccountRole(el.dataset.id, el.value); return; }
       if (el.dataset && el.dataset.input === 'link-pick') { linkPick[el.dataset.id] = el.value; render(); return; }

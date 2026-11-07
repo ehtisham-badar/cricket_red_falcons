@@ -53,6 +53,9 @@ public class AccountController {
     public record PasswordBody(String current, String next) {
     }
 
+    public record ProfileBody(String name, String role, String battingHand, String bowlingArm, String bowlingStyle, String about) {
+    }
+
     public record ForgotBody(String email, String note) {
     }
 
@@ -105,6 +108,16 @@ public class AccountController {
         out.put("possible", a.isMustChange() ? List.of() : accounts.possibleFor(a).stream().map(AccountController::squad).toList());
         out.put("passkeys", accounts.passkeysOf(a).stream().map(AccountController::passkey).toList());
         return ResponseEntity.ok(out);
+    }
+
+    /** A guest's own profile (a player's cricket details are saved on their squad player instead). */
+    @PutMapping("/profile")
+    public ResponseEntity<?> profile(HttpServletRequest req, @RequestBody ProfileBody b) {
+        UserAccount a = account(req);
+        if (a == null) return signIn();
+        if (a.isMustChange()) return mustChange();
+        return run(() -> me(accounts.saveProfile(a, b == null ? null : b.name(), b == null ? null : b.role(), b == null ? null : b.battingHand(),
+                b == null ? null : b.bowlingArm(), b == null ? null : b.bowlingStyle(), b == null ? null : b.about())));
     }
 
     @PutMapping("/password")
@@ -299,6 +312,8 @@ public class AccountController {
         m.put("playerId", p.isPresent() ? pid : "");
         m.put("playerName", p.map(x -> x.getName()).orElse(""));
         m.put("dismissed", a.isDismissed());
+        m.put("profile", obj("role", a.getProfileRole(), "battingHand", a.getBattingHand(), "bowlingArm", a.getBowlingArm(),
+                "bowlingStyle", a.getBowlingStyle(), "about", a.getAbout()));
         m.put("mustChange", a.isMustChange());
         m.put("role", a.getRole());
         m.put("createdAt", a.getCreatedAt());

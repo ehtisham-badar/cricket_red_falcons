@@ -114,6 +114,15 @@ class AccountTest {
         assertThat(send("GET", "/api/account/links", null, admin, null).body()).doesNotContain("guest@example.com");
         assertThat(send("GET", "/api/ledger", null, null, field(stranger.body(), "token")).statusCode()).isEqualTo(200);
 
+        // A guest can make their own profile; bad values are refused; a linked player's squad name stays.
+        String guestToken = field(stranger.body(), "token");
+        assertThat(send("PUT", "/api/account/profile", "{\"name\":\"Imran K\",\"role\":\"Bowler\",\"battingHand\":\"left\",\"bowlingArm\":\"right\",\"bowlingStyle\":\"Leg spin\",\"about\":\"Weekend player\"}", null, guestToken).body())
+                .contains("\"name\":\"Imran K\"").contains("\"profile\":{\"role\":\"Bowler\",\"battingHand\":\"left\",\"bowlingArm\":\"right\",\"bowlingStyle\":\"Leg spin\",\"about\":\"Weekend player\"}");
+        assertThat(send("PUT", "/api/account/profile", "{\"role\":\"Captain\"}", null, guestToken).statusCode()).isEqualTo(400);
+        assertThat(send("PUT", "/api/account/profile", "{\"role\":\"Bowler\"}", null, null).statusCode()).isEqualTo(401);
+        assertThat(send("PUT", "/api/account/profile", "{\"name\":\"Someone Else\",\"role\":\"\"}", null, roxy).body()).contains("\"name\":\"Ehtisham Badar\"");
+        assertThat(send("GET", "/api/account/users", null, admin, null).body()).contains("\"about\":\"Weekend player\"");
+
         // Players change only their own profile.
         assertThat(send("PUT", "/api/players/p1/profile", "{\"battingHand\":\"left\"}", null, roxy).statusCode()).isEqualTo(200);
         assertThat(send("PUT", "/api/players/p4/profile", "{\"battingHand\":\"left\"}", null, roxy).statusCode()).isEqualTo(403);

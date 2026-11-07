@@ -2582,3 +2582,8 @@ a.btn { text-decoration: none; }
 .gx-came { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .gx-who { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 2px; border-radius: 999px; background: rgba(var(--hi-rgb), .05); font-size: 13px; }
 @media (max-width: 520px) { .gx-grid { grid-template-columns: 1fr; } .gx-trains { margin: 0 -12px -12px; } }
+.acc-cat { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 4px; font-size: 11px; font-weight: 800; letter-spacing: .04em; vertical-align: 2px; }
+.acc-cat.player { background: rgba(var(--gold-rgb), .16); color: var(--gold); }
+.acc-cat.guest { background: rgba(var(--hi-rgb), .08); color: var(--muted); }
+.acc-guest { color: var(--text) !important; opacity: .85; }
+.acc-filter .seg-btn .muted { font-weight: 600; margin-left: 4px; }

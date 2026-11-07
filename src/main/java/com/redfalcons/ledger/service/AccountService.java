@@ -182,6 +182,33 @@ public class AccountService {
         return a;
     }
 
+    static final List<String> ROLES = List.of("", "Batsman", "Bowler", "All-rounder", "Wicket-keeper");
+    static final List<String> HANDS = List.of("", "right", "left");
+    static final List<String> STYLES = List.of("", "Fast", "Medium-fast", "Medium", "Off spin", "Leg spin", "Left-arm spin");
+
+    /**
+     * A guest's own profile (name and, if they like, how they play). A linked player's name stays the squad's;
+     * their cricket details live on their squad player (the Profile tab saves those there).
+     */
+    @Transactional
+    public UserAccount saveProfile(UserAccount a, String name, String role, String battingHand, String bowlingArm, String bowlingStyle, String about) {
+        UserAccount fresh = accounts.findById(a.getId()).orElseThrow();
+        if (fresh.getPlayerId().isEmpty() && name != null) {
+            String full = name.trim().replaceAll("\\s+", " ");
+            if (full.isEmpty()) throw new IllegalArgumentException("Enter your name.");
+            if (full.length() > 60) throw new IllegalArgumentException("That name is too long.");
+            fresh.setName(full);
+        }
+        String r = role == null ? "" : role.trim(), bat = battingHand == null ? "" : battingHand.trim(), arm = bowlingArm == null ? "" : bowlingArm.trim(),
+                style = bowlingStyle == null ? "" : bowlingStyle.trim(), note = about == null ? "" : about.trim();
+        if (!ROLES.contains(r) || !HANDS.contains(bat) || !HANDS.contains(arm) || !STYLES.contains(style)) {
+            throw new IllegalArgumentException("Pick from the lists.");
+        }
+        if (note.length() > 200) note = note.substring(0, 200);
+        fresh.setProfile(r, bat, arm, style, note);
+        return fresh;
+    }
+
     @Transactional
     public void changePassword(UserAccount a, String current, String next) {
         UserAccount fresh = accounts.findById(a.getId()).orElseThrow();

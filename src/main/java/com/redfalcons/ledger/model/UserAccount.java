@@ -43,6 +43,18 @@ public class UserAccount {
     @Column(name = "staff_role", length = 16)
     private String role = "";
 
+    /** A guest's own profile, if they make one (players keep theirs on their squad player). '' when not set. */
+    @Column(name = "profile_role", length = 30)
+    private String profileRole = "";
+    @Column(name = "batting_hand", length = 10)
+    private String battingHand = "";
+    @Column(name = "bowling_arm", length = 10)
+    private String bowlingArm = "";
+    @Column(name = "bowling_style", length = 30)
+    private String bowlingStyle = "";
+    @Column(length = 200)
+    private String about = "";
+
     /** Set when the admin has reset the password: the next sign-in must choose a new one. */
     @Column(name = "must_change", nullable = false)
     private boolean mustChange;
@@ -85,6 +97,19 @@ public class UserAccount {
     public String getPlayerId() { return playerId == null ? "" : playerId; }
     public String getPendingPlayerId() { return pendingPlayerId == null ? "" : pendingPlayerId; }
     public boolean isDismissed() { return Boolean.TRUE.equals(dismissed); }
+    public String getProfileRole() { return profileRole == null ? "" : profileRole; }
+    public String getBattingHand() { return battingHand == null ? "" : battingHand; }
+    public String getBowlingArm() { return bowlingArm == null ? "" : bowlingArm; }
+    public String getBowlingStyle() { return bowlingStyle == null ? "" : bowlingStyle; }
+    public String getAbout() { return about == null ? "" : about; }
+
+    public void setProfile(String role, String battingHand, String bowlingArm, String bowlingStyle, String about) {
+        this.profileRole = role;
+        this.battingHand = battingHand;
+        this.bowlingArm = bowlingArm;
+        this.bowlingStyle = bowlingStyle;
+        this.about = about;
+    }
     public void setDismissed(boolean dismissed) { this.dismissed = dismissed; }
     public boolean isMustChange() { return mustChange; }
     public String getRole() { return role == null ? "" : role; }
