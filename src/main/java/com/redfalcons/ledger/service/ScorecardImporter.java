@@ -211,7 +211,13 @@ public class ScorecardImporter {
         List<MatchDay> sameDay = matches.findAll().stream().filter(m -> !m.isTest() && date.equals(m.getDate())).toList();
         Optional<MatchDay> exact = sameDay.stream().filter(m -> key(m.getOpponent()).equals(want)).findFirst();
         if (exact.isPresent()) return exact;
-        return sameDay.size() == 1 && sameDay.get(0).getOpponent().isBlank() ? Optional.of(sameDay.get(0)) : Optional.empty();
+        // Our one match that day, whatever the opponent is called there.
+        if (sameDay.size() == 1) return Optional.of(sameDay.get(0));
+        // The date may differ in the ledger: the one match against that opponent that has no stats yet.
+        Set<String> withStats = new HashSet<>();
+        stats.findAll().forEach(s -> withStats.add(s.getMatchId()));
+        List<MatchDay> byOpponent = matches.findAll().stream().filter(m -> !m.isTest() && key(m.getOpponent()).equals(want) && !withStats.contains(m.getId())).toList();
+        return byOpponent.size() == 1 ? Optional.of(byOpponent.get(0)) : Optional.empty();
     }
 
     private static String key(String name) {

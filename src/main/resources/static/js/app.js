@@ -2630,7 +2630,12 @@
         <button class="icon-btn" data-action="close-sheet" aria-label="Close">${X_ICON}</button>
       </header>`;
     if (!src) {
-      return `${head}<div class="sheet-body"><p class="muted center">The scorecard appears here once the match stats are added.</p></div>`;
+      // The admin sees here what the last refresh did about this scorecard, and can ask for it again.
+      const tried = isAdmin() ? `<div class="hpl-cards">
+          <button class="btn btn-gold small" data-action="hpl-refresh" ${hplRefreshing ? 'disabled' : ''}>Fetch the scorecard from Crickslab</button>
+          ${scorecardReport.length ? scorecardReport.map(c => `<p class="hpl-card ${esc(c.status)}"><strong>${esc(c.match)}</strong> · ${esc(c.message)}${c.sample ? `<details><summary>What the page looked like</summary><pre>${esc(c.sample)}</pre></details>` : ''}</p>`).join('')
+            : '<p class="hpl-card">Not tried yet since the server started. Tap the button.</p>'}</div>` : '';
+      return `${head}<div class="sheet-body"><p class="muted center">The scorecard appears here once the match stats are added.</p>${tried}</div>`;
     }
     return `${head}
       <div class="sheet-body sc">
