@@ -11,6 +11,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.*;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -56,15 +57,19 @@ public class MatchReportNews {
                 .sorted(Comparator.comparing(r -> String.valueOf(r.get("start")))).toList();
         LocalDate today = LocalDate.now(PAKISTAN);
         int posted = 0;
-        for (int i = 0; i < ours.size(); i++) {
-            Map<String, Object> r = ours.get(i);
+        for (Map<String, Object> r : ours) {
             if (!"Completed".equalsIgnoreCase(String.valueOf(r.get("status")))) continue;
             LocalDate day = dayOf(String.valueOf(r.get("start")));
             if (day == null || day.isBefore(today.minusDays(DAYS))) continue;
             String key = KEY + r.get("id");
             if (settings.existsById(key)) continue;
-            String[] post = write(r, i + 1);
-            news.create(post[0], "Match report", post[1], false);
+            String head = header(r);
+            if (news.list().stream().anyMatch(n -> n.getBody().startsWith(head))) { // already written by hand
+                settings.save(new Setting(key, today.toString()));
+                continue;
+            }
+            String[] post = write(r, feed.summary());
+            news.create(post[0], "Results", post[1], false);
             settings.save(new Setting(key, today.toString()));
             posted++;
         }
@@ -84,9 +89,9 @@ public class MatchReportNews {
         }
     }
 
-    /** {title, body} for our {@code number}th league match. */
+    /** {title, body} in the style of the team's own match reports, for a finished match on the stored league page. */
     @SuppressWarnings("unchecked")
-    static String[] write(Map<String, Object> r, int number) {
+    static String[] write(Map<String, Object> r, Map<String, Object> summary) {
         List<Map<String, Object>> teams = (List<Map<String, Object>>) r.get("teams");
         Map<String, Object> us = teams.stream().filter(t -> US.matcher(String.valueOf(t.get("name"))).find()).findFirst().orElseThrow();
         Map<String, Object> them = teams.stream().filter(t -> t != us).findFirst().orElse(Map.of("name", "the opposition"));
@@ -95,32 +100,59 @@ public class MatchReportNews {
         String low = result.toLowerCase(Locale.ROOT);
         boolean won = US.matcher(result).find() && low.contains("won");
         boolean lost = !won && low.contains("won");
-        String title = "Match " + number + ": " + (won ? "Red Falcons beat " + opp : lost ? "Red Falcons fall to " + opp : "Red Falcons vs " + opp);
+        int by = low.indexOf("won by");
+        String margin = by >= 0 ? result.substring(by + 7).trim() : "";
+        String title = "Match report: " + (won && !margin.isEmpty() ? "We beat " + opp + " by " + margin
+                : lost && !margin.isEmpty() ? opp + " beat us by " + margin : "Red Falcons vs " + opp);
 
-        StringBuilder b = new StringBuilder();
-        // The result as Crickslab words it, with the team names in normal capitals.
+        StringBuilder b = new StringBuilder(header(r)).append("\n\n");
         String shown = result.replaceAll("(?i)red falcons", "Red Falcons").replaceAll("(?i)" + Pattern.quote(String.valueOf(them.get("name"))), java.util.regex.Matcher.quoteReplacement(opp));
-        if (!result.isEmpty()) b.append(shown).append(". ");
-        b.append("Red Falcons ").append(score(us)).append(", ").append(opp).append(' ').append(score(them));
-        String ground = String.valueOf(r.getOrDefault("ground", "")).trim();
-        LocalDate day = dayOf(String.valueOf(r.get("start")));
-        if (!ground.isEmpty()) b.append(", at ").append(ground);
-        if (day != null) b.append(" on ").append(day.getDayOfMonth()).append(' ').append(day.getMonth().getDisplayName(java.time.format.TextStyle.SHORT, Locale.ENGLISH));
-        b.append(". ");
+        b.append("Result: Red Falcons ").append(score(us)).append(" · ").append(opp).append(' ').append(score(them)).append('.');
+        if (!shown.isEmpty()) b.append(' ').append(shown).append('.');
+        b.append('\n');
         String pom = String.valueOf(r.getOrDefault("playerOfMatch", "")).trim().replaceAll("\\s+", " ");
-        if (!pom.isEmpty()) b.append("Player of the Match: ").append(pom).append(". ");
-        b.append(won ? "Great effort, team! 🦅" : lost ? "Thanks to everyone who came and supported the team. Let's regroup at training and come back stronger. 🦅"
+        if (!pom.isEmpty()) b.append("Player of the Match: ").append(pom).append(".\n");
+        String standing = standing(summary);
+        if (!standing.isEmpty()) b.append('\n').append(standing).append('\n');
+        b.append('\n').append(won ? "Great effort, Falcons! 🦅" : lost ? "Thanks to everyone who came and supported the team. Let's regroup at training and come back stronger. 🦅"
                 : "Thanks to everyone who came and supported the team. 🦅");
         return new String[] { title, b.toString() };
+    }
+
+    /** "HPL League Stage, Match 8 · Sat 7 Nov · Punjab University". */
+    static String header(Map<String, Object> r) {
+        Matcher n = Pattern.compile("MATCH\\s*(\\d+)", Pattern.CASE_INSENSITIVE).matcher(String.valueOf(r.getOrDefault("title", "")));
+        LocalDate day = dayOf(String.valueOf(r.get("start")));
+        List<String> parts = new ArrayList<>();
+        parts.add("HPL League Stage" + (n.find() ? ", Match " + n.group(1) : ""));
+        if (day != null) parts.add(day.getDayOfWeek().getDisplayName(java.time.format.TextStyle.SHORT, Locale.ENGLISH) + " " + day.getDayOfMonth() + " "
+                + day.getMonth().getDisplayName(java.time.format.TextStyle.SHORT, Locale.ENGLISH));
+        String ground = String.valueOf(r.getOrDefault("ground", "")).trim();
+        if (!ground.isEmpty()) parts.add(ground);
+        return String.join(" · ", parts);
+    }
+
+    /** "Where we stand: 6th in the HPL table (P3 W0 L3)." from the stored table, or "" when we aren't in it. */
+    @SuppressWarnings("unchecked")
+    private static String standing(Map<String, Object> summary) {
+        List<Map<String, Object>> table = (List<Map<String, Object>>) summary.getOrDefault("pointsTable", List.of());
+        for (int i = 0; i < table.size(); i++) {
+            Map<String, Object> t = table.get(i);
+            if (!US.matcher(String.valueOf(t.get("team"))).find()) continue;
+            int rank = i + 1;
+            String ord = rank % 100 >= 11 && rank % 100 <= 13 ? "th" : switch (rank % 10) { case 1 -> "st"; case 2 -> "nd"; case 3 -> "rd"; default -> "th"; };
+            return "Where we stand: " + rank + ord + " in the HPL table (P" + t.get("played") + " W" + t.get("won") + " L" + t.get("lost") + ").";
+        }
+        return "";
     }
 
     /** "103 all out (20.0 ov)" or "106/2 (13.1 ov)". */
     private static String score(Map<String, Object> t) {
         Object runs = t.get("runs"), wk = t.get("wickets");
         if (!(runs instanceof Number r)) return "did not bat";
-        String overs = String.valueOf(t.getOrDefault("overs", "")).trim();
+        String overs = String.valueOf(t.getOrDefault("overs", "")).trim().replaceAll("\\.0$", "");
         String s = wk instanceof Number w && w.intValue() >= 10 ? r.intValue() + " all out" : wk instanceof Number w ? r.intValue() + "/" + w.intValue() : String.valueOf(r.intValue());
-        return s + (overs.isEmpty() ? "" : " (" + overs + " ov)");
+        return s + (overs.isEmpty() ? "" : " (" + overs + " overs)");
     }
 
     private static String titleCase(String n) {
