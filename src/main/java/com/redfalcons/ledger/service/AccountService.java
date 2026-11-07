@@ -312,6 +312,16 @@ public class AccountService {
         return a;
     }
 
+    /** The admin gives an account the "manager" or "admin" role, or takes it away with "". */
+    @Transactional
+    public UserAccount setRole(String userId, String role) {
+        UserAccount a = accounts.findById(userId).orElseThrow(() -> new IllegalArgumentException("No such account."));
+        String r = role == null ? "" : role.trim().toLowerCase(Locale.ROOT);
+        if (!r.isEmpty() && !r.equals("manager") && !r.equals("admin")) throw new IllegalArgumentException("The role is manager, admin or none.");
+        a.setRole(r);
+        return a;
+    }
+
     @Transactional
     public boolean delete(String userId) {
         if (!accounts.existsById(userId)) return false;

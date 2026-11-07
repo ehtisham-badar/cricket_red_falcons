@@ -5,6 +5,7 @@ import com.redfalcons.ledger.model.Passkey;
 import com.redfalcons.ledger.model.UserAccount;
 import com.redfalcons.ledger.repo.PlayerRepository;
 import com.redfalcons.ledger.service.AccountService;
+import com.redfalcons.ledger.service.ManagerAccessService;
 import com.redfalcons.ledger.service.NameMatch;
 import com.redfalcons.ledger.service.WebAuthnService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -32,12 +33,15 @@ public class AccountController {
     private final WebAuthnService webAuthn;
     private final PlayerRepository players;
     private final AdminAuth auth;
+    private final ManagerAccessService managers;
 
-    public AccountController(AccountService accounts, WebAuthnService webAuthn, PlayerRepository players, AdminAuth auth) {
+    public AccountController(AccountService accounts, WebAuthnService webAuthn, PlayerRepository players, AdminAuth auth,
+                             ManagerAccessService managers) {
         this.accounts = accounts;
         this.webAuthn = webAuthn;
         this.players = players;
         this.auth = auth;
+        this.managers = managers;
     }
 
     public record SignupBody(String email, String password, String name, Boolean remember, String label) {
@@ -57,6 +61,9 @@ public class AccountController {
     }
 
     public record PlayerBody(String playerId) {
+    }
+
+    public record RoleBody(String role) {
     }
 
     // ---------- the player ----------
@@ -79,6 +86,7 @@ public class AccountController {
             AccountService.Signed s = accounts.login(b.email(), b.password(), Boolean.TRUE.equals(b.remember()), b.label());
             Map<String, Object> out = me(s.account());
             out.put("token", s.token());
+            staffTokens(out, s.account(), b.label());
             return out;
         }, HttpStatus.UNAUTHORIZED);
     }
@@ -103,7 +111,14 @@ public class AccountController {
     public ResponseEntity<?> password(HttpServletRequest req, @RequestBody PasswordBody b) {
         UserAccount a = account(req);
         if (a == null) return signIn();
-        return run(() -> { accounts.changePassword(a, b == null ? null : b.current(), b == null ? null : b.next()); return Map.of("ok", true); });
+        return run(() -> {
+            accounts.changePassword(a, b == null ? null : b.current(), b == null ? null : b.next());
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("ok", true);
+            // An admin or manager who had to choose a new password gets their staff session now.
+            staffTokens(out, a, null);
+            return out;
+        });
     }
 
     @PostMapping("/forgot")
@@ -161,6 +176,7 @@ public class AccountController {
                     !Boolean.FALSE.equals(b.remember()), b.label());
             Map<String, Object> out = me(s.account());
             out.put("token", s.token());
+            staffTokens(out, s.account(), b.label());
             return out;
         }, HttpStatus.UNAUTHORIZED);
     }
@@ -195,6 +211,7 @@ public class AccountController {
     @PostMapping("/users/{id}/reset")
     public ResponseEntity<?> reset(@RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token, @PathVariable String id) {
         if (!auth.isValidToken(token)) return adminOnly();
+        endStaff(id);
         return run(() -> Map.of("tempPassword", accounts.resetPassword(id)));
     }
 
@@ -205,9 +222,23 @@ public class AccountController {
         return run(() -> me(accounts.setPlayer(id, b == null ? null : b.playerId())));
     }
 
+    /** Gives an account the manager or admin role, or takes it away (role ""). Only the admin can; their staff sessions end. */
+    @PutMapping("/users/{id}/role")
+    public ResponseEntity<?> setRole(@RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token,
+                                     @PathVariable String id, @RequestBody RoleBody b) {
+        if (!auth.isValidToken(token)) return adminOnly();
+        return run(() -> {
+            UserAccount a = accounts.setRole(id, b == null ? null : b.role());
+            // The new rights start at the account's next sign-in; any old staff session ends now.
+            endStaff(a.getId());
+            return me(a);
+        });
+    }
+
     @DeleteMapping("/users/{id}")
     public ResponseEntity<?> delete(@RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token, @PathVariable String id) {
         if (!auth.isValidToken(token)) return adminOnly();
+        endStaff(id);
         return accounts.delete(id) ? ResponseEntity.ok(Map.of("deleted", id))
                 : ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "No such account."));
     }
@@ -269,8 +300,21 @@ public class AccountController {
         m.put("playerName", p.map(x -> x.getName()).orElse(""));
         m.put("dismissed", a.isDismissed());
         m.put("mustChange", a.isMustChange());
+        m.put("role", a.getRole());
         m.put("createdAt", a.getCreatedAt());
         return m;
+    }
+
+    /** An admin or manager account also gets a staff session (never before it has chosen its own password). */
+    private void staffTokens(Map<String, Object> out, UserAccount a, String label) {
+        if (a.isMustChange()) return;
+        if ("admin".equals(a.getRole())) out.put("adminToken", auth.newSession(label, a.getId()));
+        else if (ManagerAccessService.ROLE.equals(a.getRole())) out.put("managerToken", managers.startSession(a.getId()));
+    }
+
+    private void endStaff(String accountId) {
+        auth.endAccountSessions(accountId);
+        managers.dropAccount(accountId);
     }
 
     /** Ordered maps, so the JSON always reads the same way. */

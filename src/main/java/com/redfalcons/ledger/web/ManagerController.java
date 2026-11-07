@@ -1,6 +1,5 @@
 package com.redfalcons.ledger.web;
 
-import com.redfalcons.ledger.model.ManagerAccess;
 import com.redfalcons.ledger.model.LineupRequest;
 import com.redfalcons.ledger.service.LineupService;
 import com.redfalcons.ledger.service.ManagerAccessService;
@@ -12,8 +11,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * App managers. A viewer requests access; the admin approves, declines or revokes it. An approved manager
- * can set the playing XI (and 12th man) of matches that aren't finished, and nothing else.
+ * App managers: accounts the admin gave the manager role. A manager proposes the playing XI (and 12th man) of
+ * matches that aren't finished, and the admin approves it.
  */
 @RestController
 @RequestMapping("/api/manager")
@@ -29,42 +28,6 @@ public class ManagerController {
         this.access = access;
         this.lineups = lineups;
         this.auth = auth;
-    }
-
-    static final String REQUEST_HEADER = "X-Request-Token";
-
-    public record AccessRequest(String name, String phrase, String label) {
-    }
-
-    public record PhraseBody(String phrase) {
-    }
-
-    // ---------- the requester ----------
-
-    @PostMapping("/request")
-    public ResponseEntity<?> request(@RequestBody(required = false) AccessRequest req) {
-        try {
-            String secret = access.request(req == null ? null : req.name(), req == null ? null : req.phrase(),
-                    req == null ? null : req.label());
-            return ResponseEntity.ok(Map.of("token", secret, "status", ManagerAccess.PENDING));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
-    }
-
-    /** Whether the caller's request is "pending", "approved", "declined" (with the admin's note) or "none". */
-    @GetMapping("/status")
-    public Map<String, String> status(@RequestHeader(value = REQUEST_HEADER, required = false) String secret) {
-        return access.byRequest(secret)
-                .map(m -> Map.of("status", m.getStatus(), "note", m.getNote() == null ? "" : m.getNote()))
-                .orElse(Map.of("status", ManagerAccessService.NONE, "note", ""));
-    }
-
-    /** Withdraws the caller's own request, or gives up their own access. */
-    @DeleteMapping("/request")
-    public Map<String, Boolean> leave(@RequestHeader(value = REQUEST_HEADER, required = false) String secret) {
-        access.leave(secret);
-        return Map.of("ok", true);
     }
 
     // ---------- a signed-in manager ----------
@@ -121,28 +84,14 @@ public class ManagerController {
 
     // ---------- the admin ----------
 
-    public record Row(String id, String name, String label, String phrase, String status, String createdAt, String decidedAt) {
-    }
-
-    /** Everything waiting for the admin, plus the approved managers. */
+    /** The lineups managers proposed, waiting for the admin. */
     @GetMapping("/inbox")
     public ResponseEntity<?> inbox(@RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token) {
         if (!auth.isValidToken(token)) return forbidden();
-        return ResponseEntity.ok(Map.of(
-                "access", access.list().stream().filter(m -> !ManagerAccess.DECLINED.equals(m.getStatus()))
-                        .map(m -> new Row(m.getId(), m.getName(), m.getLabel(), m.getPhrase(), m.getStatus(), m.getCreatedAt(), m.getDecidedAt()))
-                        .toList(),
-                "lineups", lineups.pending().stream().map(LineupRow::of).toList()));
+        return ResponseEntity.ok(Map.of("lineups", lineups.pending().stream().map(LineupRow::of).toList()));
     }
 
     public record DeclineBody(String note) {
-    }
-
-    @PostMapping("/requests/{id}/decline")
-    public ResponseEntity<?> declineAccess(@RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token,
-                                           @PathVariable String id, @RequestBody(required = false) DeclineBody body) {
-        if (!auth.isValidToken(token)) return forbidden();
-        return access.decline(id, body == null ? null : body.note()) ? ResponseEntity.ok(Map.of("declined", id)) : notFound();
     }
 
     @PostMapping("/lineups/{id}/approve")
@@ -161,34 +110,6 @@ public class ManagerController {
                                            @PathVariable String id, @RequestBody(required = false) DeclineBody body) {
         if (!auth.isValidToken(token)) return forbidden();
         return lineups.decline(id, body == null ? null : body.note()) ? ResponseEntity.ok(Map.of("declined", id)) : notFound();
-    }
-
-    @PostMapping("/requests/{id}/approve")
-    public ResponseEntity<?> approve(@RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token,
-                                     @PathVariable String id) {
-        if (!auth.isValidToken(token)) return forbidden();
-        return access.approve(id) ? ResponseEntity.ok(Map.of("approved", id)) : notFound();
-    }
-
-    /** Changes a manager's phrase; their signed-in browsers are signed out. */
-    @PutMapping("/requests/{id}/phrase")
-    public ResponseEntity<?> phrase(@RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token,
-                                    @PathVariable String id, @RequestBody PhraseBody body) {
-        if (!auth.isValidToken(token)) return forbidden();
-        try {
-            return access.changePhrase(id, body == null ? null : body.phrase())
-                    ? ResponseEntity.ok(Map.of("changed", id)) : notFound();
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
-    }
-
-    /** Declines a pending request, or revokes approved access. */
-    @DeleteMapping("/requests/{id}")
-    public ResponseEntity<?> remove(@RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token,
-                                    @PathVariable String id) {
-        if (!auth.isValidToken(token)) return forbidden();
-        return access.remove(id) ? ResponseEntity.ok(Map.of("removed", id)) : notFound();
     }
 
     private static ResponseEntity<?> forbidden() {

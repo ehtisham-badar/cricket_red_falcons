@@ -17,6 +17,10 @@ public class AdminSession {
     @Column(name = "created_at", nullable = false, length = 40)
     private String createdAt;
 
+    /** The account whose admin rights opened this session; null for a sign-in with the admin key. */
+    @Column(name = "account_id", length = 64)
+    private String accountId;
+
     protected AdminSession() {
     }
 
@@ -26,6 +30,12 @@ public class AdminSession {
         this.createdAt = createdAt;
     }
 
+    public AdminSession(String id, String label, String createdAt, String accountId) {
+        this(id, label, createdAt);
+        this.accountId = accountId;
+    }
+
+    public String getAccountId() { return accountId; }
     public String getId() { return id; }
     public String getLabel() { return label; }
     public String getCreatedAt() { return createdAt; }

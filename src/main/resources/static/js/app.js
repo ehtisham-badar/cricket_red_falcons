@@ -21,7 +21,6 @@
   const COLLAPSED_KEY = 'rf.collapsed';      // Days sections this viewer has folded: { training, match }
   const DEVICE_KEY = 'rf.device';            // this browser's trusted-device token (skips the two-factor code)
   const FEED_SEEN_KEY = 'rf.feedSeen';       // newest notification this device has opened
-  const MGR_KEY = 'rf.manager';              // this browser's pending manager request: { token, name, status }
   const ME_KEY = 'rf.me';                     // viewer's chosen player id, or NOT_ME to show the picker
   const PASSKEY_KEY = 'rf.passkey';          // this device's biometric sign-in: { id, email, name }
   const NOT_ME = '__none';
@@ -126,9 +125,6 @@
   }
 
   // ---------- two-factor sign-in (admin) ----------
-  let mgr = readStore(MGR_KEY);               // { token, name, status } once this browser asked to be a manager
-  let mgrDraft = { phrase: '', edits: {} };   // the phrase being typed to ask, and phrases being edited by the admin
-  let mgrList = null;                         // admin: manager requests and approved managers
   let editedAt = 0;                           // when the admin last changed something on this screen
   let announcements = null;                   // staff: every announcement written, newest first
   let annDraft = { title: '', body: '', matchId: '', later: false, at: '', action: '' };   // the announcement being written
@@ -566,7 +562,6 @@
     if (session && session.token) headers['X-Admin-Token'] = session.token;
     if (session && session.managerToken) headers['X-Manager-Token'] = session.managerToken;
     if (session && session.userToken) headers['X-User-Token'] = session.userToken;
-    if (mgr && mgr.token) headers['X-Request-Token'] = mgr.token;
     const device = readStore(DEVICE_KEY);
     if (device) headers['X-Device'] = device;
     else if (!isUser()) {
@@ -761,45 +756,24 @@
   }
 
   // ---------- manager access ----------
-  function setMgr(next) {
-    mgr = next;
-    writeStore(MGR_KEY, next);
-  }
-
-  // A signed-in manager whose access the admin ended (or whose phrase was changed) goes back to view-only.
+  // A manager whose manager role the admin took away goes back to the sign-in screen.
   function dropManager() {
-    session = { name: session.name, admin: false, token: null };
-    saveSession(session);
-    tab = 'summary';
-    saveTab();
-    toast('Your manager access was ended. You are now view-only.');
-    render();
+    session = null;
+    saveSession(null);
+    writeStore(ME_KEY, null);
+    acctMe = null;
+    state = null;
+    showSplash('signin');
+    setAcct({ err: 'Your manager rights were ended. Please sign in again.' });
   }
 
-  // Manager: is the session still valid? Requester: was the request approved or declined?
+  // Is the manager's session still valid?
   let myManagerId = '';
   async function refreshManager() {
-    if (session && session.managerToken) {
-      let ok = true;
-      try { const r = await api('GET', '/api/manager/session'); ok = r.manager; myManagerId = r.id || ''; } catch { return; }
-      if (!ok) dropManager();
-      return;
-    }
-    if (!mgr || !mgr.token) return;
-    let status, note = '';
-    try { const r = await api('GET', '/api/manager/status'); status = r.status; note = r.note || ''; } catch { return; }
-    if (status === mgr.status) return;
-    if (status === 'none') {
-      setMgr(null);
-      toast('Your manager request was removed.');
-    } else if (status === 'declined') {
-      setMgr({ ...mgr, status, note });
-      toast(`Your manager request was declined${note ? `: ${note}` : '.'}`);
-    } else {
-      setMgr({ ...mgr, status });
-      toast('Approved! Log out, then tap “Admin or manager?” on the sign-in screen and enter your phrase.');
-    }
-    renderIfSettings();
+    if (!(session && session.managerToken)) return;
+    let ok = true;
+    try { const r = await api('GET', '/api/manager/session'); ok = r.manager; myManagerId = r.id || ''; } catch { return; }
+    if (!ok) dropManager();
   }
 
   async function loadInbox() {
@@ -813,7 +787,6 @@
     if (JSON.stringify(next) === JSON.stringify(inbox)) return;
     const was = inbox ? inboxCount() : null;
     inbox = next;
-    mgrList = next.access;
     if (was !== null && inboxCount() > was) toast('New request waiting — tap the bell.');
     render();
   }
@@ -841,29 +814,7 @@
     render();
   }
 
-  const inboxCount = () => inbox ? inbox.access.filter(m => m.status === 'pending').length + inbox.lineups.length + (inbox.resets || []).length + (inbox.links || []).length : 0;
-
-  function managerPanel() {
-    const waiting = (mgrList || []).filter(m => m.status === 'pending').length;
-    const active = (mgrList || []).filter(m => m.status === 'approved');
-    const row = m => {
-      const draft = m.id in mgrDraft.edits ? mgrDraft.edits[m.id] : m.phrase;
-      return `<li class="mgr-row">
-        <span class="mgr-who"><strong>${esc(m.name)}</strong>
-          <small>${esc(m.label)} · approved ${esc(formatDate(localDay(m.decidedAt || m.createdAt)))}</small></span>
-        <span class="mgr-phrase">
-          <input class="field" type="text" maxlength="60" value="${esc(draft)}" data-input="mgr-edit" data-id="${esc(m.id)}" data-focus="mgrp-${esc(m.id)}" aria-label="Phrase for ${esc(m.name)}" spellcheck="false" autocomplete="off">
-          ${draft !== m.phrase ? `<button class="btn btn-gold small" data-action="mgr-save-phrase" data-id="${esc(m.id)}">Save phrase</button>` : ''}
-        </span>
-        <span class="mgr-btns"><button class="btn btn-ghost small" data-action="mgr-remove" data-id="${esc(m.id)}" data-kind="revoke">Revoke</button></span>
-      </li>`;
-    };
-    return `<section class="panel">
-      <div class="panel-head"><h3>App managers</h3><p class="muted">A viewer asks for manager access with a phrase of their own. Once you approve, typing that phrase on the start screen signs them in (no two-factor). A manager can propose the playing XI and 12th man of matches that aren’t finished; nothing changes until you approve it. Change a phrase to sign that manager out, or revoke them, whenever you like.</p></div>
-      ${waiting ? `<p class="mgr-waiting">${icon('<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>', 16)} ${waiting} request${waiting === 1 ? '' : 's'} waiting. <button class="chip" data-action="open-inbox">Open notifications</button></p>` : ''}
-      ${mgrList === null ? '<p class="muted">Loading…</p>' : !active.length ? '<p class="muted season-empty">No managers yet.</p>' : `<ul class="mgr-list">${active.map(row).join('')}</ul>`}
-    </section>`;
-  }
+  const inboxCount = () => inbox ? inbox.lineups.length + (inbox.resets || []).length + (inbox.links || []).length : 0;
 
   // ---------- announcements (admin and managers) ----------
   async function loadAnnouncements() {
@@ -1383,7 +1334,6 @@
   // The admin's requests: in the bell's sheet, or (asPage) on the Requests tab without the player updates.
   function sheetInbox(asPage = false) {
     const items = [
-      ...(inbox ? inbox.access.filter(m => m.status === 'pending').map(m => ({ kind: 'access', at: m.createdAt, m })) : []),
       ...(inbox ? inbox.lineups.map(l => ({ kind: 'lineup', at: l.createdAt, l })) : [])
     ].sort((a, b) => a.at.localeCompare(b.at));
     const taken = new Set((accountList || []).map(x => x.playerId).filter(Boolean));
@@ -1407,14 +1357,10 @@
           <button class="btn btn-ghost small" data-action="reset-decline" data-id="${esc(r.id)}">Decline</button></div>
       </article>`).join('');
     const card = it => {
-      const id = it.kind === 'access' ? it.m.id : it.l.id;
+      const id = it.l.id;
       const key = `${it.kind}:${id}`;
       let title, sub, detail = '';
-      if (it.kind === 'access') {
-        title = `${esc(it.m.name)} wants manager access`;
-        sub = `${esc(it.m.label)} · ${ago(it.at)}`;
-        detail = `<p class="note-detail">Their phrase: <strong>${esc(it.m.phrase)}</strong>. As manager they could propose the playing XI; you would still approve each change.</p>`;
-      } else {
+      {
         const l = it.l;
         const match = C.matches(state).find(x => x.id === l.matchId);
         const now = state.players.filter(p => p.att[l.matchId]).map(p => p.id);
@@ -1431,7 +1377,7 @@
       return `<article class="note-card">
         <div class="note-head"><strong>${title}</strong><small>${sub}</small></div>
         ${detail}
-        ${declining ? `<label class="note-label">Note for ${esc(it.kind === 'access' ? it.m.name : it.l.managerName)} (optional)
+        ${declining ? `<label class="note-label">Note for ${esc(it.l.managerName)} (optional)
             <textarea class="field" rows="2" maxlength="300" data-input="decline-note" data-key="${esc(key)}" data-focus="dn-${esc(key)}" placeholder="Why it was declined">${esc(declineDraft[key])}</textarea></label>
           <div class="note-actions">
             <button class="btn btn-danger small" data-action="inbox-decline-send" data-kind="${it.kind}" data-id="${esc(id)}">Send decline</button>
@@ -1445,39 +1391,17 @@
     };
     if (asPage) {
       const waiting = inboxCount();
-      return `${pageHead('Requests', 'Everything waiting for your decision: new accounts to link, password resets, manager requests and lineup changes.')}
+      return `${pageHead('Requests', 'Everything waiting for your decision: new accounts to link, password resets and lineup changes.')}
         <div class="req-page">${links}${resets}${inbox === null ? '<p class="muted">Loading…</p>' : items.map(card).join('')}
           ${inbox !== null && !waiting ? `<section class="panel req-empty">${icon('<path d="M20 6 9 17l-5-5"/>', 28)}<p>Nothing waiting. You’re all caught up.</p></section>` : ''}</div>`;
     }
     return `<header class="sheet-head">
         <div><span class="day-kind">Admin</span><h2>Notifications</h2>
-          <p class="muted">New accounts to link, password resets, manager requests and lineup changes wait here for your decision, and you see when players update their profile.</p></div>
+          <p class="muted">New accounts to link, password resets and lineup changes wait here for your decision, and you see when players update their profile.</p></div>
         <button class="icon-btn" data-action="close-sheet" aria-label="Close">${X_ICON}</button>
       </header>
       <div class="sheet-body">${links}${resets}${inbox === null ? '<p class="muted center">Loading…</p>' : items.length ? items.map(card).join('') : (links || resets || (adminUpdates && adminUpdates.length) ? '' : '<p class="muted center">Nothing waiting. You’re all caught up.</p>')}
         ${adminUpdates && adminUpdates.length ? `<h3 class="sub ${items.length ? '' : 'first'}">Player updates</h3>${adminUpdates.map(n => `<article class="note-card is-ann"><div class="note-head"><strong>${esc(n.title)}</strong><small>${ago(n.createdAt)}</small></div><p class="note-detail">${esc(n.body)}</p></article>`).join('')}` : ''}</div>`;
-  }
-
-  function managerRequestPanel() {
-    let body;
-    if (isManager()) {
-      body = `<p class="muted">You’re signed in as an app manager. Open a match on the Days tab to set the playing XI and 12th man. Everything else stays view-only.</p>`;
-    } else if (mgr && mgr.status === 'approved') {
-      body = `<p class="muted">Approved! Log out, then tap “Admin or manager?” on the sign-in screen and type your phrase.</p>`;
-    } else if (mgr && mgr.status === 'declined') {
-      body = `<p class="muted">The admin declined your request${mgr.note ? `: “${esc(mgr.note)}”` : '.'}</p>
-        <button class="btn btn-ghost" data-action="mgr-cancel">Ask again</button>`;
-    } else if (mgr && mgr.status === 'pending') {
-      body = `<p class="muted">Request sent. The admin has to approve it — this page updates by itself. Your phrase is the one you chose.</p>
-        <button class="btn btn-ghost" data-action="mgr-cancel">Cancel request</button>`;
-    } else {
-      body = `<p class="muted">Pick a phrase only you know (at least 8 characters). If the admin approves, typing it on the start screen signs you in as an app manager, who can set the playing XI. The admin can see it, change it, or end your access at any time.</p>
-        <div class="mgr-ask">
-          <input class="field" type="text" maxlength="60" value="${esc(mgrDraft.phrase)}" placeholder="Your phrase" data-input="mgr-phrase" data-focus="mgr-phrase" aria-label="Your phrase" spellcheck="false" autocomplete="off">
-          <button class="btn btn-gold" data-action="mgr-request">Request manager access</button>
-        </div>`;
-    }
-    return `<section class="panel">${body}</section>`;
   }
 
   // ---------- polling (viewers) ----------
@@ -1495,16 +1419,17 @@
     };
     if (session && session.token) {
       const s = await api('GET', '/api/session').catch(() => null);
-      if (s && !s.admin) return end('staff', 'Your admin sign-in has ended. Enter the admin key again.');
+      if (s && !s.admin) return session.viaAccount ? end('signin', 'Your admin rights have ended. Please sign in again.') : end('staff', 'Your admin sign-in has ended. Enter the admin key again.');
     } else if (session && session.managerToken) {
       const s = await api('GET', '/api/manager/session').catch(() => null);
-      if (s && !s.manager) return end('staff', 'Your manager sign-in has ended. Enter your phrase again.');
+      if (s && !s.manager) return end('signin', 'Your manager rights have ended. Please sign in again.');
     } else if (isUser()) {
       let me;
       try { me = await api('GET', '/api/account/me'); } catch (e) {
         if (e.status === 401) return end('signin', 'You’ve been logged out. Please sign in again.');
         return false;
       }
+      if ((me.role || '') !== (session.role || '')) return end('signin', 'The admin changed your rights. Please sign in again.');
       if ((me.playerId || '') !== (session.playerId || '')) {
         if (me.playerId) toast(`You’re in! Linked to ${me.playerName}.`);
         await enterApp();
@@ -1645,14 +1570,12 @@
     try {
       const r = await api('POST', '/api/login', { name, device: readStore(DEVICE_KEY), label: deviceLabel() });
       if (r.needCode) { showCodeStep(r.challenge); return; }
-      if (!r.admin && !r.manager) {
-        // Players sign in with their email and password now.
-        err.textContent = 'That isn’t the admin key or a manager phrase. Players: go back and sign in with your email.';
+      if (!r.admin) {
+        // Players and managers sign in with their email and password.
+        err.textContent = 'That isn’t the admin key. Players and managers: go back and sign in with your email.';
         return;
       }
-      if (mgr && mgr.name !== r.name) setMgr(null);
       session = { name: r.name, admin: r.admin, token: r.token };
-      if (r.manager && r.managerToken) session.managerToken = r.managerToken;
       saveSession(session);
       writeStore(ME_KEY, null); // a new name may be a different person on this device
       resetView();
@@ -1663,7 +1586,7 @@
   }
 
   // ---------- player accounts: sign in, create an account, forgot password ----------
-  // mode: signin | signup | forgot | sent | newpass | staff (the admin key / manager phrase form)
+  // mode: signin | signup | forgot | sent | newpass | staff (the admin key form)
   let acct = { mode: 'signin', err: '', email: '', name: '', busy: false };
   let acctMe = null;                          // GET /api/account/me for the signed-in player
 
@@ -1702,7 +1625,7 @@
         ${err}
         <div class="acct-links"><button type="button" data-action="acct-mode" data-mode="forgot">Forgot password?</button>
           <button type="button" data-action="acct-mode" data-mode="signup">Create an account</button></div>
-        <button type="button" class="lang-link staff-link" data-action="acct-mode" data-mode="staff">Admin or manager? Sign in here</button>
+        <button type="button" class="lang-link staff-link" data-action="acct-mode" data-mode="staff">Admin key sign in</button>
       </form>`;
     } else if (acct.mode === 'signup') {
       html = `<form class="login acct-form" data-acct-form="signup" novalidate>
@@ -1747,10 +1670,20 @@
   }
 
   // A player has signed in (password, biometrics or a new account): keep the session, then go where they belong.
+  // An account the admin made an admin or manager also gets a staff session; it then works like the admin key's
+  // (or a manager's) did, and shows the app as that player when the account is linked to one.
+  function staffSessionOf(r) {
+    const base = { name: r.name, email: r.email, playerId: r.playerId || '', viaAccount: true };
+    if (r.adminToken) return { ...base, admin: true, token: r.adminToken };
+    if (r.managerToken) return { ...base, admin: false, token: null, managerToken: r.managerToken };
+    return null;
+  }
+
   async function startUserSession(r, remember) {
-    session = { name: r.name, user: true, userToken: r.token, email: r.email, playerId: r.playerId || '', remember: !!remember };
+    const staff = staffSessionOf(r);
+    session = staff || { name: r.name, user: true, userToken: r.token, email: r.email, playerId: r.playerId || '', role: r.role || '', remember: !!remember };
     saveSession(session);
-    writeStore(ME_KEY, null);
+    writeStore(ME_KEY, staff && staff.playerId ? staff.playerId : null);
     resetView();
     await enterApp();
   }
@@ -1786,7 +1719,10 @@
         await api('POST', '/api/account/forgot', { email: acct.email, note: f.note || '' });
         setAcct({ busy: false, mode: 'sent' });
       } else if (kind === 'newpass') {
-        await api('PUT', '/api/account/password', { next: f.next });
+        const r = await api('PUT', '/api/account/password', { next: f.next });
+        // An admin or manager who had to choose a new password gets their staff session now.
+        const staff = staffSessionOf({ ...r, name: session.name, email: session.email, playerId: session.playerId });
+        if (staff) { session = staff; saveSession(session); writeStore(ME_KEY, staff.playerId || null); }
         acct.busy = false;
         toast('New password saved.');
         await enterApp();
@@ -1892,10 +1828,11 @@
         const s = await api('GET', '/api/session');
         if (!s.admin) {
           // The admin session ended (signed out elsewhere, or two-factor was turned on): sign in again.
+          const via = session.viaAccount;
           session = null;
           saveSession(null);
-          showSplash('staff');
-          $('#login-error').textContent = 'Your admin sign-in has ended. Enter the admin key again.';
+          if (via) { showSplash('signin'); setAcct({ err: 'Your admin rights have ended. Please sign in again.' }); }
+          else { showSplash('staff'); $('#login-error').textContent = 'Your admin sign-in has ended. Enter the admin key again.'; }
           return;
         }
       }
@@ -1904,8 +1841,8 @@
         if (!s.manager) {
           session = null;
           saveSession(null);
-          showSplash('staff');
-          $('#login-error').textContent = 'Your manager access has ended. Ask the admin, or sign in as a player.';
+          showSplash('signin');
+          setAcct({ err: 'Your manager rights have ended. Please sign in again.' });
           return;
         }
       }
@@ -1914,7 +1851,7 @@
       const me = ownOnly() && myPlayer();
       if (me && readStore(ME_KEY) !== me.id) { writeStore(ME_KEY, me.id); state = await fetchLedger(); }
     } catch (e) {
-      showSplash(session && (session.token || session.managerToken) ? 'staff' : 'signin');
+      showSplash(session && session.token && !session.viaAccount ? 'staff' : 'signin');
       $('#login-error').textContent = 'Could not load the ledger. Is the server running?';
       if (isUser()) setAcct({ err: 'Could not load the ledger. Try again in a moment.' });
       return;
@@ -2950,7 +2887,7 @@
       <div class="pp-text"><strong>${title}</strong><small>${note}</small></div><div class="pp-actions">${buttons}</div></li>`;
     if (realAdmin()) {
       const n = inboxCount();
-      if (n) items.push(item(BELL_ICON, `${n} request${n === 1 ? '' : 's'} waiting`, 'Manager access or lineup changes need your decision.', '<button class="btn btn-gold" data-action="open-inbox">Open</button>'));
+      if (n) items.push(item(BELL_ICON, `${n} request${n === 1 ? '' : 's'} waiting`, 'New accounts, password resets or lineup changes need your decision.', '<button class="btn btn-gold" data-action="open-inbox">Open</button>'));
     } else if (state.players.length && !myPlayer()) {
       items.push(item(icon(PERSON_PATH, 22), 'Which player are you?', 'Choose your squad name to vote, predict, answer polls and see your balance.', '<button class="btn btn-gold" data-action="go-settings">Choose name</button>'));
     }
@@ -4454,9 +4391,7 @@ ${tabRows.map(r => {
       { id: 'team', icon: SI.team, title: 'Team & payments', note: admin ? 'Where players pay and how shares are worked out.' : 'Where to send your payments.',
         cells: admin ? cell(payPanel, 6) + cell(prefs, 6) : cell(payPanel, 12) },
       admin && { id: 'access', icon: SI.access, title: 'Who can see what', note: 'What players see when they sign in with their name.',
-        cells: cell(accessPanel, 6) + cell(statsPanel, 6) + cell(cardsPanel, 12) + cell(managerPanel(), 12) },
-      !realAdmin() && !archive && { id: 'manager', icon: SI.manager, title: 'App manager', note: 'Help the admin pick the playing XI.', top: true,
-        cells: cell(managerRequestPanel(), 12) },
+        cells: cell(accessPanel, 6) + cell(statsPanel, 6) + cell(cardsPanel, 12) },
       { id: 'notify', icon: SI.notify, title: 'Notifications', note: realAdmin() ? 'Turn them on for this device, and message the team.' : 'Turn them on for this device.', top: true,
         cells: isAdmin() ? cell(notify.device, 5) + cell(notify.compose, 7) : cell(notify.device, 12) },
       // Players and managers get no backups or admin preferences; past seasons appear once there are some.
@@ -4557,7 +4492,7 @@ ${tabRows.map(r => {
   function viewAccounts() {
     const list = accountList || [];
     const linked = list.filter(a => a.playerId).length;
-    const head = pageHead('Accounts', 'Players who have signed up, when they last signed in, and password resets.');
+    const head = pageHead('Accounts', 'Players who have signed up, when they last signed in, password resets, and who has manager or admin rights.');
     if (accountList === null) return `${head}<section class="panel"><p class="muted">Loading…</p></section>`;
     const linkFirst = list.some(a => !a.playerId && !a.dismissed) ? `<p class="muted acc-hint">New accounts are linked from the Requests tab, or with the Squad player box on each card.</p>` : '';
     const taken = new Set(list.map(a => a.playerId).filter(Boolean));
@@ -4570,7 +4505,7 @@ ${tabRows.map(r => {
     const card = a => {
       const open = accOpen === a.id;
       const opts = `<option value="">Not linked</option>${state.players.map(p => `<option value="${esc(p.id)}" ${a.playerId === p.id ? 'selected' : ''} ${taken.has(p.id) && a.playerId !== p.id ? 'disabled' : ''}>${esc(p.name)}${taken.has(p.id) && a.playerId !== p.id ? ' (has an account)' : ''}</option>`).join('')}`;
-      const flags = [a.resetRequested && '<span class="acc-flag warn">Forgot password</span>', a.mustChange && '<span class="acc-flag">Setting a new password</span>',
+      const flags = [a.role === 'admin' && '<span class="acc-flag ok">Admin</span>', a.role === 'manager' && '<span class="acc-flag ok">Manager</span>', a.resetRequested && '<span class="acc-flag warn">Forgot password</span>', a.mustChange && '<span class="acc-flag">Setting a new password</span>',
         a.passkeys > 0 && `<span class="acc-flag ok">${icon(FINGER_ICON, 12)} Biometrics on ${a.passkeys} device${a.passkeys === 1 ? '' : 's'}</span>`,
         !a.playerId && (a.dismissed ? '<span class="acc-flag">Not in the squad · Home only</span>' : '<span class="acc-flag warn">Not linked yet · Home only</span>')].filter(Boolean).join('');
       return `<article class="acc-card ${a.playerId ? '' : 'unlinked'}">
@@ -4578,6 +4513,8 @@ ${tabRows.map(r => {
           <span class="acc-who">${a.playerId && findPlayer(a.playerId) ? avatar(findPlayer(a.playerId), 40) : `<span class="avatar ph" style="--s:40px">${icon(PERSON_ICON, 20)}</span>`}
             <span><strong>${esc(a.name)}</strong><small class="muted">${esc(a.email)}</small></span></span>
           <label class="acc-link"><span>Squad player</span><select class="field select" data-input="acc-link" data-id="${esc(a.id)}" aria-label="Squad player for ${esc(a.name)}">${opts}</select></label>
+          <label class="acc-link"><span>Rights</span><select class="field select" data-input="acc-role" data-id="${esc(a.id)}" aria-label="Rights for ${esc(a.name)}">
+            <option value="" ${!a.role ? 'selected' : ''}>Player</option><option value="manager" ${a.role === 'manager' ? 'selected' : ''}>Manager</option><option value="admin" ${a.role === 'admin' ? 'selected' : ''}>Admin</option></select></label>
         </div>
         ${flags ? `<div class="acc-flags">${flags}</div>` : ''}
         <div class="acc-figs">
@@ -4599,6 +4536,21 @@ ${tabRows.map(r => {
         <span class="hero-chip"><b>${state.players.filter(p => !taken.has(p.id)).length}</b> squad players without an account</span></div>
       ${requests}${linkFirst}
       ${list.length ? `<div class="acc-list">${list.map(card).join('')}</div>` : '<section class="panel"><p class="muted">Nobody has signed up yet. Players create an account on the start screen with their email and full name.</p></section>'}`;
+  }
+
+  // The admin gives an account manager or admin rights, or takes them away. They apply the next time the person signs in.
+  async function setAccountRole(id, role) {
+    const a = (accountList || []).find(x => x.id === id);
+    const name = a ? a.name : 'this account';
+    if (role === 'admin') {
+      const ok = await confirmDialog(`Make ${name} an admin?`, 'An admin can change everything, including who else has rights.', 'Make admin', true);
+      if (!ok) { render(); return; }
+    }
+    try {
+      await api('PUT', `/api/account/users/${encodeURIComponent(id)}/role`, { role });
+      toast(role ? `${name} is now ${role === 'admin' ? 'an admin' : 'a manager'}. They get it the next time they sign in.` : `${name} is a player again.`);
+    } catch (e) { toast(e.message || 'Could not change that.'); }
+    loadAccounts();
   }
 
   async function linkAccount(id, playerId) {
@@ -5644,42 +5596,6 @@ ${tabRows.map(r => {
       }
       touchXi(day);
     },
-    async 'mgr-request'() {
-      const phrase = mgrDraft.phrase.trim();
-      if (phrase.length < 8) { toast('The phrase needs at least 8 characters.'); return; }
-      try {
-        const r = await api('POST', '/api/manager/request', { name: session.name, phrase, label: deviceLabel() });
-        setMgr({ token: r.token, name: session.name, status: 'pending' });
-        mgrDraft.phrase = '';
-        toast('Request sent to the admin.');
-        render();
-      } catch (e) { toast(e.message || 'Could not send the request.'); }
-    },
-    async 'mgr-cancel'() {
-      if (!mgr) return;
-      await api('DELETE', '/api/manager/request').catch(() => {});
-      setMgr(null);
-      render();
-    },
-    async 'mgr-save-phrase'(el) {
-      if (!realAdmin()) return;
-      const phrase = (mgrDraft.edits[el.dataset.id] || '').trim();
-      try {
-        await api('PUT', '/api/manager/requests/' + encodeURIComponent(el.dataset.id) + '/phrase', { phrase });
-        delete mgrDraft.edits[el.dataset.id];
-        mgrList = null; await loadInbox();
-        toast('Phrase changed. That manager is signed out.');
-      } catch (e) { toast(e.message || 'Could not change the phrase.'); }
-    },
-    async 'mgr-remove'(el) {
-      if (!realAdmin()) return;
-      const m = (mgrList || []).find(x => x.id === el.dataset.id);
-      const ok = await confirmDialog(`Revoke ${m ? m.name : 'manager'}’s access?`, 'They go back to view-only straight away. They can ask again.', 'Revoke', true);
-      if (!ok) return;
-      try { await api('DELETE', '/api/manager/requests/' + encodeURIComponent(el.dataset.id)); } catch { toast('Could not do that.'); }
-      await loadInbox();
-      toast('Access revoked.');
-    },
     'open-inbox'() {
       if (realAdmin()) { sheet = { type: 'inbox' }; markAdminSeen(); loadInbox(); loadAdminUpdates(); } else { sheet = { type: 'feed' }; markFeedSeen(); loadFeed(); }
       render();
@@ -5688,11 +5604,11 @@ ${tabRows.map(r => {
       if (!realAdmin()) return;
       // Anything I have changed but not saved goes first, so approving a lineup doesn't clobber it.
       if (saveTimer) { clearTimeout(saveTimer); await flushSave(); }
-      const path = el.dataset.kind === 'access' ? '/api/manager/requests/' : '/api/manager/lineups/';
+      const path = '/api/manager/lineups/';
       try {
         await api('POST', path + encodeURIComponent(el.dataset.id) + '/approve');
         if (el.dataset.kind === 'lineup') state = await fetchLedger();
-        toast(el.dataset.kind === 'access' ? 'Manager approved.' : 'Lineup approved and applied.');
+        toast('Lineup approved and applied.');
       } catch (e) { toast(e.message || 'Could not approve it.'); }
       await loadInbox();
       render();
@@ -5702,7 +5618,7 @@ ${tabRows.map(r => {
     async 'inbox-decline-send'(el) {
       if (!realAdmin()) return;
       const key = `${el.dataset.kind}:${el.dataset.id}`;
-      const path = el.dataset.kind === 'access' ? '/api/manager/requests/' : '/api/manager/lineups/';
+      const path = '/api/manager/lineups/';
       try {
         await api('POST', path + encodeURIComponent(el.dataset.id) + '/decline', { note: (declineDraft[key] || '').trim() });
         toast('Declined.');
@@ -6622,11 +6538,10 @@ ${tabRows.map(r => {
       }
       if (el.dataset && /^me-/.test(el.dataset.input || '')) { saveMyProfile(el); return; }
       if (el.dataset && el.dataset.input === 'decline-note') { declineDraft[el.dataset.key] = el.value; return; }
-      if (el.dataset && el.dataset.input === 'mgr-phrase') { mgrDraft.phrase = el.value; return; }
-      if (el.dataset && el.dataset.input === 'mgr-edit') { mgrDraft.edits[el.dataset.id] = el.value; render(); return; }
       if (el.dataset && /^tfa-/.test(el.dataset.input || '')) { tfaDraft[el.dataset.input.slice(4)] = el.value; return; }
       if (el.dataset && /^pw-/.test(el.dataset.input || '')) { pwDraft[el.dataset.input.slice(3)] = el.value; return; }
       if (el.dataset && el.dataset.input === 'acc-link') { linkAccount(el.dataset.id, el.value); return; }
+      if (el.dataset && el.dataset.input === 'acc-role') { setAccountRole(el.dataset.id, el.value); return; }
       if (el.dataset && el.dataset.input === 'link-pick') { linkPick[el.dataset.id] = el.value; render(); return; }
       if (el.dataset && el.dataset.input === 'squad-text') { squadDraft = el.value; return; }
       if (el.dataset && /^news-/.test(el.dataset.input || '')) {

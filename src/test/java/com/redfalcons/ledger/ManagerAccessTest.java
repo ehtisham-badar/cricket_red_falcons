@@ -49,42 +49,33 @@ class ManagerAccessTest {
     }
 
     @Test
-    void managerSignsInWithTheirPhraseAndCanSetOnlyTheXiUntilRevoked() throws Exception {
+    void managerIsAnAccountWithTheManagerRoleAndCanSetOnlyTheXiUntilTheRoleIsTakenAway() throws Exception {
         String admin = field(send("POST", "/api/login", "{\"name\":\"test-key\"}", null, null).body(), "token");
         assertThat(send("PUT", "/api/ledger", STATE, admin, null).statusCode()).isEqualTo(200);
 
-        // Admin devices get a push for each request; other devices don't.
+        // Admin devices get a push for each lineup proposal; other devices don't.
         String adminDevice = "https://push.example/admin1", viewerDevice = "https://push.example/viewer1";
         assertThat(send("POST", "/api/push/subscribe", "{\"endpoint\":\"" + adminDevice + "\"}", admin, null).statusCode()).isEqualTo(200);
         assertThat(send("POST", "/api/push/subscribe", "{\"endpoint\":\"" + viewerDevice + "\"}", null, null).statusCode()).isEqualTo(200);
-
-        // A phrase must be long enough, and can't be the admin key.
-        assertThat(send("POST", "/api/manager/request", "{\"name\":\"Ali\",\"phrase\":\"short\"}", null, null).statusCode()).isEqualTo(400);
-        assertThat(send("POST", "/api/manager/request", "{\"name\":\"Ali\",\"phrase\":\"test-key\"}", null, null).statusCode()).isEqualTo(400);
-        String ask = send("POST", "/api/manager/request", "{\"name\":\"Ali\",\"phrase\":\"blue falcon rises\",\"label\":\"Phone\"}", null, null).body();
-        String secret = field(ask, "token");
-        assertThat(send("POST", "/api/manager/request", "{\"name\":\"Sam\",\"phrase\":\"Blue Falcon Rises\"}", null, null).statusCode()).isEqualTo(400);
-
         String pendingUrl = "/api/push/pending?endpoint=";
-        assertThat(send("GET", pendingUrl + adminDevice, null, null, null).body()).contains("Manager access request").contains("Ali wants");
-        assertThat(send("GET", pendingUrl + viewerDevice, null, null, null).body()).isEqualTo("[]");
 
-        // Pending: the phrase signs in as an ordinary viewer, and the admin sees the phrase.
-        assertThat(send("GET", "/api/manager/status", null, null, null, secret).body()).contains("\"pending\"");
+        // The old phrase sign-in and the request flow are gone.
+        assertThat(send("POST", "/api/manager/request", "{\"name\":\"Ali\",\"phrase\":\"blue falcon rises\"}", null, null).statusCode()).isIn(404, 405);
         assertThat(send("POST", "/api/login", "{\"name\":\"blue falcon rises\"}", null, null).body()).doesNotContain("managerToken");
-        String listed = send("GET", "/api/manager/inbox", null, admin, null).body();
-        assertThat(listed).contains("\"phrase\":\"blue falcon rises\"");
-        String id = field(listed, "id");
-        assertThat(send("GET", "/api/manager/inbox", null, null, null).statusCode()).isEqualTo(403);
-        assertThat(send("POST", "/api/manager/requests/" + id + "/approve", null, null, null).statusCode()).isEqualTo(403);
 
-        // Approved: the phrase signs in straight away (no two-factor step) as a manager, not the admin.
-        assertThat(send("POST", "/api/manager/requests/" + id + "/approve", null, admin, null).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/manager/status", null, null, null, secret).body()).contains("\"approved\"");
-        String login = send("POST", "/api/login", "{\"name\":\"Blue Falcon Rises\"}", null, null).body();
-        assertThat(login).contains("\"manager\":true").contains("\"admin\":false").contains("\"token\":null").contains("\"name\":\"Ali\"");
+        // Only the admin can give a role, and only manager, admin or none.
+        StaffLogins.Staff ali = StaffLogins.create(port, admin, "Ali", null);
+        String roleUrl = "/api/account/users/" + ali.id() + "/role";
+        assertThat(send("PUT", roleUrl, "{\"role\":\"manager\"}", null, null).statusCode()).isEqualTo(403);
+        assertThat(send("PUT", roleUrl, "{\"role\":\"boss\"}", admin, null).statusCode()).isEqualTo(400);
+        assertThat(send("PUT", roleUrl, "{\"role\":\"manager\"}", admin, null).body()).contains("\"role\":\"manager\"");
+        assertThat(send("GET", "/api/account/users", null, admin, null).body()).contains("\"role\":\"manager\"");
+
+        // With the role, signing in gives a manager session (not an admin one).
+        String login = send("POST", "/api/account/login", "{\"email\":\"" + ali.email() + "\",\"password\":\"secret123\"}", null, null).body();
+        assertThat(login).contains("\"managerToken\":\"").doesNotContain("adminToken");
         String mgr = field(login, "managerToken");
-        assertThat(send("GET", "/api/manager/session", null, null, mgr).body()).contains("true");
+        assertThat(send("GET", "/api/manager/session", null, null, mgr).body()).contains("true").contains(ali.id());
 
         // A manager only proposes a lineup: nothing changes until the admin approves, and the normal save is closed.
         String xi = "{\"matchId\":\"m1\",\"playing\":[\"p1\"],\"twelfth\":\"p2\"}";
@@ -123,27 +114,32 @@ class ManagerAccessTest {
         assertThat(send("POST", "/api/manager/lineups/" + field(second, "id") + "/approve", null, admin, null).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/ledger", null, admin, null).body()).contains("\"att\":{\"m1\":true}").contains("\"twelfth\":{\"m1\":\"p2\"}");
 
-        // Changing the phrase signs the manager out; only the new phrase works.
-        assertThat(send("PUT", "/api/manager/requests/" + id + "/phrase", "{\"phrase\":\"short\"}", admin, null).statusCode()).isEqualTo(400);
-        assertThat(send("PUT", "/api/manager/requests/" + id + "/phrase", "{\"phrase\":\"green falcon sets\"}", admin, null).statusCode()).isEqualTo(200);
+        // Taking the role away signs the manager out at once; they can't sign in as one again.
+        assertThat(send("PUT", roleUrl, "{\"role\":\"\"}", admin, null).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/api/manager/session", null, null, mgr).body()).contains("false");
         assertThat(send("POST", "/api/manager/lineups", xi, null, mgr).statusCode()).isEqualTo(403);
-        assertThat(send("POST", "/api/login", "{\"name\":\"blue falcon rises\"}", null, null).body()).doesNotContain("managerToken");
-        String again = send("POST", "/api/login", "{\"name\":\"green falcon sets\"}", null, null).body();
-        assertThat(again).contains("\"manager\":true");
-        String mgr2 = field(again, "managerToken");
+        assertThat(send("POST", "/api/account/login", "{\"email\":\"" + ali.email() + "\",\"password\":\"secret123\"}", null, null).body())
+                .doesNotContain("managerToken").doesNotContain("adminToken");
+    }
 
-        // Revoked: nothing works any more.
-        assertThat(send("DELETE", "/api/manager/requests/" + id, null, admin, null).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/manager/session", null, null, mgr2).body()).contains("false");
-        assertThat(send("POST", "/api/manager/lineups", xi, null, mgr2).statusCode()).isEqualTo(403);
-        assertThat(send("GET", "/api/manager/status", null, null, null, secret).body()).contains("\"none\"");
-        assertThat(send("POST", "/api/login", "{\"name\":\"green falcon sets\"}", null, null).body()).doesNotContain("managerToken");
+    @Test
+    void anAccountWithTheAdminRoleSignsInAsAdminUntilTheRoleIsTakenAway() throws Exception {
+        String admin = field(send("POST", "/api/login", "{\"name\":\"test-key\"}", null, null).body(), "token");
+        StaffLogins.Staff boss = StaffLogins.create(port, admin, "Boss", "admin");
+        assertThat(boss.token()).isNotEmpty();
 
-        // A declined access request keeps the admin's note, and the phrase is free again.
-        String ask2 = send("POST", "/api/manager/request", "{\"name\":\"Sam\",\"phrase\":\"green falcon sets\"}", null, null).body();
-        String id2 = field(send("GET", "/api/manager/inbox", null, admin, null).body(), "id");
-        assertThat(send("POST", "/api/manager/requests/" + id2 + "/decline", "{\"note\":\"Not this season\"}", admin, null).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/manager/status", null, null, null, field(ask2, "token")).body()).contains("\"declined\"").contains("Not this season");
-        assertThat(send("POST", "/api/login", "{\"name\":\"green falcon sets\"}", null, null).body()).doesNotContain("managerToken");
+        // The account's admin session works like the admin key's: it can read and save the ledger, and give roles.
+        assertThat(send("PUT", "/api/ledger", STATE, boss.token(), null).statusCode()).isEqualTo(200);
+        StaffLogins.Staff helper = StaffLogins.create(port, boss.token(), "Helper", "manager");
+        assertThat(helper.token()).isNotEmpty();
+
+        // Without the role there is no admin session, and a plain account can't give roles.
+        StaffLogins.Staff plain = StaffLogins.create(port, admin, "Plain", null);
+        assertThat(send("PUT", "/api/account/users/" + plain.id() + "/role", "{\"role\":\"admin\"}", null, null).statusCode()).isEqualTo(403);
+
+        // Taking the role away ends its admin session straight away.
+        assertThat(send("PUT", "/api/account/users/" + boss.id() + "/role", "{\"role\":\"\"}", admin, null).statusCode()).isEqualTo(200);
+        assertThat(send("PUT", "/api/ledger", STATE, boss.token(), null).statusCode()).isEqualTo(403);
+        assertThat(StaffLogins.signIn(port, boss.email(), "admin")).isEmpty();
     }
 }

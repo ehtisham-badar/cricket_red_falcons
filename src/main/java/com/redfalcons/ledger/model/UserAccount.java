@@ -39,6 +39,10 @@ public class UserAccount {
     @Column(name = "dismissed")
     private Boolean dismissed = false;
 
+    /** Staff rights the admin gave this account: "" (a player), "manager" (sets the playing XI, announcements, polls) or "admin". */
+    @Column(name = "staff_role", length = 16)
+    private String role = "";
+
     /** Set when the admin has reset the password: the next sign-in must choose a new one. */
     @Column(name = "must_change", nullable = false)
     private boolean mustChange;
@@ -83,6 +87,8 @@ public class UserAccount {
     public boolean isDismissed() { return Boolean.TRUE.equals(dismissed); }
     public void setDismissed(boolean dismissed) { this.dismissed = dismissed; }
     public boolean isMustChange() { return mustChange; }
+    public String getRole() { return role == null ? "" : role; }
+    public void setRole(String role) { this.role = role == null ? "" : role; }
     public String getCreatedAt() { return createdAt; }
     public String getLastLoginAt() { return lastLoginAt == null ? "" : lastLoginAt; }
     public String getLastLoginMethod() { return lastLoginMethod == null ? "" : lastLoginMethod; }

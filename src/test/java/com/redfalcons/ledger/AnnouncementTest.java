@@ -41,11 +41,9 @@ class AnnouncementTest {
     @Test
     void staffAnnounceInAppAndEveryoneReadsThem() throws Exception {
         String admin = field(send("POST", "/api/login", "{\"name\":\"test-key\"}", null, null).body(), "token");
-        // Set up an approved manager.
-        send("POST", "/api/manager/request", "{\"name\":\"Ali\",\"phrase\":\"blue falcon rises\"}", null, null);
-        String mid = field(send("GET", "/api/manager/inbox", null, admin, null).body(), "id");
-        send("POST", "/api/manager/requests/" + mid + "/approve", null, admin, null);
-        String mgr = field(send("POST", "/api/login", "{\"name\":\"blue falcon rises\"}", null, null).body(), "managerToken");
+        // Set up a manager: an account the admin gave the manager role.
+        StaffLogins.Staff ali = StaffLogins.create(port, admin, "Ali", "manager");
+        String mgr = ali.token();
 
         // Viewers can neither write nor list announcements.
         String msg = "{\"title\":\"Match reminder\",\"body\":\"Match 3 vs Lions on Saturday. Report at 2:30 pm.\",\"matchId\":\"m3\"}";
@@ -86,8 +84,8 @@ class AnnouncementTest {
                 .contains("\"status\":\"sent\"");
         assertThat(send("DELETE", "/api/announcements/" + field(scheduled.body(), "id"), null, admin, null).statusCode()).isEqualTo(200);
 
-        // Revoking the manager takes their writing rights away.
-        send("DELETE", "/api/manager/requests/" + mid, null, admin, null);
+        // Taking the manager role away ends their writing rights.
+        StaffLogins.send(port, "PUT", "/api/account/users/" + ali.id() + "/role", "{\"role\":\"\"}", admin);
         assertThat(send("POST", "/api/announcements", msg, null, mgr).statusCode()).isEqualTo(403);
     }
 }

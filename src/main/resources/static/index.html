@@ -56,12 +56,12 @@
     <!-- Players: email and password (sign in, create an account, forgot password); drawn by app.js -->
     <div id="acct" class="acct"></div>
 
-    <!-- The admin and managers sign in as before: the admin key or the manager's phrase -->
+    <!-- The admin signs in with the admin key; managers and other admins sign in with their account -->
     <form id="login-form" class="login" autocomplete="off" hidden>
       <button type="button" id="continue-btn" class="btn btn-ghost continue" hidden></button>
-      <label for="login-name" class="login-label">Admin key or manager phrase</label>
+      <label for="login-name" class="login-label">Admin key</label>
       <div class="login-row">
-        <input id="login-name" name="name" type="password" maxlength="60" placeholder="Admin key or phrase" autocapitalize="off" spellcheck="false" required>
+        <input id="login-name" name="name" type="password" maxlength="60" placeholder="Admin key" autocapitalize="off" spellcheck="false" required>
         <button type="submit" class="btn btn-primary">Enter</button>
       </div>
       <p id="login-error" class="login-error" role="alert"></p>

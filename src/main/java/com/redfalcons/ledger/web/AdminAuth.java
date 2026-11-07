@@ -47,6 +47,18 @@ public class AdminAuth {
         return token;
     }
 
+    /** Starts an admin session for an account that was given admin rights; ending those rights ends it. */
+    public String newSession(String label, String accountId) {
+        String token = randomToken();
+        sessions.save(new AdminSession(hash(token), clip(label), Instant.now().toString(), accountId));
+        return token;
+    }
+
+    /** Ends the admin sessions that came from an account (its admin rights were taken away, or it was deleted). */
+    public void endAccountSessions(String accountId) {
+        if (accountId != null && !accountId.isBlank()) sessions.deleteByAccountId(accountId);
+    }
+
     public boolean isValidToken(String candidate) {
         return candidate != null && !candidate.isBlank() && sessions.existsById(hash(candidate));
     }
