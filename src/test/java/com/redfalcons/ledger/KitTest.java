@@ -48,7 +48,7 @@ class KitTest {
         // The request goes into everyone's feed with the "kit" action (anything else is dropped).
         assertThat(send("POST", "/api/announcements", "{\"title\":\"Choose your shirt size\",\"body\":\"Pick a size\",\"action\":\"kit\"}", admin, null).body())
                 .contains("\"action\":\"kit\"");
-        assertThat(send("GET", "/api/notifications", null, null, null).body()).contains("\"action\":\"kit\"");
+        assertThat(send("GET", "/api/notifications", null, null, "p1").body()).contains("\"action\":\"kit\"");
 
         // A player answers: only a size from the chart is accepted; the admin hears about it.
         String bad = "{\"shirtSize\":\"XXXL\",\"jersey\":\"7\",\"jerseyName\":\"BABAR\",\"kit\":true}";
@@ -58,7 +58,7 @@ class KitTest {
         assertThat(send("PUT", "/api/players/p1/profile", good, null, "p1").statusCode()).isEqualTo(200);
         String updates = send("GET", "/api/notifications/admin", null, admin, null).body();
         assertThat(updates).contains("Kit details").contains("Babar chose size 2XL").contains("BABAR #7");
-        assertThat(send("GET", "/api/notifications", null, null, null).body()).doesNotContain("Babar chose");
+        assertThat(send("GET", "/api/notifications", null, null, "p1").body()).doesNotContain("Babar chose");
 
         // Sizes are for the admin; a player sees only their own.
         assertThat(send("GET", "/api/ledger", null, admin, null).body()).contains("\"shirtSize\":\"2XL\"").containsPattern("\"kitAt\":\"20");

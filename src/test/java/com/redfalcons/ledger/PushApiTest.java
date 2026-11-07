@@ -96,18 +96,31 @@ class PushApiTest {
         return http.send(b.build(), HttpResponse.BodyHandlers.ofString());
     }
 
+    private HttpResponse<String> sendAs(String method, String path, String body, String userToken) throws Exception {
+        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).header("Content-Type", "application/json")
+                .header("X-User-Token", userToken).method(method, HttpRequest.BodyPublishers.ofString(body)).build(), HttpResponse.BodyHandlers.ofString());
+    }
+
     @Test
     void subscribeSendAndFetch() throws Exception {
         assertThat(send("GET", "/api/push/key", null, null).body()).contains("\"enabled\":true").contains(PUBLIC_B64);
 
-        String endpoint = "http://127.0.0.1:" + PUSH_SERVICE.getAddress().getPort() + "/push/device1";
-        assertThat(send("POST", "/api/push/subscribe", "{\"endpoint\":\"" + endpoint + "\",\"playerId\":\"p1\"}", null).statusCode()).isEqualTo(200);
-
         String admin = send("POST", "/api/login", "{\"name\":\"test-key\"}", null).body();
         String token = admin.replaceAll(".*\"token\":\"([0-9a-f]+)\".*", "$1");
+        send("PUT", "/api/ledger", "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{}}],\"trainings\":[],\"matches\":[],\"expenses\":{},"
+                + "\"settings\":{\"currency\":\"Rs \",\"maxPerMatch\":11}}", token);
+
+        // The device belongs to whoever is signed in on it, whatever the browser claims: here player p1.
+        String endpoint = "http://127.0.0.1:" + PUSH_SERVICE.getAddress().getPort() + "/push/device1";
+        String player = new PlayerLogins(port, "test-key").token("p1");
+        assertThat(sendAs("POST", "/api/push/subscribe", "{\"endpoint\":\"" + endpoint + "\",\"playerId\":\"p2\"}", player).statusCode()).isEqualTo(200);
+        // A device nobody (or a guest) is signed in on hears nothing, even when it claims to be a player's.
+        String stranger = "http://127.0.0.1:" + PUSH_SERVICE.getAddress().getPort() + "/push/stranger";
+        assertThat(send("POST", "/api/push/subscribe", "{\"endpoint\":\"" + stranger + "\",\"playerId\":\"p1\"}", null).statusCode()).isEqualTo(200);
         String msg = "{\"title\":\"Match day\",\"body\":\"Report at 2:30 pm\",\"playerIds\":[\"p1\"]}";
         assertThat(send("POST", "/api/push/send", msg, null).statusCode()).isEqualTo(403);
         assertThat(send("POST", "/api/push/send", msg, token).body()).contains("\"devices\":1");
+        assertThat(send("POST", "/api/push/send", "{\"body\":\"to all\"}", token).body()).contains("\"devices\":1");
         // Players not in the list get nothing.
         assertThat(send("POST", "/api/push/send", "{\"body\":\"x\",\"playerIds\":[\"p2\"]}", token).body()).contains("\"devices\":0");
 
@@ -125,7 +138,7 @@ class PushApiTest {
 
         // The device fetches its message once.
         String pending = "/api/push/pending?endpoint=" + java.net.URLEncoder.encode(endpoint, StandardCharsets.UTF_8);
-        assertThat(send("GET", pending, null, null).body()).contains("\"title\":\"Match day\"").contains("Report at 2:30 pm");
+        assertThat(send("GET", pending, null, null).body()).contains("\"title\":\"Match day\"").contains("Report at 2:30 pm").contains("to all");
         assertThat(send("GET", pending, null, null).body()).isEqualTo("[]");
 
         // Unsubscribed devices get nothing.

@@ -21,15 +21,26 @@ public class NotificationController {
 
     private final NotificationService notifications;
     private final AdminAuth auth;
+    private final com.redfalcons.ledger.service.ManagerAccessService managers;
 
-    public NotificationController(NotificationService notifications, AdminAuth auth) {
+    public NotificationController(NotificationService notifications, AdminAuth auth, com.redfalcons.ledger.service.ManagerAccessService managers) {
         this.notifications = notifications;
         this.auth = auth;
+        this.managers = managers;
     }
 
+    /**
+     * The bell, for whoever is asking: the admin and managers get the whole feed; a signed-in squad player (their
+     * player comes from their sign-in, see AccountFilter) gets the team's notices and their own expenses; guests
+     * and anyone not signed in get nothing.
+     */
     @GetMapping
-    public List<Item> feed() {
-        return notifications.latest().stream()
+    public List<Item> feed(@RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token,
+                           @RequestHeader(value = ManagerController.MANAGER_HEADER, required = false) String manager,
+                           @RequestHeader(value = LedgerController.VIEWER_HEADER, required = false) String viewer) {
+        boolean staff = auth.isValidToken(token) || managers.find(manager).isPresent();
+        if (!staff && (viewer == null || viewer.isBlank())) return List.of();
+        return notifications.latestFor(staff ? null : viewer).stream()
                 .map(n -> new Item(n.getId(), n.getTitle(), n.getBody(), n.getVisibleAt(), n.isAnnouncement() ? "announcement" : n.isNotice() ? "notice" : "expense",
                         n.getAuthor(), n.getMatchId(), n.getAction())).toList();
     }

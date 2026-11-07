@@ -89,8 +89,9 @@ public class PushService {
      */
     @Transactional
     public int send(String title, String body, Collection<String> playerIds) {
+        // "Everyone" means the team: devices of the admin and of squad players, never a guest's or an unknown one.
         return queue(subscriptions.findAll().stream()
-                .filter(s -> playerIds == null || playerIds.contains(s.getPlayerId())).toList(), title, body);
+                .filter(s -> playerIds == null ? (s.isAdmin() || !s.getPlayerId().isBlank()) : playerIds.contains(s.getPlayerId())).toList(), title, body);
     }
 
     /** Like {@link #send} but only to devices signed in as the admin (manager requests and the like). */

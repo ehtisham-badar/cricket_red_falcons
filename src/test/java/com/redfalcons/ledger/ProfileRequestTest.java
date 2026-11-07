@@ -55,7 +55,7 @@ class ProfileRequestTest {
                 .body()).contains("\"action\":\"profile\"");
         assertThat(send("POST", "/api/announcements", "{\"title\":\"Hello\",\"body\":\"Plain\",\"action\":\"hack\"}", admin, null).body())
                 .contains("\"action\":\"\"");
-        String feed = send("GET", "/api/notifications", null, null, null).body();
+        String feed = send("GET", "/api/notifications", null, null, "p1").body();
         assertThat(feed).contains("\"action\":\"profile\"");
 
         // Nothing for the admin yet; viewers can't read the admin notices at all.
@@ -68,7 +68,7 @@ class ProfileRequestTest {
         assertThat(send("PUT", "/api/players/p1/profile", mine, null, "p1").statusCode()).isEqualTo(200);
         String updates = send("GET", "/api/notifications/admin", null, admin, null).body();
         assertThat(updates).contains("Profile updated").contains("Babar updated their profile").contains("BABAR #56").contains("right-hand bat");
-        assertThat(send("GET", "/api/notifications", null, null, null).body()).doesNotContain("Babar updated");
+        assertThat(send("GET", "/api/notifications", null, null, "p1").body()).doesNotContain("Babar updated");
 
         String view = send("GET", "/api/ledger", null, null, "p1").body();
         assertThat(view).contains("\"jersey\":\"56\"").contains("\"jerseyName\":\"BABAR\"");

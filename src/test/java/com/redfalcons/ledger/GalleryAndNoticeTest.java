@@ -61,15 +61,15 @@ class GalleryAndNoticeTest {
     void announcingTheXiRaisesANoticeAndMatchPhotosHaveOwners() throws Exception {
         String admin = field(send("POST", "/api/login", "{\"name\":\"test-key\"}", null, null).body(), "token");
         assertThat(send("PUT", "/api/ledger", ledger(false), admin, null).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/notifications", null, null, null).body()).doesNotContain("Playing XI announced");
+        assertThat(send("GET", "/api/notifications", null, null, "p1").body()).doesNotContain("Playing XI announced");
 
         // Announcing the XI tells everyone, once; saving again changes nothing.
         assertThat(send("PUT", "/api/ledger", ledger(true), admin, null).statusCode()).isEqualTo(200);
-        String feed = send("GET", "/api/notifications", null, null, null).body();
+        String feed = send("GET", "/api/notifications", null, null, "p1").body();
         assertThat(feed).contains("Playing XI announced").contains("Match 1: Red Falcons v Raptors").contains("\"kind\":\"notice\"")
                 .contains("\"matchId\":\"m1\"");
         send("PUT", "/api/ledger", ledger(true), admin, null);
-        String again = send("GET", "/api/notifications", null, null, null).body();
+        String again = send("GET", "/api/notifications", null, null, "p1").body();
         assertThat(again.split("Playing XI announced", -1).length - 1).isEqualTo(1);
 
         // Photos: needs to be someone; real pictures only; owners and the admin can remove.

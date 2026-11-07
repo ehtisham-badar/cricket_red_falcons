@@ -44,27 +44,27 @@ class NotificationFeedTest {
     void viewersSeeNewExpensesOnceAndEditsUpdateThem() throws Exception {
         String admin = send("POST", "/api/login", "{\"name\":\"test-key\"}", null).body()
                 .replaceAll(".*\"token\":\"([0-9a-f]+)\".*", "$1");
-        assertThat(send("GET", "/api/notifications", null, null).body()).isEqualTo("[]");
+        assertThat(send("GET", "/api/notifications", null, admin).body()).isEqualTo("[]");
 
         // A blank row says nothing yet; once it has an amount, everyone hears about it.
         assertThat(send("PUT", "/api/ledger", ledger(exp("e1", "", "")), admin).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/notifications", null, null).body()).isEqualTo("[]");
+        assertThat(send("GET", "/api/notifications", null, admin).body()).isEqualTo("[]");
         send("PUT", "/api/ledger", ledger(exp("e1", "Water", "5")), admin);
-        String feed = send("GET", "/api/notifications", null, null).body();
+        String feed = send("GET", "/api/notifications", null, admin).body();
         assertThat(feed).contains("New expense").contains("Water — Rs 5 · Training 1 · paid by Babar");
 
         // Typing on, or saving again, updates that notification instead of adding more.
         send("PUT", "/api/ledger", ledger(exp("e1", "Water", "500")), admin);
         send("PUT", "/api/ledger", ledger(exp("e1", "Water", "500")), admin);
-        feed = send("GET", "/api/notifications", null, null).body();
+        feed = send("GET", "/api/notifications", null, admin).body();
         assertThat(feed).contains("Water — Rs 500").doesNotContain("Rs 5 ·");
         assertThat(feed.split("\"id\"").length - 1).isEqualTo(1);
 
         // A second expense adds one; deleting the first removes its notification.
         send("PUT", "/api/ledger", ledger(exp("e1", "Water", "500") + "," + exp("e2", "Balls", "1200")), admin);
-        assertThat(send("GET", "/api/notifications", null, null).body().split("\"id\"").length - 1).isEqualTo(2);
+        assertThat(send("GET", "/api/notifications", null, admin).body().split("\"id\"").length - 1).isEqualTo(2);
         send("PUT", "/api/ledger", ledger(exp("e2", "Balls", "1200")), admin);
-        feed = send("GET", "/api/notifications", null, null).body();
+        feed = send("GET", "/api/notifications", null, admin).body();
         assertThat(feed).contains("Balls").doesNotContain("Water");
 
         // Viewers can't save, and a bulk change (like restoring a backup) stays quiet.
@@ -72,7 +72,46 @@ class NotificationFeedTest {
         StringBuilder many = new StringBuilder(exp("e2", "Balls", "1200"));
         for (int i = 0; i < 6; i++) many.append(",").append(exp("b" + i, "Item" + i, "10"));
         send("PUT", "/api/ledger", ledger(many.toString()), admin);
-        assertThat(send("GET", "/api/notifications", null, null).body()).doesNotContain("Item0");
+        assertThat(send("GET", "/api/notifications", null, admin).body()).doesNotContain("Item0");
+    }
+
+    @Test
+    void eachPlayerSeesOnlyTheirOwnExpensesAndGuestsSeeNothing() throws Exception {
+        String admin = send("POST", "/api/login", "{\"name\":\"test-key\"}", null).body()
+                .replaceAll(".*\"token\":\"([0-9a-f]+)\".*", "$1");
+        // Babar came to training 1, Rizwan didn't; the balls were shared by Rizwan alone.
+        String ledger = "{\"players\":[{\"id\":\"p1\",\"name\":\"Babar\",\"att\":{\"t1\":true}},{\"id\":\"p2\",\"name\":\"Rizwan\",\"att\":{}}],"
+                + "\"trainings\":[{\"id\":\"t1\",\"desc\":\"\"}],\"matches\":[],\"expenses\":{\"t1\":[" + exp("e1", "Water", "500") + ","
+                + "{\"id\":\"e2\",\"item\":\"Balls\",\"amount\":\"1200\",\"paidBy\":\"p1\",\"sharedBy\":[\"p2\"]}]},"
+                + "\"settings\":{\"currency\":\"Rs \",\"maxPerMatch\":11}}";
+        assertThat(send("PUT", "/api/ledger", ledger, admin).statusCode()).isEqualTo(200);
+        assertThat(send("POST", "/api/announcements", "{\"title\":\"Nets\",\"body\":\"Nets at 5 pm\"}", admin).statusCode()).isEqualTo(200);
+
+        assertThat(send("GET", "/api/notifications", null, admin).body()).contains("Water").contains("Balls").contains("Nets at 5 pm");
+        PlayerLogins logins = new PlayerLogins(port, "test-key");
+        assertThat(feedAs(logins.token("p1"))).contains("Water").doesNotContain("Balls").contains("Nets at 5 pm");
+        assertThat(feedAs(logins.token("p2"))).contains("Balls").doesNotContain("Water").contains("Nets at 5 pm");
+
+        // Someone who signed up but isn't linked to a player yet, or isn't signed in, sees nothing.
+        String guest = send("POST", "/api/account/signup", "{\"email\":\"guest@test.example\",\"password\":\"secret123\",\"name\":\"Some Guest\"}", null)
+                .body().replaceAll("(?s).*?\"token\":\"([^\"]*)\".*", "$1");
+        assertThat(feedAs(guest)).isEqualTo("[]");
+        assertThat(send("GET", "/api/notifications", null, null).body()).isEqualTo("[]");
+        // …and can't pass for a player by naming one.
+        assertThat(http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/notifications")).header("X-User-Token", guest)
+                .header("X-Viewer", "p1").GET().build(), HttpResponse.BodyHandlers.ofString()).body()).isEqualTo("[]");
+
+        // Leave the feed empty for the other tests.
+        String feed = send("GET", "/api/notifications", null, admin).body();
+        String nets = feed.substring(0, feed.indexOf("Nets at 5 pm")).replaceAll("(?s).*\"id\":\"([^\"]*)\".*", "$1");
+        assertThat(send("DELETE", "/api/announcements/" + nets, null, admin).statusCode()).isEqualTo(200);
+        send("PUT", "/api/ledger", ledger(""), admin);
+        assertThat(send("GET", "/api/notifications", null, admin).body()).isEqualTo("[]");
+    }
+
+    private String feedAs(String userToken) throws Exception {
+        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/notifications")).header("X-User-Token", userToken)
+                .GET().build(), HttpResponse.BodyHandlers.ofString()).body();
     }
 
     @Test

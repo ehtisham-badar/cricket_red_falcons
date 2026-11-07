@@ -97,7 +97,7 @@ class EngageTest {
         assertThat(send("POST", "/api/engage/mom/m1/close", null, admin, null).statusCode()).isEqualTo(200);
         assertThat(send("PUT", "/api/engage/mom/m1", "{\"candidateId\":\"p1\"}", null, "p2").statusCode()).isEqualTo(400);
         assertThat(send("GET", "/api/engage", null, null, "p3").body()).contains("\"winners\":[\"p2\"]");
-        assertThat(send("GET", "/api/notifications", null, null, null).body()).contains("Rizwan — man of the match vs Raptors");
+        assertThat(send("GET", "/api/notifications", null, null, "p1").body()).contains("Rizwan — man of the match vs Raptors");
 
         // Polls: staff ask, anyone answers once (changeable), results stay hidden until you answer.
         assertThat(send("POST", "/api/engage/polls", "{\"question\":\"Nets on Friday?\",\"options\":[\"Yes\",\"No\"]}", null, "p1").statusCode()).isEqualTo(403);

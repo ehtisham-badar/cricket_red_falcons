@@ -39,9 +39,12 @@ public class PushController {
 
     @PostMapping("/subscribe")
     public ResponseEntity<?> subscribe(@RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token,
+                                       @RequestHeader(value = LedgerController.VIEWER_HEADER, required = false) String viewer,
                                        @RequestBody SubscribeRequest req) {
         if (req == null || !validEndpoint(req.endpoint())) return bad("Not a push endpoint.");
-        push.subscribe(req.endpoint(), req.playerId(), auth.isValidToken(token));
+        // Whose device it is comes from the sign-in (AccountFilter sets X-Viewer for a linked player; managers and the
+        // admin as before), not from what the browser says, so a guest's device never gets the team's messages.
+        push.subscribe(req.endpoint(), viewer == null ? "" : viewer, auth.isValidToken(token));
         return ResponseEntity.ok(Map.of("ok", true));
     }
 

@@ -26,10 +26,32 @@ public class NotificationService {
 
     private final AppNotificationRepository repo;
     private final PushService push;
+    private final com.redfalcons.ledger.repo.ExpenseRepository expenses;
+    private final com.redfalcons.ledger.repo.PlayerRepository players;
 
-    public NotificationService(AppNotificationRepository repo, PushService push) {
+    public NotificationService(AppNotificationRepository repo, PushService push,
+                               com.redfalcons.ledger.repo.ExpenseRepository expenses, com.redfalcons.ledger.repo.PlayerRepository players) {
         this.repo = repo;
         this.push = push;
+        this.expenses = expenses;
+        this.players = players;
+    }
+
+    /**
+     * One player's bell: the team's announcements and notices, and only the expenses that touch their money
+     * (a day they played or came to, or one shared with them by name). {@code playerId} null: the whole feed.
+     */
+    @Transactional(readOnly = true)
+    public List<AppNotification> latestFor(String playerId) {
+        if (playerId == null) return latest();
+        Set<String> attended = players.findById(playerId).map(p -> (Set<String>) new HashSet<>(p.getAttended())).orElse(Set.of());
+        return latest().stream().filter(n -> {
+            if (!n.getRefKey().startsWith(EXPENSE)) return true;
+            return expenses.findById(n.getRefKey().substring(EXPENSE.length())).map(e -> {
+                List<String> shared = e.getSharedBy().isEmpty() ? List.of() : List.of(e.getSharedBy().split(","));
+                return shared.isEmpty() ? attended.contains(e.getDayId()) : shared.contains(playerId);
+            }).orElse(false);
+        }).toList();
     }
 
     /** What everyone sees: the newest 30 that are due (scheduled ones wait for their time), newest first. */

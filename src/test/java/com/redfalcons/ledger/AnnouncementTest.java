@@ -54,7 +54,7 @@ class AnnouncementTest {
         // The admin's message shows up in everyone's notifications, with who wrote it.
         assertThat(send("POST", "/api/announcements", "{\"title\":\"x\",\"body\":\"  \"}", admin, null).statusCode()).isEqualTo(400);
         assertThat(send("POST", "/api/announcements", msg, admin, null).statusCode()).isEqualTo(200);
-        String feed = send("GET", "/api/notifications", null, null, null).body();
+        String feed = send("GET", "/api/notifications", null, admin, null).body();
         assertThat(feed).contains("Match reminder").contains("Report at 2:30 pm").contains("\"author\":\"Admin\"")
                 .contains("\"kind\":\"announcement\"").contains("\"matchId\":\"m3\"");
 
@@ -66,7 +66,7 @@ class AnnouncementTest {
         String adminsId = field(list.substring(list.indexOf("Match reminder") - 60), "id");
         assertThat(send("DELETE", "/api/announcements/" + adminsId, null, null, mgr).statusCode()).isEqualTo(404);
         assertThat(send("DELETE", "/api/announcements/" + field(byManager.body(), "id"), null, null, mgr).statusCode()).isEqualTo(200);
-        assertThat(send("GET", "/api/notifications", null, null, null).body()).doesNotContain("Nets at 5 pm");
+        assertThat(send("GET", "/api/notifications", null, admin, null).body()).doesNotContain("Nets at 5 pm");
 
         // A later one is held back: staff see it as scheduled, everyone else only once its time comes.
         String later = Instant.now().plus(2, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS).toString();
@@ -74,7 +74,7 @@ class AnnouncementTest {
                 "{\"title\":\"Match tomorrow\",\"body\":\"Be ready\",\"sendAt\":\"" + later + "\"}", admin, null);
         assertThat(scheduled.statusCode()).isEqualTo(200);
         assertThat(scheduled.body()).contains("\"status\":\"scheduled\"").contains(later);
-        assertThat(send("GET", "/api/notifications", null, null, null).body()).doesNotContain("Match tomorrow");
+        assertThat(send("GET", "/api/notifications", null, admin, null).body()).doesNotContain("Match tomorrow");
         assertThat(send("GET", "/api/announcements", null, admin, null).body()).contains("Match tomorrow");
         assertThat(send("POST", "/api/announcements", "{\"body\":\"x\",\"sendAt\":\"tomorrow\"}", admin, null).statusCode()).isEqualTo(400);
 

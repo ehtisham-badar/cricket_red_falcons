@@ -1422,7 +1422,8 @@
 
   // Fetches what the admin has announced; a new one pops up as a toast while the app is open.
   async function loadFeed() {
-    if (realAdmin()) return;
+    // Guests (not linked to a player yet) have no team notifications.
+    if (realAdmin() || isGuest()) return;
     let next;
     try { next = await api('GET', '/api/notifications'); } catch { return; }
     if (JSON.stringify(next) === JSON.stringify(feed)) return;
@@ -2065,7 +2066,7 @@
     document.body.classList.toggle('is-admin', isAdmin());
     const bell = $('#bell');
     const bellCount = realAdmin() ? inboxCount() + adminUnread() : unreadCount();
-    bell.hidden = false;
+    bell.hidden = isGuest();
     bell.dataset.count = bellCount;
     bell.setAttribute('aria-label', bellCount ? `Notifications, ${bellCount} new` : 'Notifications');
     const shown = t => (!isGuest() || t.id === 'tournament' || t.id === 'profile') && (!t.adminTab || realAdmin()) && (!t.userTab || isUser()) && (!t.playerTab || (!realAdmin() && !isManager())) && (!t.staffTab || isStaff()) && (!t.statsTab || statsVisible()) && (!t.daysTab || daysVisible()) && !(archive && t.id === 'settings');
