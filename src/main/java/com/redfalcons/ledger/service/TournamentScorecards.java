@@ -66,7 +66,7 @@ public class TournamentScorecards {
         Map<String, Object> match = matches().stream().filter(r -> String.valueOf(r.get("id")).equals(String.valueOf(id))).findFirst().orElse(null);
         if (match == null) return Optional.empty();
         Map<String, Object> stored = store.findById(key(id)).map(this::read).orElse(null);
-        if (stored != null) return Optional.of(stored);
+        if (stored != null && Boolean.TRUE.equals(stored.get("finished"))) return Optional.of(stored);
         return Optional.of(unavailable(finished(match)
                 ? "This scorecard is added with the Saturday 6 pm update."
                 : "The scorecard is added after the match, with the Saturday 6 pm update."));
@@ -97,7 +97,8 @@ public class TournamentScorecards {
             if (!finished(m)) continue;
             long id;
             try { id = Long.parseLong(String.valueOf(m.get("id"))); } catch (NumberFormatException e) { continue; }
-            if (store.existsById(key(id))) continue;
+            Map<String, Object> have = store.findById(key(id)).map(this::read).orElse(null);
+            if (have != null && Boolean.TRUE.equals(have.get("finished"))) continue; // read once; an unfinished copy is read again
             URI page = scorecardPage(String.valueOf(m.getOrDefault("summaryUrl", "")));
             if (page == null) continue;
             try {
