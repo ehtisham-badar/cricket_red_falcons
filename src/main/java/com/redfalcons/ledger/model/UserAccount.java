@@ -54,6 +54,9 @@ public class UserAccount {
     private String bowlingStyle = "";
     @Column(length = 200)
     private String about = "";
+    /** Date of birth, yyyy-MM-dd, or empty. Squad players get a birthday wish on the day. */
+    @Column(length = 10)
+    private String dob = "";
 
     /** Set when the admin has reset the password: the next sign-in must choose a new one. */
     @Column(name = "must_change", nullable = false)
@@ -102,6 +105,8 @@ public class UserAccount {
     public String getBowlingArm() { return bowlingArm == null ? "" : bowlingArm; }
     public String getBowlingStyle() { return bowlingStyle == null ? "" : bowlingStyle; }
     public String getAbout() { return about == null ? "" : about; }
+    public String getDob() { return dob == null ? "" : dob; }
+    public void setDob(String dob) { this.dob = dob == null ? "" : dob; }
 
     public void setProfile(String role, String battingHand, String bowlingArm, String bowlingStyle, String about) {
         this.profileRole = role;

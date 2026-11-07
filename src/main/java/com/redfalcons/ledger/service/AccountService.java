@@ -209,6 +209,28 @@ public class AccountService {
         return fresh;
     }
 
+    /** Anyone's own date of birth (yyyy-MM-dd); empty clears it. */
+    @Transactional
+    public UserAccount saveDob(UserAccount a, String dob) {
+        UserAccount fresh = accounts.findById(a.getId()).orElseThrow();
+        String d = dob == null ? "" : dob.trim();
+        if (!d.isEmpty()) {
+            java.time.LocalDate date;
+            try {
+                date = java.time.LocalDate.parse(d);
+            } catch (java.time.format.DateTimeParseException e) {
+                throw new IllegalArgumentException("That isn't a date.");
+            }
+            java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Karachi"));
+            if (date.isAfter(today.minusYears(5)) || date.isBefore(today.minusYears(100))) {
+                throw new IllegalArgumentException("Check the year of your date of birth.");
+            }
+            d = date.toString();
+        }
+        fresh.setDob(d);
+        return fresh;
+    }
+
     @Transactional
     public void changePassword(UserAccount a, String current, String next) {
         UserAccount fresh = accounts.findById(a.getId()).orElseThrow();

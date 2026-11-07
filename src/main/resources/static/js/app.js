@@ -2003,6 +2003,7 @@
     loadInbox();
     loadAdminUpdates();
     loadFeed();
+    loadBirthdays();
     loadGallery();
     loadEngage();
     loadAnnouncements();
@@ -3195,6 +3196,7 @@
     const next = nextMatchCard();
     return `
       ${homeHero()}
+      ${birthdayBanner()}
       ${quickTiles()}
       ${moneyGlance()}
       ${todoCard()}
@@ -3204,6 +3206,21 @@
       ${pollsPanel()}
       ${fixturesPanel()}
       ${galleryStrip()}`;
+  }
+
+  // Squad players whose birthday it is today: a banner on Home with a WhatsApp wish.
+  function birthdayBanner() {
+    const today = (squadBdays || []).filter(b => b.inDays === 0);
+    if (!today.length) return '';
+    const names = today.map(b => esc(firstName(b.name)));
+    const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+    return `<section class="bday-banner"><span class="bday-confetti" aria-hidden="true"></span>
+      <span class="bday-faces">${today.map(b => findPlayer(b.playerId) ? avatar(findPlayer(b.playerId), 52) : '').join('')}</span>
+      <div class="bday-text"><span class="bday-kicker">🎂 Birthday today</span><strong>Happy birthday, ${list}!</strong>
+        <small>${today.some(b => b.playerId === (session && session.playerId)) ? 'From all of us at the Red Falcons, have a great day!' : 'Send a wish from the team.'}</small></div>
+      <span class="bday-actions">${today.filter(b => b.playerId !== (session && session.playerId)).map(b =>
+        `<button class="btn btn-whatsapp small" data-action="bday-wish" data-id="${esc(b.playerId)}">${WA_ICON} Wish ${esc(firstName(b.name))}</button>`).join('')}</span>
+    </section>`;
   }
 
   function emptyPlayers() {
@@ -3982,14 +3999,14 @@
   }
 
   // The photo, name, jersey and cricket details form (in the profile sheet and on the Profile tab).
-  function profileFields(me) {
+  function profileFields(me, photo = true) {
     const sel = (key, label, options) => `<label><span>${label}</span><select class="field select" data-input="pf-${key}">
       ${options.map(([v, l]) => `<option value="${esc(v)}" ${pForm[key] === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`;
-    return `
+    return `${photo ? `
         <div class="pf-photo">
           <button class="avatar-btn" data-action="photo-pick" data-id="${esc(me.id)}" title="Change photo" aria-label="Change photo">${avatar(me, 112)}<span class="cam">${CAMERA_ICON}</span></button>
           <div><strong>${esc(me.name)}</strong><small class="muted">${me.photoAt ? 'Tap the photo to change it.' : 'Tap the camera to add a photo.'}</small></div>
-        </div>
+        </div>` : ''}
         <div class="form-grid">
           <label class="pf-wide"><span>Full name <small class="muted">(as shown in the squad, e.g. Ehtisham Badar (Roxy))</small></span>
             <input class="field" type="text" maxlength="60" value="${esc(pForm.name)}" placeholder="e.g. Ehtisham Badar (Roxy)" data-input="pf-name" data-focus="pf-name" autocomplete="off"></label>
@@ -4590,40 +4607,152 @@ ${tabRows.map(r => {
       </div>`;
   }
 
-  // ---------- Profile tab (signed-in players) ----------
+  // ---------- Profile tab (signed-in players and guests) ----------
   let pwDraft = { current: '', next: '', again: '' };
+  let pwOpen = false;                         // the Password & sign-in card on the Profile tab
+  let dobDraft = null;                        // the date being typed, until saved
+  let squadBdays = null;                      // GET /api/account/birthdays: squad players' birthdays in the next 30 days
 
   let gForm = null;                           // a guest's profile draft
+
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const dobParts = iso => (iso || '').split('-').map(Number);
+  const dobLong = iso => { const [y, m, d] = dobParts(iso); return iso ? `${d} ${MONTHS[m - 1]} ${y}` : ''; };
+  const dayMonth = (d, m) => `${d} ${MONTHS[m - 1]}`;
+  const todayLocal = () => { const t = new Date(); return new Date(t.getFullYear(), t.getMonth(), t.getDate()); };
+  function ageOf(iso) {
+    if (!iso) return null;
+    const [y, m, d] = dobParts(iso), t = todayLocal();
+    return t.getFullYear() - y - (t.getMonth() + 1 < m || (t.getMonth() + 1 === m && t.getDate() < d) ? 1 : 0);
+  }
+  // Days until the next birthday (0 on the day); 29 February counts on the 28th in other years.
+  function daysToBirthday(iso) {
+    if (!iso) return null;
+    const [, m, d] = dobParts(iso), t = todayLocal();
+    const on = y => { const leap = new Date(y, 1, 29).getMonth() === 1; return new Date(y, m - 1, m === 2 && d === 29 && !leap ? 28 : d); };
+    let next = on(t.getFullYear());
+    if (next < t) next = on(t.getFullYear() + 1);
+    return Math.round((next - t) / 86400000);
+  }
+  const inDaysText = n => n === 0 ? 'today 🎉' : n === 1 ? 'tomorrow' : `in ${n} days`;
+  const firstName = name => (name || '').replace(/\s*\(.*\)/, '').trim().split(' ')[0];
+
+  async function loadBirthdays() {
+    if (isGuest() || (!isUser() && !isStaff())) return;
+    try { squadBdays = await api('GET', '/api/account/birthdays'); } catch { return; }
+    if (tab === 'summary' || tab === 'profile') render();
+  }
+
+  async function saveDob(dob, el) {
+    if (dob == null) return;
+    if (el) el.disabled = true;
+    try {
+      acctMe = { ...acctMe, ...(await api('PUT', '/api/account/dob', { dob })) };
+      dobDraft = null;
+      toast(dob ? 'Birthday saved.' : 'Birthday removed.');
+      loadBirthdays();
+      render();
+    } catch (e) { toast(e.message || 'Could not save that.'); if (el) el.disabled = false; }
+  }
+
+  const CAKE_ICON = '<path d="M20 21v-8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8"/><path d="M4 16s.5-1 2-1 2.5 2 4 2 2.5-2 4-2 2.5 2 4 2 2-1 2-1"/><path d="M2 21h20"/><path d="M7 8v3M12 8v3M17 8v3"/><path d="M7 4h.01M12 4h.01M17 4h.01"/>';
+  const LOCK_ICON = '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>';
+  const CHEVRON = '<path d="m6 9 6 6 6-6"/>';
+
+  // The big card at the top of the Profile tab: cover, photo, name, badges and a strip of numbers.
+  function profileHero({ ava, name, sub, badges, figs, jersey }) {
+    return `<section class="pf-hero">
+      <div class="pf-cover">${jersey ? `<span class="pf-num">${esc(jersey)}</span>` : ''}<span class="pf-stripes"></span></div>
+      <div class="pf-hero-body">
+        <div class="pf-ava">${ava}</div>
+        <div class="pf-id"><h2>${esc(name)}</h2>${sub ? `<span class="pf-sub">${sub}</span>` : ''}${badges ? `<div class="prof-badges">${badges}</div>` : ''}</div>
+      </div>
+      ${figs.length ? `<div class="pf-strip">${figs.map(([label, value]) => `<div><strong>${value}</strong><span>${label}</span></div>`).join('')}</div>` : ''}
+    </section>`;
+  }
+
+  // Your date of birth: a countdown when it's set, the date box to set or change it.
+  function birthdayPanel(squad) {
+    const dob = (acctMe && acctMe.dob) || '';
+    const val = dobDraft ?? dob;
+    const n = daysToBirthday(dob), age = ageOf(dob);
+    const max = (() => { const t = todayLocal(); t.setFullYear(t.getFullYear() - 5); return t.toISOString().slice(0, 10); })();
+    const big = dob ? `<div class="bd-big ${n === 0 ? 'today' : ''}">
+        <span class="bd-cake">${n === 0 ? '🎂' : icon(CAKE_ICON, 28)}</span>
+        <div><strong>${n === 0 ? `Happy birthday, ${esc(firstName(session.name))}!` : dayMonth(dobParts(dob)[2], dobParts(dob)[1])}</strong>
+          <small>${n === 0 ? `You’re ${age} today.` : `You turn ${age + 1} ${inDaysText(n)}.`}</small></div>
+        ${n ? `<span class="bd-count"><b>${n}</b>day${n === 1 ? '' : 's'}</span>` : ''}</div>`
+      : `<div class="bd-big empty"><span class="bd-cake">${icon(CAKE_ICON, 28)}</span><div><strong>When’s your birthday?</strong>
+          <small>${squad ? 'Add it and the whole squad gets a reminder to wish you on the day.' : 'Add it to your profile if you like.'}</small></div></div>`;
+    return `<section class="panel bd-panel">
+      <div class="panel-head"><h3>Birthday</h3></div>
+      ${big}
+      <div class="bd-form"><label><span>Date of birth</span><input class="field" type="date" min="1925-01-01" max="${max}" value="${esc(val)}" data-input="dob" data-focus="dob"></label>
+        <button class="btn ${dob ? 'btn-ghost' : 'btn-gold'}" data-action="dob-save" ${val === dob ? 'disabled' : ''}>${dob ? 'Update' : 'Save'}</button>
+        ${dob ? '<button class="btn btn-ghost" data-action="dob-clear">Remove</button>' : ''}</div>
+      <p class="muted bd-note">${squad ? 'Teammates see only the day and month, never the year. The admin sees the full date.' : 'Only the admin sees it.'}</p>
+    </section>`;
+  }
+
+  // Squad birthdays coming up in the next 30 days.
+  function squadBirthdaysPanel() {
+    const list = squadBdays || [];
+    return `<section class="panel bd-list-panel">
+      <div class="panel-head"><h3>Squad birthdays</h3><p class="muted">The next 30 days.</p></div>
+      ${list.length ? `<ul class="bd-list">${list.map(b => {
+        const p = findPlayer(b.playerId);
+        return `<li class="${b.inDays === 0 ? 'today' : ''}">${p ? avatar(p, 36) : ''}<span><strong>${esc(b.name)}</strong><small>${dayMonth(b.day, b.month)}</small></span>
+          <span class="bd-when">${b.inDays === 0 ? '🎂 Today' : b.inDays === 1 ? 'Tomorrow' : `${b.inDays} days`}</span>
+          ${b.inDays === 0 && b.playerId !== session.playerId ? `<button class="btn btn-whatsapp small" data-action="bday-wish" data-id="${esc(b.playerId)}">${WA_ICON} Wish</button>` : ''}</li>`;
+      }).join('')}</ul>` : `<p class="muted bd-none">${squadBdays === null ? 'Loading…' : 'No squad birthdays in the next 30 days.'}</p>`}
+    </section>`;
+  }
+
+  // Password and sign-in, folded away until opened.
+  function passwordCard(guest) {
+    const pw = (k, label, auto) => `<label><span>${label}</span><input class="field" type="password" maxlength="200" autocomplete="${auto}" value="${esc(pwDraft[k])}" data-input="pw-${k}" data-focus="pw-${k}"></label>`;
+    return `<section class="panel pf-fold ${pwOpen ? 'open' : ''}">
+      <button class="pf-fold-head" data-action="pf-fold" aria-expanded="${pwOpen}"><span class="pf-fold-ico">${icon(LOCK_ICON, 18)}</span>
+        <span><strong>Password &amp; sign-in</strong><small class="muted">${esc(session.email || '')}</small></span><span class="pf-chev">${icon(CHEVRON, 18)}</span></button>
+      ${pwOpen ? `<div class="pf-fold-body">
+        <h3 class="sub">Change password</h3>
+        <div class="form-grid pw-grid">${pw('current', 'Current password', 'current-password')}${pw('next', 'New password', 'new-password')}${pw('again', 'New password again', 'new-password')}</div>
+        <div class="settings-actions"><button class="btn btn-primary" data-action="pw-save">Save new password</button></div>
+        ${guest ? securityPanel(true) : `${securityPanel(true)}`}
+      </div>` : ''}
+    </section>`;
+  }
 
   function guestProfile() {
     const prof = (acctMe && acctMe.profile) || {};
     if (!gForm) gForm = { name: session.name || '', role: prof.role || '', bat: prof.battingHand || '', arm: prof.bowlingArm || '', style: prof.bowlingStyle || '', about: prof.about || '' };
-    const since = acctMe && acctMe.createdAt ? new Date(acctMe.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
-    const pw = (k, label, auto) => `<label><span>${label}</span><input class="field" type="password" maxlength="200" autocomplete="${auto}" value="${esc(pwDraft[k])}" data-input="pw-${k}" data-focus="pw-${k}"></label>`;
+    const since = acctMe && acctMe.createdAt ? new Date(acctMe.createdAt).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) : '—';
     const sel = (key, label, options) => `<label><span>${label}</span><select class="field select" data-input="gp-${key}">
       ${options.map(([v, l]) => `<option value="${esc(v)}" ${gForm[key] === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`;
+    const dob = acctMe && acctMe.dob;
+    const hero = profileHero({
+      ava: `<span class="avatar ph" style="--s:104px">${icon(PERSON_ICON, 48)}</span>`, name: session.name || '',
+      sub: esc([prof.role, session.email].filter(Boolean).join(' · ')), badges: '<span class="prof-badge">Guest</span>',
+      figs: [['Member since', since], ['Birthday', dob ? dayMonth(dobParts(dob)[2], dobParts(dob)[1]) : '—'], ['Role', esc(prof.role || '—')]]
+    });
     return `${pageHead('My profile', 'You’re signed in as a guest.')}
-      <div class="profile-layout">
-        <section class="panel myacc-card">
-          <div class="myacc-head"><span class="avatar ph" style="--s:64px">${icon(PERSON_ICON, 30)}</span>
-            <div><strong>${esc(session.name || '')}</strong><small>${esc(session.email || '')}</small>${since ? `<small class="muted">Member since ${since}</small>` : ''}<small class="muted">Guest</small></div></div>
-          <h3 class="sub">Change password</h3>
-          <div class="form-grid pw-grid">${pw('current', 'Current password', 'current-password')}${pw('next', 'New password', 'new-password')}${pw('again', 'New password again', 'new-password')}</div>
-          <div class="settings-actions"><button class="btn btn-primary" data-action="pw-save">Save new password</button></div>
-        </section>
-        <section class="panel">
-          <div class="panel-head"><h3>Your profile</h3><p class="muted">Optional. Fill in as much as you like; the admin sees it with your account.</p></div>
-          <div class="pf"><div class="form-grid">
-            <label class="pf-wide"><span>Full name</span><input class="field" type="text" maxlength="60" value="${esc(gForm.name)}" data-input="gp-name" data-focus="gp-name" autocomplete="name"></label>
-            ${sel('role', 'Playing role', [['', 'Not set'], ['Batsman', 'Batsman'], ['Bowler', 'Bowler'], ['All-rounder', 'All-rounder'], ['Wicket-keeper', 'Wicket-keeper']])}
-            ${sel('bat', 'Batting hand', [['', 'Not set'], ['right', 'Right-hand'], ['left', 'Left-hand']])}
-            ${sel('arm', 'Bowling arm', [['', 'Not set'], ['right', 'Right-arm'], ['left', 'Left-arm']])}
-            ${sel('style', 'Bowling style', BOWL_STYLES.map(x => [x, x || 'Not set']))}
-            <label class="pf-wide"><span>About you <small class="muted">(optional)</small></span><input class="field" type="text" maxlength="200" value="${esc(gForm.about)}" placeholder="e.g. Weekend cricketer, open to play" data-input="gp-about" data-focus="gp-about"></label>
-          </div>
-          <button class="btn btn-gold btn-block" data-action="guest-profile-save">${icon('<path d="M20 6 9 17l-5-5"/>', 18)} Save profile</button></div>
-        </section>
-        <section class="panel"><div class="panel-head"><h3>Sign-in</h3></div>${securityPanel(true)}</section>
+      ${hero}
+      <div class="pf-grid">
+        <div class="pf-col">
+          <section class="panel">
+            <div class="panel-head"><h3>About you</h3><p class="muted">Optional. Fill in as much as you like; the admin sees it with your account.</p></div>
+            <div class="pf"><div class="form-grid">
+              <label class="pf-wide"><span>Full name</span><input class="field" type="text" maxlength="60" value="${esc(gForm.name)}" data-input="gp-name" data-focus="gp-name" autocomplete="name"></label>
+              ${sel('role', 'Playing role', [['', 'Not set'], ['Batsman', 'Batsman'], ['Bowler', 'Bowler'], ['All-rounder', 'All-rounder'], ['Wicket-keeper', 'Wicket-keeper']])}
+              ${sel('bat', 'Batting hand', [['', 'Not set'], ['right', 'Right-hand'], ['left', 'Left-hand']])}
+              ${sel('arm', 'Bowling arm', [['', 'Not set'], ['right', 'Right-arm'], ['left', 'Left-arm']])}
+              ${sel('style', 'Bowling style', BOWL_STYLES.map(x => [x, x || 'Not set']))}
+              <label class="pf-wide"><span>About you <small class="muted">(optional)</small></span><input class="field" type="text" maxlength="200" value="${esc(gForm.about)}" placeholder="e.g. Weekend cricketer, open to play" data-input="gp-about" data-focus="gp-about"></label>
+            </div>
+            <button class="btn btn-gold btn-block" data-action="guest-profile-save">${icon('<path d="M20 6 9 17l-5-5"/>', 18)} Save profile</button></div>
+          </section>
+        </div>
+        <div class="pf-col">${birthdayPanel(false)}${passwordCard(true)}</div>
       </div>`;
   }
 
@@ -4632,27 +4761,35 @@ ${tabRows.map(r => {
     if (isGuest()) return guestProfile();
     if (!me) return `${pageHead('My profile', '')}<section class="panel"><p class="muted">Your account isn’t linked to a squad player yet.</p></section>`;
     if (!pForm || pForm.id !== me.id) pForm = formFor(me);
-    const since = acctMe && acctMe.createdAt ? new Date(acctMe.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
-    const pw = (k, label, auto) => `<label><span>${label}</span><input class="field" type="password" maxlength="200" autocomplete="${auto}" value="${esc(pwDraft[k])}" data-input="pw-${k}" data-focus="pw-${k}"></label>`;
-    return `${pageHead('My profile', 'How you appear in the Red Falcons squad, and your sign-in.')}
-      <div class="profile-layout">
-        <section class="panel myacc-card">
-          <div class="myacc-head">${avatar(me, 72)}
-            <div><strong>${esc(me.name)}</strong><small>${esc(session.email || '')}</small>${since ? `<small class="muted">Member since ${since}</small>` : ''}</div></div>
-          <h3 class="sub">Change password</h3>
-          <div class="form-grid pw-grid">
-            ${pw('current', 'Current password', 'current-password')}
-            ${pw('next', 'New password', 'new-password')}
-            ${pw('again', 'New password again', 'new-password')}
-          </div>
-          <div class="settings-actions"><button class="btn btn-primary" data-action="pw-save">Save new password</button>
-            <button class="btn btn-ghost" data-action="tab" data-tab="settings">Face ID / fingerprint sign-in</button></div>
-        </section>
-        <section class="panel">
-          <div class="panel-head"><h3>Cricket profile</h3><p class="muted">Your teammates see this on your player card, and it updates the squad list.</p></div>
-          <div class="pf">${profileFields(me)}</div>
-          <div class="settings-actions"><button class="btn btn-ghost" data-action="open-kit-form">Shirt size</button></div>
-        </section>
+    if (squadBdays === null) loadBirthdays();
+    const played = C.matches(state).filter(m => me.att[m.id] && m.finished).length;
+    const trained = (state.trainings || []).filter(t => me.att[t.id]).length;
+    const t = C.leagueStats(state, statsMatchVisible).find(x => x.player.id === me.id);
+    const moms = engage ? engage.mom.filter(r => r.winners.includes(me.id)).length : 0;
+    const dob = acctMe && acctMe.dob;
+    const badges = [isCaptain(me) && 'Captain', me.viceCaptain && 'Vice-captain', isKeeper(me) && 'Wicket-keeper', moms && `⭐ Man of the match${moms > 1 ? ` ×${moms}` : ''}`,
+      dob && daysToBirthday(dob) === 0 && '🎂 Birthday today'].filter(Boolean).map(b => `<span class="prof-badge">${b}</span>`).join('');
+    const hero = profileHero({
+      ava: `<button class="avatar-btn" data-action="photo-pick" data-id="${esc(me.id)}" title="Change photo" aria-label="Change photo">${avatar(me, 104)}<span class="cam">${CAMERA_ICON}</span></button>`,
+      name: me.name, jersey: me.jersey ? `#${me.jersey}` : '',
+      sub: [me.jerseyName && `<b>${esc(me.jerseyName)}</b>`, esc(me.role || ''), battingText(me) !== '—' && battingText(me), bowlingText(me) !== '—' && bowlingText(me)].filter(Boolean).join(' · '),
+      badges,
+      figs: [['Matches', played], ['Runs', t ? t.runs : 0], ['Wickets', t ? t.wickets : 0], ['Catches', t ? t.catches : 0], ['Trainings', trained]]
+    });
+    const stats = profileStats(me, played);
+    return `${pageHead('My profile', 'How you appear in the Red Falcons squad.')}
+      ${hero}
+      <div class="pf-grid">
+        <div class="pf-col">
+          <section class="panel"><div class="panel-head"><h3>My season</h3></div>
+            ${stats || '<p class="muted">Your batting, bowling and fielding numbers show here once a match you played has stats.</p>'}</section>
+          <section class="panel">
+            <div class="panel-head"><h3>Cricket profile</h3><p class="muted">Your teammates see this on your player card, and it updates the squad list.</p></div>
+            <div class="pf">${profileFields(me, false)}</div>
+            <div class="settings-actions"><button class="btn btn-ghost" data-action="open-kit-form">Shirt size</button></div>
+          </section>
+        </div>
+        <div class="pf-col">${birthdayPanel(true)}${squadBirthdaysPanel()}${passwordCard(false)}</div>
       </div>`;
   }
 
@@ -4679,6 +4816,7 @@ ${tabRows.map(r => {
   let linkRequests = [];                      // new accounts not linked to a squad player yet
   const linkPick = {};                        // account id -> the squad player chosen for it in Requests
   let accOpen = null;                         // the account whose sign-in history is open
+  const accExpanded = new Set();              // Accounts: the cards opened up
   let accFilter = 'all';                      // Accounts: all | players | guests | tolink
 
   async function loadAccounts() {
@@ -4689,6 +4827,56 @@ ${tabRows.map(r => {
 
   const METHOD = { password: 'Password', biometric: 'Face ID / fingerprint', signup: 'Signed up' };
   const when = iso => iso ? new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '';
+
+  const accFlags = a => [a.resetRequested && '<span class="acc-flag warn">Forgot password</span>', a.mustChange && '<span class="acc-flag">Setting a new password</span>',
+    a.passkeys > 0 && `<span class="acc-flag ok">${icon(FINGER_ICON, 12)} Biometrics on ${a.passkeys} device${a.passkeys === 1 ? '' : 's'}</span>`,
+    !a.playerId && (a.dismissed ? '<span class="acc-flag">Not in the squad</span>' : '<span class="acc-flag warn">Waiting for you to link</span>')].filter(Boolean).join('');
+
+  // Everything about one account, for the admin: who they are, their sign-in record and their cricket details.
+  function sheetAccount() {
+    const a = (accountList || []).find(x => x.id === sheet.id);
+    if (!a) return '';
+    const p = a.playerId ? findPlayer(a.playerId) : null;
+    const prof = a.profile || {};
+    const kv = rows => `<dl class="kv acc-kv">${rows.filter(r => r && r[1] !== '' && r[1] != null).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`;
+    const n = a.dob ? daysToBirthday(a.dob) : null;
+    const hand = h => h ? `${h === 'left' ? 'Left' : 'Right'}` : '';
+    const cricket = p
+      ? [['Squad name', esc(p.name)], ['Role', esc(p.role || '—')], ['Batting', battingText(p)], ['Bowling', bowlingText(p)],
+         ['Jersey', [p.jerseyName && esc(p.jerseyName), p.jersey && `#${esc(p.jersey)}`].filter(Boolean).join(' ') || '—'], ['Phone', p.phone ? esc(p.phone) : '—']]
+      : [['Playing role', esc(prof.role || '—')], ['Batting', prof.battingHand ? `${hand(prof.battingHand)}-hand bat` : '—'],
+         ['Bowling', [prof.bowlingArm && `${hand(prof.bowlingArm)}-arm`, prof.bowlingStyle && esc(prof.bowlingStyle.toLowerCase())].filter(Boolean).join(' ') || '—'],
+         ['About', prof.about ? `“${esc(prof.about)}”` : '—']];
+    return `<header class="sheet-head">
+        <div><span class="day-kind">Account</span></div>
+        <button class="icon-btn" data-action="close-sheet" aria-label="Close">${X_ICON}</button>
+      </header>
+      <div class="sheet-body acc-sheet">
+        <div class="acc-sheet-head">${p ? avatar(p, 72) : `<span class="avatar ph" style="--s:72px">${icon(PERSON_ICON, 34)}</span>`}
+          <div><h2>${esc(a.name)}</h2><small class="muted">${esc(a.email)}</small>
+            <div class="acc-flags"><span class="acc-cat ${a.playerId ? 'player' : 'guest'}">${a.playerId ? 'Player' : 'Guest'}</span>${a.role ? `<span class="acc-cat staff">${a.role === 'admin' ? 'Admin' : 'Manager'}</span>` : ''}${accFlags(a)}</div></div></div>
+        <h3 class="sub">Personal</h3>
+        ${kv([['Date of birth', a.dob ? dobLong(a.dob) : '<span class="muted">Not added</span>'], a.dob && ['Age', `${ageOf(a.dob)}`],
+          a.dob && ['Next birthday', n === 0 ? '🎂 Today' : `${dayMonth(dobParts(a.dob)[2], dobParts(a.dob)[1])} · ${inDaysText(n)}`],
+          a.dob && ['Birthday wish', a.playerId ? 'The squad is reminded on the day' : 'None (guests aren’t announced)']].filter(Boolean))}
+        <h3 class="sub">${p ? 'Cricket (from the squad)' : 'Cricket (their profile)'}</h3>
+        ${kv(cricket)}
+        <h3 class="sub">Account</h3>
+        ${kv([['Joined', `${when(a.createdAt)} <small class="muted">(${ago(a.createdAt)})</small>`],
+          ['Last sign-in', a.lastLoginAt ? `${when(a.lastLoginAt)} <small class="muted">(${ago(a.lastLoginAt)}${a.lastLoginMethod ? ` · ${esc(METHOD[a.lastLoginMethod] || a.lastLoginMethod)}` : ''})</small>` : 'Never'],
+          ['Sign-ins', `${a.loginCount}`], ['Wrong passwords', a.failedSinceLogin ? `<span class="neg">${a.failedSinceLogin} since the last sign-in</span>` : 'None'],
+          ['Biometrics', a.passkeys ? `On ${a.passkeys} device${a.passkeys === 1 ? '' : 's'}` : 'Off'],
+          ['Squad player', p ? esc(p.name) : a.dismissed ? 'Not in the squad' : 'Not linked yet'],
+          ['Rights', a.role === 'admin' ? 'Admin' : a.role === 'manager' ? 'Manager' : a.playerId ? 'Player' : 'None (guest)']])}
+        <h3 class="sub">Sign-in record</h3>
+        <ol class="acc-history">${(a.recent || []).length ? a.recent.map(e => `<li class="${e.ok ? '' : 'bad'}"><span>${when(e.at)}</span><span>${esc(METHOD[e.method] || e.method)}${e.ok ? '' : ' · failed'}</span><span class="muted">${esc(e.label)}</span></li>`).join('') : '<li class="muted">No sign-ins yet.</li>'}</ol>
+        <div class="acc-btns acc-sheet-btns">
+          ${p ? `<button class="btn btn-ghost small" data-action="open-profile" data-id="${esc(p.id)}">Player card</button>` : ''}
+          <button class="btn btn-ghost small" data-action="acc-reset" data-id="${esc(a.id)}">Reset password</button>
+          <button class="btn btn-danger small" data-action="acc-remove" data-id="${esc(a.id)}">Remove</button>
+        </div>
+      </div>`;
+  }
 
   function viewAccounts() {
     const list = accountList || [];
@@ -4704,35 +4892,41 @@ ${tabRows.map(r => {
           <button class="btn btn-ghost small" data-action="reset-decline" data-id="${esc(r.id)}">Decline</button></span></div>`).join('')}
       </section>` : '';
     const card = a => {
-      const open = accOpen === a.id;
-      const opts = `<option value="">Not linked</option>${state.players.map(p => `<option value="${esc(p.id)}" ${a.playerId === p.id ? 'selected' : ''} ${taken.has(p.id) && a.playerId !== p.id ? 'disabled' : ''}>${esc(p.name)}${taken.has(p.id) && a.playerId !== p.id ? ' (has an account)' : ''}</option>`).join('')}`;
-      const flags = [a.role === 'admin' && '<span class="acc-flag ok">Admin</span>', a.role === 'manager' && '<span class="acc-flag ok">Manager</span>', a.resetRequested && '<span class="acc-flag warn">Forgot password</span>', a.mustChange && '<span class="acc-flag">Setting a new password</span>',
-        a.passkeys > 0 && `<span class="acc-flag ok">${icon(FINGER_ICON, 12)} Biometrics on ${a.passkeys} device${a.passkeys === 1 ? '' : 's'}</span>`,
-        !a.playerId && (a.dismissed ? '<span class="acc-flag">Not in the squad</span>' : '<span class="acc-flag warn">Waiting for you to link</span>')].filter(Boolean).join('');
-      const prof = a.profile || {};
-      const guestInfo = !a.playerId ? [prof.role, prof.battingHand && `${prof.battingHand === 'left' ? 'Left' : 'Right'}-hand bat`,
-        (prof.bowlingArm || prof.bowlingStyle) && [prof.bowlingArm && `${prof.bowlingArm === 'left' ? 'Left' : 'Right'}-arm`, prof.bowlingStyle].filter(Boolean).join(' ')].filter(Boolean).join(' · ') : '';
-      return `<article class="acc-card ${a.playerId ? '' : 'unlinked'}">
-        <div class="acc-top">
-          <span class="acc-who">${a.playerId && findPlayer(a.playerId) ? avatar(findPlayer(a.playerId), 40) : `<span class="avatar ph" style="--s:40px">${icon(PERSON_ICON, 20)}</span>`}
-            <span><strong>${esc(a.name)} <span class="acc-cat ${a.playerId ? 'player' : 'guest'}">${a.playerId ? 'Player' : 'Guest'}</span></strong><small class="muted">${esc(a.email)}</small>
-              ${guestInfo || (!a.playerId && prof.about) ? `<small class="acc-guest">${esc(guestInfo)}${guestInfo && prof.about ? ' · ' : ''}${prof.about ? `“${esc(prof.about)}”` : ''}</small>` : ''}</span></span>
-          <label class="acc-link"><span>Squad player</span><select class="field select" data-input="acc-link" data-id="${esc(a.id)}" aria-label="Squad player for ${esc(a.name)}">${opts}</select></label>
-          <label class="acc-link"><span>Rights</span><select class="field select" data-input="acc-role" data-id="${esc(a.id)}" aria-label="Rights for ${esc(a.name)}">
-            <option value="" ${!a.role ? 'selected' : ''}>Player</option><option value="manager" ${a.role === 'manager' ? 'selected' : ''}>Manager</option><option value="admin" ${a.role === 'admin' ? 'selected' : ''}>Admin</option></select></label>
+      const open = accExpanded.has(a.id);
+      const p = a.playerId ? findPlayer(a.playerId) : null;
+      const opts = `<option value="">Not linked</option>${state.players.map(x => `<option value="${esc(x.id)}" ${a.playerId === x.id ? 'selected' : ''} ${taken.has(x.id) && a.playerId !== x.id ? 'disabled' : ''}>${esc(x.name)}${taken.has(x.id) && a.playerId !== x.id ? ' (has an account)' : ''}</option>`).join('')}`;
+      const flags = accFlags(a);
+      const warn = a.resetRequested || (!a.playerId && !a.dismissed);
+      const bd = a.dob ? daysToBirthday(a.dob) : null;
+      return `<article class="acc-card ${a.playerId ? '' : 'unlinked'} ${open ? 'open' : ''}">
+        <div class="acc-row">
+          <button class="acc-row-main" data-action="acc-toggle" data-id="${esc(a.id)}" aria-expanded="${open}">
+            <span class="acc-who">${p ? avatar(p, 42) : `<span class="avatar ph" style="--s:42px">${icon(PERSON_ICON, 20)}</span>`}
+              <span><strong>${esc(a.name)} <span class="acc-cat ${a.playerId ? 'player' : 'guest'}">${a.playerId ? 'Player' : 'Guest'}</span>${a.role ? ` <span class="acc-cat staff">${a.role === 'admin' ? 'Admin' : 'Manager'}</span>` : ''}${warn ? ' <span class="acc-dot" aria-label="Needs you"></span>' : ''}</strong>
+                <small class="muted">${a.lastLoginAt ? `Signed in ${ago(a.lastLoginAt)}` : 'Never signed in'}${bd === 0 ? ' · 🎂 birthday today' : ''}</small></span></span>
+            <span class="pf-chev">${icon(CHEVRON, 18)}</span>
+          </button>
+          <button class="btn btn-ghost small acc-detail-btn" data-action="acc-details" data-id="${esc(a.id)}">Details</button>
         </div>
-        ${flags ? `<div class="acc-flags">${flags}</div>` : ''}
-        <div class="acc-figs">
-          <div><span>Last sign-in</span><strong>${a.lastLoginAt ? ago(a.lastLoginAt) : '—'}</strong><small class="muted">${esc(METHOD[a.lastLoginMethod] || '')}</small></div>
-          <div><span>Sign-ins</span><strong>${a.loginCount}</strong>${a.failedSinceLogin ? `<small class="neg">${a.failedSinceLogin} wrong password${a.failedSinceLogin === 1 ? '' : 's'} since</small>` : '<small class="muted">&nbsp;</small>'}</div>
-          <div><span>Joined</span><strong>${ago(a.createdAt)}</strong><small class="muted">${when(a.createdAt)}</small></div>
-        </div>
-        <div class="acc-btns">
-          <button class="btn btn-ghost small" data-action="acc-history" data-id="${esc(a.id)}" aria-expanded="${open}">${open ? 'Hide record' : 'Sign-in record'}</button>
-          <button class="btn btn-ghost small" data-action="acc-reset" data-id="${esc(a.id)}">Reset password</button>
-          <button class="btn btn-danger small" data-action="acc-remove" data-id="${esc(a.id)}">Remove</button>
-        </div>
-        ${open ? `<ol class="acc-history">${(a.recent || []).length ? a.recent.map(e => `<li class="${e.ok ? '' : 'bad'}"><span>${when(e.at)}</span><span>${esc(METHOD[e.method] || e.method)}${e.ok ? '' : ' · failed'}</span><span class="muted">${esc(e.label)}</span></li>`).join('') : '<li class="muted">No sign-ins yet.</li>'}</ol>` : ''}
+        ${open ? `<div class="acc-body">
+          <small class="muted acc-mail">${esc(a.email)}</small>
+          ${flags ? `<div class="acc-flags">${flags}</div>` : ''}
+          <div class="acc-top">
+            <label class="acc-link"><span>Squad player</span><select class="field select" data-input="acc-link" data-id="${esc(a.id)}" aria-label="Squad player for ${esc(a.name)}">${opts}</select></label>
+            <label class="acc-link"><span>Rights</span><select class="field select" data-input="acc-role" data-id="${esc(a.id)}" aria-label="Rights for ${esc(a.name)}">
+              <option value="" ${!a.role ? 'selected' : ''}>Player</option><option value="manager" ${a.role === 'manager' ? 'selected' : ''}>Manager</option><option value="admin" ${a.role === 'admin' ? 'selected' : ''}>Admin</option></select></label>
+          </div>
+          <div class="acc-figs">
+            <div><span>Last sign-in</span><strong>${a.lastLoginAt ? ago(a.lastLoginAt) : '—'}</strong><small class="muted">${esc(METHOD[a.lastLoginMethod] || '')}</small></div>
+            <div><span>Sign-ins</span><strong>${a.loginCount}</strong>${a.failedSinceLogin ? `<small class="neg">${a.failedSinceLogin} wrong password${a.failedSinceLogin === 1 ? '' : 's'} since</small>` : '<small class="muted">&nbsp;</small>'}</div>
+            <div><span>Birthday</span><strong>${a.dob ? dayMonth(dobParts(a.dob)[2], dobParts(a.dob)[1]) : '—'}</strong><small class="muted">${a.dob ? `${ageOf(a.dob)} years` : 'Not added'}</small></div>
+          </div>
+          <div class="acc-btns">
+            <button class="btn btn-primary small" data-action="acc-details" data-id="${esc(a.id)}">All details</button>
+            <button class="btn btn-ghost small" data-action="acc-reset" data-id="${esc(a.id)}">Reset password</button>
+            <button class="btn btn-danger small" data-action="acc-remove" data-id="${esc(a.id)}">Remove</button>
+          </div>
+        </div>` : ''}
       </article>`;
     };
     const cats = { all: list, players: list.filter(a => a.playerId), guests: list.filter(a => !a.playerId), tolink: list.filter(a => !a.playerId && !a.dismissed) };
@@ -4815,6 +5009,7 @@ ${tabRows.map(r => {
     if (sheet.type === 'predictions') body = sheetPredictions();
     if (sheet.type === 'hpl-team') body = sheetHplTeam();
     if (sheet.type === 'hpl-match') body = sheetHplMatch();
+    if (sheet.type === 'account') body = sheetAccount();
     if (!body) { sheet = null; return ''; }
     return `<div class="sheet-backdrop" data-action="close-sheet"></div>
       <div class="sheet cb" role="dialog" aria-modal="true">${body}</div>`;
@@ -5676,6 +5871,19 @@ ${tabRows.map(r => {
       el.setAttribute('aria-label', input.type === 'password' ? 'Show password' : 'Hide password');
     },
     'acct-bio'() { bioSignIn(); },
+    'pf-fold'() { pwOpen = !pwOpen; render(); },
+    async 'dob-save'(el) { await saveDob(dobDraft, el); },
+    async 'dob-clear'(el) {
+      if (!(await confirmDialog('Remove your date of birth?', 'The squad won’t be reminded of your birthday.', 'Remove', true))) return;
+      await saveDob('', el);
+    },
+    'bday-wish'(el) {
+      const p = findPlayer(el.dataset.id);
+      if (!p) return;
+      openWhatsApp(`Happy birthday ${firstName(p.name)}! 🎂🎉 Have a great day — from all the Red Falcons 🦅`, p.phone);
+    },
+    'acc-toggle'(el) { if (accExpanded.has(el.dataset.id)) accExpanded.delete(el.dataset.id); else accExpanded.add(el.dataset.id); render(); },
+    'acc-details'(el) { sheet = { type: 'account', id: el.dataset.id }; render(); },
     async 'guest-profile-save'(el) {
       if (!isGuest() || !gForm) return;
       if (!gForm.name.trim()) { toast('Enter your name.'); return; }
@@ -6792,6 +7000,12 @@ ${tabRows.map(r => {
       if (el.dataset && /^tfa-/.test(el.dataset.input || '')) { tfaDraft[el.dataset.input.slice(4)] = el.value; return; }
       if (el.dataset && /^pw-/.test(el.dataset.input || '')) { pwDraft[el.dataset.input.slice(3)] = el.value; return; }
       if (el.dataset && /^gp-/.test(el.dataset.input || '')) { if (gForm) gForm[el.dataset.input.slice(3)] = el.value; return; }
+      if (el.dataset && el.dataset.input === 'dob') {
+        dobDraft = el.value;
+        const b = document.querySelector('[data-action="dob-save"]');
+        if (b) b.disabled = !el.value || el.value === ((acctMe && acctMe.dob) || '');
+        return;
+      }
       if (el.dataset && el.dataset.input === 'acc-link') { linkAccount(el.dataset.id, el.value); return; }
       if (el.dataset && el.dataset.input === 'acc-role') { setAccountRole(el.dataset.id, el.value); return; }
       if (el.dataset && el.dataset.input === 'link-pick') { linkPick[el.dataset.id] = el.value; render(); return; }

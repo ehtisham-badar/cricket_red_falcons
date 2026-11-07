@@ -34,9 +34,11 @@ public class AccountController {
     private final PlayerRepository players;
     private final AdminAuth auth;
     private final ManagerAccessService managers;
+    private final com.redfalcons.ledger.service.Birthdays birthdays;
 
     public AccountController(AccountService accounts, WebAuthnService webAuthn, PlayerRepository players, AdminAuth auth,
-                             ManagerAccessService managers) {
+                             ManagerAccessService managers, com.redfalcons.ledger.service.Birthdays birthdays) {
+        this.birthdays = birthdays;
         this.accounts = accounts;
         this.webAuthn = webAuthn;
         this.players = players;
@@ -54,6 +56,9 @@ public class AccountController {
     }
 
     public record ProfileBody(String name, String role, String battingHand, String bowlingArm, String bowlingStyle, String about) {
+    }
+
+    public record DobBody(String dob) {
     }
 
     public record ForgotBody(String email, String note) {
@@ -118,6 +123,27 @@ public class AccountController {
         if (a.isMustChange()) return mustChange();
         return run(() -> me(accounts.saveProfile(a, b == null ? null : b.name(), b == null ? null : b.role(), b == null ? null : b.battingHand(),
                 b == null ? null : b.bowlingArm(), b == null ? null : b.bowlingStyle(), b == null ? null : b.about())));
+    }
+
+    /** Everyone may add their date of birth: squad players get a birthday wish from the team, the admin sees it on Accounts. */
+    @PutMapping("/dob")
+    public ResponseEntity<?> dob(HttpServletRequest req, @RequestBody DobBody b) {
+        UserAccount a = account(req);
+        if (a == null) return signIn();
+        if (a.isMustChange()) return mustChange();
+        return run(() -> me(accounts.saveDob(a, b == null ? null : b.dob())));
+    }
+
+    /** Squad players' birthdays (day and month only, never the year) for the team: today's and the next 30 days'. */
+    @GetMapping("/birthdays")
+    public ResponseEntity<?> birthdays(HttpServletRequest req,
+                                       @RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token,
+                                       @RequestHeader(value = ManagerController.MANAGER_HEADER, required = false) String managerToken) {
+        UserAccount a = account(req);
+        boolean staff = auth.isValidToken(token) || managers.isManager(managerToken);
+        if (!staff && (a == null || a.getPlayerId().isEmpty())) return ResponseEntity.ok(List.of());
+        return ResponseEntity.ok(birthdays.upcoming(30).stream().map(x -> obj("playerId", x.playerId(), "name", x.name(),
+                "month", x.month(), "day", x.day(), "inDays", x.inDays())).toList());
     }
 
     @PutMapping("/password")
@@ -316,6 +342,7 @@ public class AccountController {
                 "bowlingStyle", a.getBowlingStyle(), "about", a.getAbout()));
         m.put("mustChange", a.isMustChange());
         m.put("role", a.getRole());
+        m.put("dob", a.getDob());
         m.put("createdAt", a.getCreatedAt());
         return m;
     }
