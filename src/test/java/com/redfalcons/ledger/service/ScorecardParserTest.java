@@ -117,4 +117,20 @@ class ScorecardParserTest {
         assertThat(ScorecardImporter.pathAllowed(ScorecardImporter.robotsRules("User-agent: *\nDisallow: /\n"), "/matches/1")).isFalse();
         assertThat(ScorecardImporter.pathAllowed(List.of(), "/anything")).isTrue();
     }
+
+    @Test
+    void readsOurCardFromTheLeaguePagesOwnMatchDataAndOutlinesTheFieldsWhenItCant() throws Exception {
+        var json = JsonMapper.builder().build();
+        String match = ("{\"id\":1,\"firstTeam\":{\"title\":\"RED FALCONS\",\"innings\":[{\"totalRuns\":103,\"batting\":" + OUR_BAT + "}]},"
+                + "\"secondTeam\":{\"title\":\"RAGEROVERS\",\"innings\":[{\"totalRuns\":106,\"batting\":" + THEIR_BAT + ",\"bowling\":" + OUR_BOWL + "}]}}").replace("\n", "");
+        ScorecardParser.Card card = ScorecardParser.read(List.of(json.readTree(match)), OURS::contains, 103, 106, 2);
+        assertThat(card.batting()).hasSize(4);
+        assertThat(card.bowling()).hasSize(3);
+
+        // Nothing like a scorecard in the data: the failure lists the field names found.
+        var bare = json.readTree("{\"id\":1,\"firstTeam\":{\"title\":\"X\",\"innings\":[{\"totalRuns\":103}]}}");
+        assertThatThrownBy(() -> ScorecardParser.read(List.of(bare), OURS::contains, 103, 106, 2))
+                .isInstanceOf(ScorecardParser.Unreadable.class)
+                .satisfies(e -> assertThat(((ScorecardParser.Unreadable) e).sample).contains("fields: {id,firstTeam:{title,innings:[{totalRuns}]x1}}"));
+    }
 }

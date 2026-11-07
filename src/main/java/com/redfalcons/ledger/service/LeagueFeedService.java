@@ -57,6 +57,8 @@ public class LeagueFeedService {
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10))
             .followRedirects(HttpClient.Redirect.NORMAL).build();
 
+    /** The league page's own data for each finished Red Falcons match, as fetched (kept in memory, for the scorecard import). */
+    private final Map<Long, String> matchData = new java.util.concurrent.ConcurrentHashMap<>();
     private Map<String, Object> cached;
     private Instant fetchedAt = Instant.EPOCH;
     private Instant lastTry = Instant.EPOCH;
@@ -69,6 +71,11 @@ public class LeagueFeedService {
         this.json = json;
         this.url = url == null ? "" : url.trim();
         this.store = store;
+    }
+
+    /** The league page's own data for a finished Red Falcons match, or null when this server hasn't fetched the page since it started. */
+    public String matchData(long id) {
+        return matchData.get(id);
     }
 
     /** The stored summary, or an "unavailable" note. Never reaches Crickslab. */
@@ -302,6 +309,9 @@ public class LeagueFeedService {
             r.put("result", x.path("matchResult").path("description").asString(""));
             r.put("playerOfMatch", x.path("manOfTheMatch").path("name").asString(""));
             r.put("summaryUrl", x.path("summary_view_url").asString(""));
+            if ("Completed".equalsIgnoreCase(status) && x.toString().toLowerCase(Locale.ROOT).contains("red falcons")) {
+                matchData.put(x.path("id").asLong(), x.toString());
+            }
             results.add(r);
         }
         out.put("results", results);

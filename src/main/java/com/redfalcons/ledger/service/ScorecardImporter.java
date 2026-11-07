@@ -80,7 +80,7 @@ public class ScorecardImporter {
             if (fetched >= MAX_PER_REFRESH) { report.add(entry(label, "skipped", "Several scorecards waiting; press refresh again for the rest.")); continue; }
             fetched++;
             try {
-                report.add(importOne(label, matchId, url, us, them, robots));
+                report.add(importOne(label, matchId, ((Number) r.get("id")).longValue(), url, us, them, robots));
             } catch (Exception e) {
                 log.warn("Scorecard import for {} failed: {}", label, e.getMessage());
                 report.add(entry(label, "failed", "Could not read the scorecard: " + e.getMessage()));
@@ -100,28 +100,57 @@ public class ScorecardImporter {
         return Map.of("report", last, "at", lastAt);
     }
 
-    Map<String, Object> importOne(String label, String matchId, String url, Map<String, Object> us, Map<String, Object> them,
+    Map<String, Object> importOne(String label, String matchId, long resultId, String url, Map<String, Object> us, Map<String, Object> them,
                                   Map<String, List<String>> robots) throws Exception {
-        URI uri = scorecardUri(url);
-        if (uri == null) return entry(label, "skipped", "This match has no scorecard page on Crickslab yet.");
-        if (!allowed(uri, robots)) return entry(label, "skipped", "Crickslab's robots.txt does not allow reading scorecard pages, so none was fetched.");
-        HttpResponse<String> res = http.send(HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(25))
-                .header("User-Agent", AGENT + "/1.0 (+https://red-falcons-ledger.vercel.app)").header("Accept", "text/html").GET().build(),
-                HttpResponse.BodyHandlers.ofString());
-        if (res.statusCode() != 200) throw new IllegalStateException("HTTP " + res.statusCode());
-
         List<Player> squad = players.findAll();
         List<NameMatch.Squad> names = squad.stream().map(p -> new NameMatch.Squad(p.getId(), p.getName())).toList();
         java.util.function.Function<String, String> idOf = n -> {
             var m = NameMatch.match(n, names);
             return m.exact() == null ? null : m.exact().id();
         };
-        ScorecardParser.Card card;
-        try {
-            card = ScorecardParser.read(json, res.body(), n -> idOf.apply(n) != null, num(us.get("runs"), 0), num(them.get("runs"), 0), num(them.get("wickets"), 10));
-        } catch (ScorecardParser.Unreadable e) {
-            Map<String, Object> out = entry(label, "failed", e.getMessage());
-            if (!e.sample.isBlank()) out.put("sample", e.sample);
+        java.util.function.Predicate<String> ours = n -> idOf.apply(n) != null;
+        int ourRuns = num(us.get("runs"), 0), theirRuns = num(them.get("runs"), 0), theirWickets = num(them.get("wickets"), 10);
+
+        ScorecardParser.Card card = null;
+        List<String> why = new ArrayList<>();
+        String sample = "";
+        // 1. The league page's own data for this match: already fetched, so nothing more is asked of Crickslab.
+        String data = feed.matchData(resultId);
+        if (data == null) {
+            why.add("league page: not fetched since the server started");
+        } else {
+            try {
+                card = ScorecardParser.read(List.of(json.readTree(data)), ours, ourRuns, theirRuns, theirWickets);
+            } catch (ScorecardParser.Unreadable e) {
+                why.add("league page: " + e.getMessage());
+                sample = e.sample;
+            }
+        }
+        // 2. Failing that, the match's own scorecard page (only if that site's robots.txt allows it).
+        if (card == null) {
+            URI uri = scorecardUri(url);
+            try {
+                if (uri == null) {
+                    why.add("no scorecard page link for this match");
+                } else if (!allowed(uri, robots)) {
+                    why.add("scorecard page: Crickslab's robots.txt does not allow reading it");
+                } else {
+                    HttpResponse<String> res = http.send(HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(25))
+                            .header("User-Agent", AGENT + "/1.0 (+https://red-falcons-ledger.vercel.app)").header("Accept", "text/html").GET().build(),
+                            HttpResponse.BodyHandlers.ofString());
+                    if (res.statusCode() != 200) throw new IllegalStateException("HTTP " + res.statusCode());
+                    card = ScorecardParser.read(json, res.body(), ours, ourRuns, theirRuns, theirWickets);
+                }
+            } catch (ScorecardParser.Unreadable e) {
+                why.add("scorecard page: " + e.getMessage());
+                sample = sample.isBlank() ? e.sample : sample + "\n--- scorecard page ---\n" + e.sample;
+            } catch (Exception e) {
+                why.add("scorecard page: " + e.getMessage());
+            }
+        }
+        if (card == null) {
+            Map<String, Object> out = entry(label, "failed", "No scorecard could be read (" + String.join("; ", why) + ").");
+            if (!sample.isBlank()) out.put("sample", sample);
             return out;
         }
 

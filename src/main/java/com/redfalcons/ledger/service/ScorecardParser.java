@@ -51,7 +51,12 @@ final class ScorecardParser {
      */
     static Card read(ObjectMapper json, String html, java.util.function.Predicate<String> isOurs,
                      int ourRuns, int theirRuns, int theirWickets) throws Unreadable {
-        List<JsonNode> roots = roots(json, html);
+        return read(roots(json, html), isOurs, ourRuns, theirRuns, theirWickets);
+    }
+
+    /** The same, from data already parsed (the match as the league page carries it). */
+    static Card read(List<JsonNode> roots, java.util.function.Predicate<String> isOurs,
+                     int ourRuns, int theirRuns, int theirWickets) throws Unreadable {
         List<List<Bat>> bats = new ArrayList<>();
         List<List<Bowl>> bowls = new ArrayList<>();
         Set<String> seen = new HashSet<>();
@@ -61,7 +66,8 @@ final class ScorecardParser {
         List<Bat> ourBat = best(bats, isOurs, g -> g.stream().map(Bat::name).toList(), g -> g.stream().mapToInt(Bat::runs).sum(), ourRuns - 45, ourRuns);
         if (ourBat == null) {
             throw new Unreadable("Our batting card was not found on the scorecard page (" + roots.size() + " data blocks, "
-                    + bats.size() + " batting lists).", String.join("\n", samples));
+                    + bats.size() + " batting lists).", String.join("\n", samples)
+                    + (roots.isEmpty() ? "" : (samples.isEmpty() ? "" : "\n") + "fields: " + outline(roots.get(0), 6)));
         }
         List<Bowl> ourBowl = best(bowls, isOurs, g -> g.stream().map(Bowl::name).toList(), g -> g.stream().mapToInt(Bowl::runs).sum(), theirRuns - 30, theirRuns);
         if (ourBowl != null && ourBowl.stream().mapToInt(Bowl::wickets).sum() > theirWickets) ourBowl = null;
@@ -85,6 +91,28 @@ final class ScorecardParser {
             else if (ours == top && pick != null && !names.apply(pick).equals(names.apply(g))) ties++;
         }
         return ties > 0 ? null : pick;
+    }
+
+    /** The field names of a JSON value, nested, with the first item of each list: {id,firstTeam:{title,innings:[{totalRuns}]x1}}. */
+    static String outline(JsonNode n, int depth) {
+        String s = outlineOf(n, depth);
+        return s.length() > 1500 ? s.substring(0, 1500) + "…" : s;
+    }
+
+    private static String outlineOf(JsonNode n, int depth) {
+        if (n == null) return "";
+        if (n.isObject()) {
+            if (depth <= 0) return "{…}";
+            StringBuilder b = new StringBuilder("{");
+            for (Map.Entry<String, JsonNode> e : n.properties()) {
+                if (b.length() > 1) b.append(',');
+                b.append(e.getKey());
+                if (e.getValue().isObject() || e.getValue().isArray()) b.append(':').append(outlineOf(e.getValue(), depth - 1));
+            }
+            return b.append('}').toString();
+        }
+        if (n.isArray()) return n.isEmpty() ? "[]" : "[" + outlineOf(n.get(0), depth - 1) + "]x" + n.size();
+        return "";
     }
 
     // ---------- the page's data ----------
