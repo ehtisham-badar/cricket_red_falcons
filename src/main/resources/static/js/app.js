@@ -868,8 +868,8 @@
     if (isAdmin() && !scorecardReport.length) {
       try { const r = await api('GET', '/api/hpl/scorecards'); scorecardReport = r.report || []; } catch { /* keep what we have */ }
     }
-    if (tab === 'summary' || tab === 'news') render();
-    if (sheet && sheet.type === 'hpl-match') render();
+    if (tab === 'summary' || tab === 'news' || tab === 'tournament') render();
+    else if (sheet && sheet.type === 'hpl-match') render();
   }
 
   // Crickslab's square team logos suit this small size; our crest for Red Falcons.
@@ -2008,6 +2008,8 @@
     refreshManager().then(loadMyLineups);
     if (isUser()) checkBio().then(() => { if (tab === 'settings' || tab === 'profile') render(); });
     if (realAdmin()) loadAccounts();
+    // The league is ready before anyone opens the Tournament tab (no "Loading the league…" on the first visit).
+    if (hpl === null) loadHpl();
     startPolling();
   }
 
