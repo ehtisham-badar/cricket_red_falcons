@@ -968,8 +968,11 @@
     };
     const all = (hpl.results || []).slice();
     const done = m => !m.live && (/complete/i.test(m.status) || !!m.result);
-    const upcoming = all.filter(m => !done(m)).sort((a, b) => String(a.start).localeCompare(String(b.start)));
-    const results = all.filter(done).sort((a, b) => String(b.start).localeCompare(String(a.start)));
+    // A match from an earlier day that never finished on Crickslab (left at "toss done", say) is a past one, not upcoming.
+    const today = new Date().toLocaleDateString('en-CA');
+    const stale = m => !done(m) && !m.live && m.start && String(m.start).slice(0, 10) < today;
+    const upcoming = all.filter(m => !done(m) && !stale(m)).sort((a, b) => String(a.start).localeCompare(String(b.start)));
+    const results = all.filter(m => done(m) || stale(m)).sort((a, b) => String(b.start).localeCompare(String(a.start)));
     const row = m => {
       const when = m.start ? new Date(m.start).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '';
       const won = t => m.result && m.result.toUpperCase().startsWith((t.name || '').toUpperCase());
@@ -978,7 +981,7 @@
       return `<button class="tf-row ${(m.teams || []).some(t => isUs(t.name)) ? 'ours' : ''}" data-action="hpl-match" data-id="${esc(m.id)}">
           <span class="tf-meta"><span>${esc((m.title || '').replace(/^HPL - /, ''))}</span>${m.live ? '<span class="hpl-live">LIVE</span>' : `<span class="muted">${esc(when)}</span>`}</span>
           ${(m.teams || []).map(side).join('')}
-          <span class="tf-foot">${m.result ? esc(m.result) : m.live ? 'In progress' : esc(m.ground || 'Not played yet')}<span class="tf-go">${done(m) || m.live ? 'Scorecard ›' : 'Details ›'}</span></span>
+          <span class="tf-foot">${m.result ? esc(m.result) : m.live ? 'In progress' : stale(m) ? 'No result' : esc(m.ground || 'Not played yet')}<span class="tf-go">${done(m) || m.live ? 'Scorecard ›' : 'Details ›'}</span></span>
         </button>`;
     };
     return `${head}${seg}
