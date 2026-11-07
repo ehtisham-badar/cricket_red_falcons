@@ -3126,8 +3126,7 @@
           <small>The admin will link your account to your name in the Red Falcons squad. Then you’ll see your balance, matches, stats and everything else here.</small></div></section>
         ${homeHero()}
         ${next || ''}
-        ${fixturesPanel()}
-        ${hplPanel()}`;
+        ${fixturesPanel()}`;
     }
     return `
       ${homeHero()}
@@ -3139,7 +3138,6 @@
       ${myOrdersCard()}
       ${pollsPanel()}
       ${fixturesPanel()}
-      ${hplPanel()}
       ${galleryStrip()}`;
   }
 
