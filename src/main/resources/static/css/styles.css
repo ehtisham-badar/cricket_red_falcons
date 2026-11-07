@@ -2549,3 +2549,36 @@ a.btn { text-decoration: none; }
 .tsc.us .sc-title h3 { color: var(--gold); }
 .tsc .sc-table th small { font-weight: 600; color: var(--muted); text-transform: none; letter-spacing: 0; margin-left: 4px; }
 @media (max-width: 520px) { .tf-list { margin: 0 -12px -12px; } }
+
+/* Players' Matches: match cards with the Playing XI / XII, and trainings (view only) */
+.gx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.gx-card { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); box-shadow: inset 0 3px 0 var(--gold); }
+.gx-card.done { box-shadow: inset 0 3px 0 var(--line-2); }
+.gx-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.gx-head h3 { margin: 2px 0 0; font-family: var(--body-font); font-size: 18px; font-weight: 800; }
+.gx-v { color: var(--muted); font-weight: 600; font-size: 14px; }
+.gx-head p { margin: 2px 0 0; font-size: 13px; }
+.gx-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex: none; }
+.gx-logo { width: 36px; height: 36px; border-radius: 8px; object-fit: cover; background: #0b0c10; }
+.res-chip.up { background: rgba(var(--gold-rgb), .16); color: var(--gold); }
+.gx-sub { display: flex; align-items: baseline; gap: 8px; margin: 2px 0 0; font-size: 12px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--text); }
+.gx-sub .muted { font-weight: 600; letter-spacing: 0; text-transform: none; }
+.gx-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.gx-p { display: grid; grid-template-columns: 22px auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+.gx-p:last-child { border-bottom: 0; }
+.gx-p.twelfth { background: rgba(var(--gold-rgb), .06); }
+.gx-n { color: var(--muted); font-size: 12px; font-weight: 800; text-align: right; }
+.gx-name { display: flex; flex-direction: column; min-width: 0; }
+.gx-name strong { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-name small { font-size: 11px; color: var(--muted); }
+.lu-tag.twelfth { background: rgba(var(--gold-rgb), .2); color: var(--gold); }
+.gx-wait { display: flex; align-items: center; gap: 8px; margin: 0; padding: 10px 12px; border-radius: 8px; border: 1px dashed var(--line-2); color: var(--muted); font-size: 14px; }
+.gx-foot { display: flex; justify-content: flex-end; }
+.gx-trains { list-style: none; margin: 0 -14px -14px; padding: 0; }
+.gx-train { padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.gx-train:last-child { border-bottom: 0; }
+.gx-train-head { display: flex; justify-content: space-between; gap: 10px; }
+.gx-train p { margin: 2px 0 0; font-size: 13px; }
+.gx-came { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.gx-who { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 2px; border-radius: 999px; background: rgba(var(--hi-rgb), .05); font-size: 13px; }
+@media (max-width: 520px) { .gx-grid { grid-template-columns: 1fr; } .gx-trains { margin: 0 -12px -12px; } }

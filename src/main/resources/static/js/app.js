@@ -39,16 +39,17 @@
     { id: 'tournament', label: 'Tournament', icon: '<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/>' },
     { id: 'requests', label: 'Requests', adminTab: true, icon: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>' },
     { id: 'accounts', label: 'Accounts', adminTab: true, icon: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>' },
+    { id: 'games', label: 'Matches', playerTab: true, icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' },
     { id: 'profile', label: 'Profile', userTab: true, icon: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>' },
     { id: 'kit', label: 'Kit sizes', adminTab: true, icon: '<path d="M20.4 3.6 16 2l-4 3-4-3-4.4 1.6L2 8l3 2v10h14V10l3-2z"/>' },
     { id: 'settings', label: 'Settings', icon: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>' }
   ];
 
   // The bar shows six entries, not every screen: related screens share one entry and a switch at the top of the page.
-  const SEG_LABEL = { days: 'Days', stats: 'Stats', news: 'News', announce: 'Announcements', polls: 'Polls', kit: 'Kit', players: 'Squad', shirtpay: 'Shirt money', accounts: 'Accounts' };
+  const SEG_LABEL = { days: 'Days', stats: 'Stats', news: 'News', announce: 'Announcements', polls: 'Polls', kit: 'Kit', players: 'Squad', shirtpay: 'Shirt money', accounts: 'Accounts', games: 'Matches' };
   const GROUPS = [
     { id: 'summary', label: 'Home', tabs: ['summary'] },
-    { id: 'matches', label: 'Matches', tabs: ['days', 'stats'], icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' },
+    { id: 'matches', label: 'Matches', tabs: ['days', 'games', 'stats'], icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' },
     { id: 'tournament', label: 'Tournament', tabs: ['tournament'] },
     { id: 'money', label: 'Money', tabs: ['money'] },
     { id: 'players', label: 'Team', tabs: ['players', 'shirtpay', 'accounts'] },
@@ -943,6 +944,47 @@
 
   // A league match inside the app: the scoreboard from the league feed, and (when the Red Falcons played) our own
   // batting, bowling and fielding tables from the stats we record. Nothing here opens another website.
+  // ---------- Matches for players: our matches (with the Playing XI or XII) and trainings, view only, no money ----------
+  function viewGames() {
+    const all = C.matches(state).filter(m => !m.test);
+    const upcoming = all.filter(m => !m.finished).sort((a, b) => (a.date || '9').localeCompare(b.date || '9'));
+    const played = all.filter(m => m.finished).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const chip = (p, n, extra = '') => `<li class="gx-p ${extra}"><span class="gx-n">${n}</span>${avatar(p, 30)}
+        <span class="gx-name"><strong>${esc(p.name)}</strong><small>${esc(p.role) || '—'}</small></span><span class="lu-tags">${roleTags(p)}${extra === 'twelfth' ? '<span class="lu-tag twelfth">12th</span>' : ''}</span></li>`;
+    const card = m => {
+      const xi = battingOrderOf(m.id);
+      const twelfth = findPlayer(state.twelfth[m.id]);
+      const show = m.finished ? xi.length > 0 : xiPublic(m);
+      const status = m.finished ? (resultChip(m) || '<span class="res-chip">Played</span>') : '<span class="res-chip up">Upcoming</span>';
+      const when = [formatMatchDate(m.date) + (m.date && m.time ? ', ' + fmtClock(m.time) : ''), m.venue].filter(Boolean).join(' · ');
+      return `<article class="gx-card ${m.finished ? 'done' : 'next'}">
+        <header class="gx-head">
+          <div><span class="day-kind">${esc(m.label)}</span>
+            <h3>Red Falcons <span class="gx-v">v</span> ${m.opponent ? esc(m.opponent) : 'TBC'}</h3>
+            <p class="muted">${esc(when) || 'Date to be confirmed'}</p></div>
+          <span class="gx-right">${teamLogo(m.opponent) ? `<img class="gx-logo" src="${teamLogo(m.opponent)}" alt="">` : ''}${status}</span>
+        </header>
+        ${show ? `<h4 class="gx-sub">Playing ${twelfth ? 'XII' : 'XI'} <span class="muted">${m.finished ? 'batting order' : 'announced'}</span></h4>
+          <ol class="gx-list">${xi.map((p, i) => chip(p, i + 1)).join('')}${twelfth ? chip(twelfth, 12, 'twelfth') : ''}</ol>`
+          : `<p class="gx-wait">${icon('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', 16)} Playing XI not announced yet.</p>`}
+        <div class="gx-foot"><button class="btn btn-ghost small" data-action="open-scorecard" data-id="${esc(m.id)}">${m.finished ? 'Scorecard' : 'Match details'} ›</button></div>
+      </article>`;
+    };
+    const trainings = C.days(state).filter(d => d.type === 'training');
+    const tRow = t => {
+      const came = state.players.filter(p => p.att[t.id]);
+      return `<li class="gx-train"><div class="gx-train-head"><strong>${esc(t.label)}</strong><span class="muted">${came.length} came</span></div>
+        ${t.desc ? `<p class="muted">${esc(t.desc)}</p>` : ''}
+        ${came.length ? `<div class="gx-came">${came.map(p => `<span class="gx-who">${avatar(p, 22)}${esc(p.name)}</span>`).join('')}</div>` : ''}</li>`;
+    };
+    return `${pageHead('Matches', 'Our matches, Playing XIs and trainings. View only.')}
+      ${upcoming.length ? `<section class="panel"><div class="panel-head"><h3>Upcoming</h3></div><div class="gx-grid">${upcoming.map(card).join('')}</div></section>` : ''}
+      <section class="panel"><div class="panel-head"><h3>Played <span class="muted">${played.length}</span></h3><p>Tap Scorecard for the full card.</p></div>
+        ${played.length ? `<div class="gx-grid">${played.map(card).join('')}</div>` : '<p class="muted">No matches played yet.</p>'}</section>
+      <section class="panel"><div class="panel-head"><h3>Trainings <span class="muted">${trainings.length}</span></h3></div>
+        ${trainings.length ? `<ul class="gx-trains">${trainings.slice().reverse().map(tRow).join('')}</ul>` : '<p class="muted">No trainings yet.</p>'}</section>`;
+  }
+
   // ---------- Tournament tab: every fixture and result of the league, each with its full scorecard ----------
   let tourView = 'fixtures';
   const hplCards = {};                        // match id -> scorecard from /api/hpl/matches/{id}/scorecard (or { loading })
@@ -2021,7 +2063,7 @@
     bell.hidden = false;
     bell.dataset.count = bellCount;
     bell.setAttribute('aria-label', bellCount ? `Notifications, ${bellCount} new` : 'Notifications');
-    const shown = t => (!isGuest() || t.id === 'summary' || t.id === 'tournament') && (!t.adminTab || realAdmin()) && (!t.userTab || isUser()) && (!t.staffTab || isStaff()) && (!t.statsTab || statsVisible()) && (!t.daysTab || daysVisible()) && !(archive && t.id === 'settings');
+    const shown = t => (!isGuest() || t.id === 'summary' || t.id === 'tournament') && (!t.adminTab || realAdmin()) && (!t.userTab || isUser()) && (!t.playerTab || (!realAdmin() && !isManager())) && (!t.staffTab || isStaff()) && (!t.statsTab || statsVisible()) && (!t.daysTab || daysVisible()) && !(archive && t.id === 'settings');
     if (TABS.some(t => t.id === tab && !shown(t))) tab = 'summary';
     const tabDef = id => TABS.find(t => t.id === id);
     const visibleIn = g => g.tabs.filter(id => shown(tabDef(id)));
@@ -2047,7 +2089,7 @@
       : isUser() ? `<span class="badge badge-view">${icon(PERSON_ICON, 14)} ${esc(session.name)}</span>`
       : `<span class="badge badge-view">${icon('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>', 14)} ${esc(session.name)} · ${isManager() ? 'manager' : 'view only'}</span>`;
 
-    const views = { news: viewNews, summary: viewHome, money: viewMoney, days: viewDays, stats: viewStats, players: viewPlayers, announce: viewAnnounce, polls: viewPolls, kit: viewKit, shirtpay: viewShirtMoney, accounts: viewAccounts, tournament: viewTournament, requests: () => sheetInbox(true), profile: viewProfile, settings: viewSettings };
+    const views = { news: viewNews, summary: viewHome, money: viewMoney, days: viewDays, stats: viewStats, players: viewPlayers, announce: viewAnnounce, polls: viewPolls, kit: viewKit, shirtpay: viewShirtMoney, accounts: viewAccounts, tournament: viewTournament, games: viewGames, requests: () => sheetInbox(true), profile: viewProfile, settings: viewSettings };
     // Every screen gets the flat, Cricbuzz-style look (.cb).
     $('#view').innerHTML = `<div class="cb cb-${tab}">${archiveBar()}${groupSeg()}${(views[tab] || viewHome)()}</div>`;
     $('#sheet-root').innerHTML = sheet ? renderSheet() : '';
