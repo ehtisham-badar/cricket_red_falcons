@@ -36,6 +36,7 @@
     { id: 'announce', label: 'Announce', staffTab: true, icon: '<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>' },
     { id: 'polls', label: 'Polls', staffTab: true, icon: '<path d="M3 3v18h18"/><path d="M8 17V9M13 17V5M18 17v-6"/>' },
     { id: 'shirtpay', label: 'Shirt money', adminTab: true, icon: '<path d="M20.4 3.6 16 2l-4 3-4-3-4.4 1.6L2 8l3 2v10h14V10l3-2z"/>' },
+    { id: 'tournament', label: 'Tournament', icon: '<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/>' },
     { id: 'requests', label: 'Requests', adminTab: true, icon: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>' },
     { id: 'accounts', label: 'Accounts', adminTab: true, icon: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>' },
     { id: 'profile', label: 'Profile', userTab: true, icon: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>' },
@@ -48,6 +49,7 @@
   const GROUPS = [
     { id: 'summary', label: 'Home', tabs: ['summary'] },
     { id: 'matches', label: 'Matches', tabs: ['days', 'stats'], icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' },
+    { id: 'tournament', label: 'Tournament', tabs: ['tournament'] },
     { id: 'money', label: 'Money', tabs: ['money'] },
     { id: 'players', label: 'Team', tabs: ['players', 'shirtpay', 'accounts'] },
     { id: 'news', label: 'News', tabs: ['news', 'announce', 'polls', 'kit'] },
@@ -874,7 +876,9 @@
   const isUs = name => /red\s*falcons/i.test(name || '');
   const titleCase = n => String(n || '').toLowerCase().replace(/\b([a-z])/g, c => c.toUpperCase()).replace(/\bPak\b/, 'Pak');
 
-  function hplPanel() {
+  // The league panel (Home, News); with {@code only} just that view and no switch (the Tournament tab).
+  function hplPanel(only) {
+    const view = only || hplView;
     if (hpl === null) { loadHpl(); return `<section class="panel hpl"><p class="muted">Loading the league…</p></section>`; }
     if (!hpl.available) return '';
     const logo = (name, remote, size = 28) => {
@@ -882,9 +886,9 @@
       return src ? `<img class="hpl-logo" src="${esc(src)}" alt="" width="${size}" height="${size}" loading="lazy">` : `<span class="hpl-logo ph" style="width:${size}px;height:${size}px">${esc((name || '?').slice(0, 2))}</span>`;
     };
     const seg = [['table', 'Table'], ['results', 'Fixtures'], ['leaders', 'Leaders']].map(([id, label]) =>
-      `<button class="seg-btn ${hplView === id ? 'on' : ''}" data-action="hpl-view" data-id="${id}">${label}</button>`).join('');
+      `<button class="seg-btn ${view === id ? 'on' : ''}" data-action="hpl-view" data-id="${id}">${label}</button>`).join('');
     let body = '';
-    if (hplView === 'table') {
+    if (view === 'table') {
       const rows = (hpl.pointsTable || []).filter(r => r.round === (hpl.pointsTable[0] || {}).round);
       body = rows.length ? `<div class="table-wrap"><table class="sheet-table hpl-table">
           <thead><tr><th>#</th><th class="hpl-team-col">Team</th><th>P</th><th>W</th><th>L</th><th>T</th><th>NR</th><th>Pts</th><th>NRR</th><th>Form</th></tr></thead>
@@ -893,7 +897,7 @@
             <td>${r.played}</td><td>${r.won}</td><td>${r.lost}</td><td>${r.tie}</td><td>${r.noResult}</td><td class="strong">${r.points}</td><td>${esc(r.nrr)}</td>
             <td><span class="hpl-form">${(r.form || []).slice(-5).map(f => `<i class="f-${esc(String(f).toLowerCase())}">${esc(f)}</i>`).join('') || '—'}</span></td></tr>`).join('')}</tbody>
         </table></div>` : '<p class="muted">The table appears once matches are played.</p>';
-    } else if (hplView === 'results') {
+    } else if (view === 'results') {
       const all = hpl.results || [];
       const card = m => {
         const when = m.start ? new Date(m.start).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '';
@@ -926,7 +930,7 @@
       <div class="hpl-head">
         <span class="hpl-title">${hpl.logo ? `<img class="hpl-logo big" src="${esc(hpl.logo)}" alt="">` : ''}<span><span class="day-kind">HPL live</span><h3>${esc(hpl.title)}</h3></span></span>
         <div class="hpl-controls">
-          <div class="seg hpl-seg">${seg}</div>
+          ${only ? '' : `<div class="seg hpl-seg">${seg}</div>`}
           ${isAdmin() ? `<button class="icon-btn hpl-refresh ${hplRefreshing ? 'spinning' : ''}" data-action="hpl-refresh" ${hplRefreshing ? 'disabled' : ''}
             title="Get the latest from Crickslab" aria-label="Refresh league results">${icon('<path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>', 18)}</button>` : ''}
         </div>
@@ -939,6 +943,73 @@
 
   // A league match inside the app: the scoreboard from the league feed, and (when the Red Falcons played) our own
   // batting, bowling and fielding tables from the stats we record. Nothing here opens another website.
+  // ---------- Tournament tab: every fixture and result of the league, each with its full scorecard ----------
+  let tourView = 'fixtures';
+  const hplCards = {};                        // match id -> scorecard from /api/hpl/matches/{id}/scorecard (or { loading })
+
+  async function loadHplCard(id) {
+    if (hplCards[id] && (hplCards[id].loading || (hplCards[id].available && hplCards[id].finished))) return;
+    hplCards[id] = { loading: true };
+    try { hplCards[id] = await api('GET', `/api/hpl/matches/${encodeURIComponent(id)}/scorecard`); }
+    catch (e) { hplCards[id] = { available: false, message: 'Couldn’t load the scorecard. Try again in a minute.' }; }
+    if (sheet && sheet.type === 'hpl-match' && String(sheet.id) === String(id)) render();
+  }
+
+  function viewTournament() {
+    const head = pageHead('Tournament', hpl && hpl.available ? `${esc(hpl.title)} · every fixture and result, with full scorecards` : 'Fixtures, results and scorecards from Crickslab');
+    if (hpl === null) { loadHpl(); return `${head}<section class="panel"><p class="muted">Loading the league…</p></section>`; }
+    if (!hpl.available) return `${head}<section class="panel"><p class="muted">The league isn’t available right now.</p></section>`;
+    const seg = `<div class="seg tour-seg">${[['fixtures', 'Fixtures'], ['table', 'Table'], ['leaders', 'Leaders']].map(([id, label]) =>
+      `<button class="seg-btn ${tourView === id ? 'on' : ''}" data-action="tour-view" data-id="${id}">${label}</button>`).join('')}</div>`;
+    if (tourView !== 'fixtures') return head + seg + hplPanel(tourView === 'table' ? 'table' : 'leaders');
+    const logo = (t, size = 30) => {
+      const src = hplLogo(t.name, t.logo);
+      return src ? `<img class="hpl-logo" src="${esc(src)}" alt="" width="${size}" height="${size}" loading="lazy">` : `<span class="hpl-logo ph" style="width:${size}px;height:${size}px">${esc((t.name || '?').slice(0, 2))}</span>`;
+    };
+    const all = (hpl.results || []).slice();
+    const done = m => !m.live && (/complete/i.test(m.status) || !!m.result);
+    const upcoming = all.filter(m => !done(m)).sort((a, b) => String(a.start).localeCompare(String(b.start)));
+    const results = all.filter(done).sort((a, b) => String(b.start).localeCompare(String(a.start)));
+    const row = m => {
+      const when = m.start ? new Date(m.start).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '';
+      const won = t => m.result && m.result.toUpperCase().startsWith((t.name || '').toUpperCase());
+      const side = t => `<span class="tf-team ${won(t) ? 'won' : ''} ${isUs(t.name) ? 'us' : ''}">${logo(t)}<strong>${esc(titleCase(t.name))}</strong>
+          <b>${t.runs == null || (!done(m) && !m.live) ? '' : `${t.runs}/${t.wickets}`}<small>${t.overs && (done(m) || m.live) ? ` (${esc(t.overs)})` : ''}</small></b></span>`;
+      return `<button class="tf-row ${(m.teams || []).some(t => isUs(t.name)) ? 'ours' : ''}" data-action="hpl-match" data-id="${esc(m.id)}">
+          <span class="tf-meta"><span>${esc((m.title || '').replace(/^HPL - /, ''))}</span>${m.live ? '<span class="hpl-live">LIVE</span>' : `<span class="muted">${esc(when)}</span>`}</span>
+          ${(m.teams || []).map(side).join('')}
+          <span class="tf-foot">${m.result ? esc(m.result) : m.live ? 'In progress' : esc(m.ground || 'Not played yet')}<span class="tf-go">${done(m) || m.live ? 'Scorecard ›' : 'Details ›'}</span></span>
+        </button>`;
+    };
+    return `${head}${seg}
+      ${upcoming.length ? `<section class="panel"><div class="panel-head"><h3>Upcoming</h3></div><div class="tf-list">${upcoming.map(row).join('')}</div></section>` : ''}
+      <section class="panel"><div class="panel-head"><h3>Results <span class="muted">${results.length}</span></h3><p>Tap a match for its full scorecard.</p></div>
+        ${results.length ? `<div class="tf-list">${results.map(row).join('')}</div>` : '<p class="muted">No results yet.</p>'}</section>
+      ${upcoming.length ? '' : '<p class="muted tf-note">New fixtures appear here as soon as the league adds them on Crickslab.</p>'}`;
+  }
+
+  // One innings of a Crickslab scorecard: batting, extras and total, fall of wickets, did not bat, then bowling.
+  function hplInnings(inn) {
+    const us = isUs(inn.team);
+    return `<div class="tsc ${us ? 'us' : ''}">
+      <div class="sc-title"><h3>${esc(titleCase(inn.team))} <small>${esc(inn.title)}</small></h3><strong>${inn.runs}/${inn.wickets} <small>(${esc(inn.overs)} ov)</small></strong></div>
+      <div class="table-wrap"><table class="sc-table">
+        <thead><tr><th class="sc-name">Batter</th><th>R</th><th>B</th><th>4s</th><th>6s</th><th>SR</th></tr></thead>
+        <tbody>${(inn.batting || []).map(b => `<tr><td class="sc-name"><strong>${esc(titleCase(b.name))}${b.out ? '' : '*'}</strong><small>${esc(b.how)}</small></td>
+          <td class="sc-main">${b.runs}</td><td>${b.balls}</td><td>${b.fours}</td><td>${b.sixes}</td><td>${esc(b.sr)}</td></tr>`).join('')}
+          <tr class="sc-extras"><td class="sc-name">Extras</td><td class="sc-main">${inn.extras}</td><td colspan="4">${inn.extrasDetail ? `(${esc(inn.extrasDetail)})` : ''}</td></tr>
+          <tr class="sc-total"><td class="sc-name">Total</td><td class="sc-main">${inn.runs}</td><td colspan="4">${inn.wickets} wkts · ${esc(inn.overs)} overs${inn.runRate ? ` · RR ${esc(inn.runRate)}` : ''}</td></tr></tbody>
+      </table></div>
+      ${(inn.didNotBat || []).length ? `<p class="sc-dnb"><strong>Did not bat:</strong> ${inn.didNotBat.map(n => esc(titleCase(n))).join(', ')}</p>` : ''}
+      ${(inn.fallOfWickets || []).length ? `<p class="sc-dnb"><strong>Fall of wickets:</strong> ${inn.fallOfWickets.map(esc).join(', ')}</p>` : ''}
+      <div class="table-wrap"><table class="sc-table">
+        <thead><tr><th class="sc-name">Bowler ${inn.bowlingTeam ? `<small>${esc(titleCase(inn.bowlingTeam))}</small>` : ''}</th><th>O</th><th>M</th><th>R</th><th>W</th><th>Econ</th><th>WD</th><th>NB</th></tr></thead>
+        <tbody>${(inn.bowling || []).map(b => `<tr><td class="sc-name"><strong>${esc(titleCase(b.name))}</strong></td><td>${esc(b.overs)}</td><td>${b.maidens}</td><td>${b.runs}</td>
+          <td class="sc-main">${b.wickets}</td><td>${esc(b.econ)}</td><td>${b.wides}</td><td>${b.noBalls}</td></tr>`).join('')}</tbody>
+      </table></div>
+    </div>`;
+  }
+
   function sheetHplMatch() {
     const m = (hpl && hpl.results || []).find(x => String(x.id) === String(sheet.id));
     if (!m) return '';
@@ -958,7 +1029,16 @@
     // The same match in our own records: matched on the opponent's name.
     const ours = us && other ? C.matches(state).find(x => !x.test && teamKey(x.opponent) && (teamKey(x.opponent) === teamKey(other.name) || teamKey(other.name).includes(teamKey(x.opponent)) || teamKey(x.opponent).includes(teamKey(other.name)))) : null;
     let own = '';
-    if (us) {
+    const card = hplCards[m.id];
+    if (!card && (done || m.live)) loadHplCard(m.id);
+    if (card && card.available && (card.innings || []).length) {
+      own = `<div class="sc tsc-all">${card.innings.map(hplInnings).join('')}
+        <p class="hpl-source">Scorecard from <a href="${esc(card.source)}" target="_blank" rel="noopener">Crickslab</a></p></div>`;
+    } else if ((done || m.live) && (!card || card.loading)) {
+      own = '<p class="muted center sc-note">Loading the full scorecard…</p>';
+    } else if (card && card.available === false && !us) {
+      own = `<p class="muted sc-note">${esc(card.message)}</p>`;
+    } else if (us) {
       const src = ours && scorecardSource(ours);
       const real = src && !src.sample;
       if (ours && real && statsVisible() && statsMatchVisible(ours)) {
@@ -969,7 +1049,7 @@
         own = `<p class="muted sc-note">Our batting and bowling tables appear here once the stats for this match are added${ours ? '' : ' — set the opponent’s name on the match in Days so it can be matched'}.</p>`;
       }
     } else {
-      own = '<p class="muted sc-note">This is the score summary from the league. Batting and bowling tables are kept only for the Red Falcons’ own matches.</p>';
+      own = '<p class="muted sc-note">The full scorecard appears here once the match has been played.</p>';
     }
     return `<header class="sheet-head">
         <div><span class="day-kind">${esc(m.title)} ${m.live ? '<span class="hpl-live">LIVE</span>' : ''}</span>
@@ -1938,7 +2018,7 @@
     bell.hidden = false;
     bell.dataset.count = bellCount;
     bell.setAttribute('aria-label', bellCount ? `Notifications, ${bellCount} new` : 'Notifications');
-    const shown = t => (!isGuest() || t.id === 'summary') && (!t.adminTab || realAdmin()) && (!t.userTab || isUser()) && (!t.staffTab || isStaff()) && (!t.statsTab || statsVisible()) && (!t.daysTab || daysVisible()) && !(archive && t.id === 'settings');
+    const shown = t => (!isGuest() || t.id === 'summary' || t.id === 'tournament') && (!t.adminTab || realAdmin()) && (!t.userTab || isUser()) && (!t.staffTab || isStaff()) && (!t.statsTab || statsVisible()) && (!t.daysTab || daysVisible()) && !(archive && t.id === 'settings');
     if (TABS.some(t => t.id === tab && !shown(t))) tab = 'summary';
     const tabDef = id => TABS.find(t => t.id === id);
     const visibleIn = g => g.tabs.filter(id => shown(tabDef(id)));
@@ -1964,7 +2044,7 @@
       : isUser() ? `<span class="badge badge-view">${icon(PERSON_ICON, 14)} ${esc(session.name)}</span>`
       : `<span class="badge badge-view">${icon('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>', 14)} ${esc(session.name)} · ${isManager() ? 'manager' : 'view only'}</span>`;
 
-    const views = { news: viewNews, summary: viewHome, money: viewMoney, days: viewDays, stats: viewStats, players: viewPlayers, announce: viewAnnounce, polls: viewPolls, kit: viewKit, shirtpay: viewShirtMoney, accounts: viewAccounts, requests: () => sheetInbox(true), profile: viewProfile, settings: viewSettings };
+    const views = { news: viewNews, summary: viewHome, money: viewMoney, days: viewDays, stats: viewStats, players: viewPlayers, announce: viewAnnounce, polls: viewPolls, kit: viewKit, shirtpay: viewShirtMoney, accounts: viewAccounts, tournament: viewTournament, requests: () => sheetInbox(true), profile: viewProfile, settings: viewSettings };
     // Every screen gets the flat, Cricbuzz-style look (.cb).
     $('#view').innerHTML = `<div class="cb cb-${tab}">${archiveBar()}${groupSeg()}${(views[tab] || viewHome)()}</div>`;
     $('#sheet-root').innerHTML = sheet ? renderSheet() : '';
@@ -5260,7 +5340,7 @@ ${tabRows.map(r => {
   function findExpense(el) { return (state.expenses[el.dataset.day] || []).find(e => e.id === el.dataset.id); }
 
   const actions = {
-    tab(el) { tab = el.dataset.tab; saveTab(); sheet = null; render(); animateView(); window.scrollTo({ top: 0 }); if (tab === 'announce') loadAnnouncements(); if (tab === 'news') { loadNews(); loadHpl(); } if (tab === 'accounts') loadAccounts(); if (tab === 'requests') { loadInbox(); loadAccounts(); } if (tab === 'settings' && isUser()) refreshMe(); },
+    tab(el) { tab = el.dataset.tab; saveTab(); sheet = null; render(); animateView(); window.scrollTo({ top: 0 }); if (tab === 'announce') loadAnnouncements(); if (tab === 'news' || tab === 'tournament') { loadNews(); loadHpl(); } if (tab === 'accounts') loadAccounts(); if (tab === 'requests') { loadInbox(); loadAccounts(); } if (tab === 'settings' && isUser()) refreshMe(); },
     'ann-template'(el) {
       const x = ANN_TEMPLATES.find(y => y.id === el.dataset.t);
       if (!x) return;
@@ -5955,6 +6035,7 @@ ${tabRows.map(r => {
     },
     'hpl-match'(el) { sheet = { type: 'hpl-match', id: el.dataset.id }; render(); },
     'hpl-view'(el) { hplView = el.dataset.id; render(); },
+    'tour-view'(el) { tourView = el.dataset.id; render(); },
     'hpl-team'(el) {
       sheet = { type: 'hpl-team', team: el.dataset.team, logo: el.dataset.logo };
       squadDraft = null;

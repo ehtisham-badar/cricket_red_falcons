@@ -19,11 +19,14 @@ import java.util.Map;
 public class LeagueFeedController {
 
     private final LeagueFeedService feed;
+    private final com.redfalcons.ledger.service.TournamentScorecards tournament;
     private final AdminAuth auth;
     private final ScorecardImporter scorecards;
     private final MatchReportNews reports;
 
-    public LeagueFeedController(LeagueFeedService feed, AdminAuth auth, ScorecardImporter scorecards, MatchReportNews reports) {
+    public LeagueFeedController(LeagueFeedService feed, AdminAuth auth, ScorecardImporter scorecards, MatchReportNews reports,
+                                com.redfalcons.ledger.service.TournamentScorecards tournament) {
+        this.tournament = tournament;
         this.feed = feed;
         this.auth = auth;
         this.scorecards = scorecards;
@@ -61,5 +64,12 @@ public class LeagueFeedController {
     @GetMapping
     public Map<String, Object> get() {
         return feed.summary();
+    }
+
+    /** The full scorecard of any league match (both innings), for the Tournament tab. Everyone may see it. */
+    @GetMapping("/matches/{id}/scorecard")
+    public ResponseEntity<?> scorecard(@org.springframework.web.bind.annotation.PathVariable long id) {
+        return tournament.scorecard(id).<ResponseEntity<?>>map(ResponseEntity::ok)
+                .orElse(ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "That isn't a match in the league.")));
     }
 }

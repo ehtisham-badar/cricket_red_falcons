@@ -2527,3 +2527,25 @@ a.btn { text-decoration: none; }
 .hpl-card.failed strong { color: var(--neg); }
 .hpl-card details { margin-top: 4px; }
 .hpl-card pre { max-height: 180px; overflow: auto; margin: 6px 0 0; padding: 8px; white-space: pre-wrap; word-break: break-all; font-size: 11px; border-radius: 8px; background: var(--well-1); }
+
+/* Tournament tab: fixtures and results as divided rows; full scorecards in the match sheet */
+.tf-list { display: flex; flex-direction: column; margin: 0 -14px -14px; }
+.tf-row { display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 12px 14px; border: 0; border-bottom: 1px solid var(--line); background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.tf-row:last-child { border-bottom: 0; }
+.tf-row:hover { background: var(--row-hover); }
+.tf-row.ours { box-shadow: inset 3px 0 0 var(--red); }
+.tf-meta { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; font-weight: 700; letter-spacing: .04em; color: var(--muted); }
+.tf-team { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; }
+.tf-team strong { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.tf-team.won strong, .tf-team.won b { font-weight: 800; }
+.tf-team.us strong { color: var(--gold); }
+.tf-team b { font-size: 16px; font-variant-numeric: tabular-nums; }
+.tf-team b small { color: var(--muted); font-weight: 600; font-size: 12px; }
+.tf-foot { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; color: var(--gold); }
+.tf-go { color: var(--muted); font-weight: 700; flex: none; }
+.tf-note { text-align: center; }
+.tsc { margin-top: 16px; }
+.tsc .sc-title h3 small { font-weight: 600; color: var(--muted); font-size: 12px; margin-left: 6px; }
+.tsc.us .sc-title h3 { color: var(--gold); }
+.tsc .sc-table th small { font-weight: 600; color: var(--muted); text-transform: none; letter-spacing: 0; margin-left: 4px; }
+@media (max-width: 520px) { .tf-list { margin: 0 -12px -12px; } }
