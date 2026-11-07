@@ -16,7 +16,7 @@ class TournamentScorecardsTest {
     @SuppressWarnings("unchecked")
     void readsBothInningsFromTheScorecardPage() throws Exception {
         String html = new String(getClass().getResourceAsStream("/crickslab-scorecard-137639.html").readAllBytes(), StandardCharsets.UTF_8);
-        Map<String, Object> card = new TournamentScorecards(JsonMapper.builder().build(), null, null).parse(html);
+        Map<String, Object> card = new TournamentScorecards(JsonMapper.builder().build(), null, null, null).parse(html);
         List<Map<String, Object>> innings = (List<Map<String, Object>>) card.get("innings");
         assertThat(innings).hasSize(2);
 

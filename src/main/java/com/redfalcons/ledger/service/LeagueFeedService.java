@@ -40,7 +40,7 @@ public class LeagueFeedService {
 
     private static final Logger log = LoggerFactory.getLogger(LeagueFeedService.class);
     private static final DayOfWeek FETCH_DAY = DayOfWeek.SATURDAY;
-    private static final LocalTime FETCH_FROM = LocalTime.of(16, 0);
+    private static final LocalTime FETCH_FROM = LocalTime.of(18, 0);
     /** On fetch day, while Crickslab still shows the old table, ask again this often (until midnight). */
     private static final Duration WAIT_FOR_TABLE = Duration.ofHours(1);
     private static final String ROW = "hpl";
@@ -51,6 +51,13 @@ public class LeagueFeedService {
     private static final DateTimeFormatter CL_TIME = DateTimeFormatter.ofPattern("EEE, d MMM yyyy hh:mm a", Locale.ENGLISH);
 
     private final ObjectMapper json;
+    /** Told after each successful fetch (scorecards of newly finished matches are read then). Absent in unit tests. */
+    private org.springframework.context.ApplicationEventPublisher events;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setEvents(org.springframework.context.ApplicationEventPublisher events) {
+        this.events = events;
+    }
     private final String url;
     /** Null in unit tests that only parse pages. */
     private final LeagueSnapshotRepository store;
@@ -84,7 +91,7 @@ public class LeagueFeedService {
         return snapshot();
     }
 
-    /** The most recent fetch time (Saturday 4 pm Pakistan time) at or before {@code now}. */
+    /** The most recent fetch time (Saturday 6 pm Pakistan time) at or before {@code now}. */
     static Instant lastFetchTime(Instant now) {
         ZonedDateTime pk = now.atZone(PAKISTAN);
         ZonedDateTime at = pk.with(TemporalAdjusters.previousOrSame(FETCH_DAY)).with(FETCH_FROM);
@@ -93,7 +100,7 @@ public class LeagueFeedService {
     }
 
     /**
-     * Every 15 minutes: fetch when the stored copy is from before the latest Saturday 4 pm (or there is none),
+     * Every 15 minutes: fetch when the stored copy is from before the latest Saturday 6 pm (or there is none),
      * retrying on errors. On fetch day itself, while Crickslab still shows the old table or one of that day's
      * matches isn't finished yet, ask again every hour until midnight so the final results are picked up.
      */
@@ -159,6 +166,7 @@ public class LeagueFeedService {
                 tableUnchanged = played((List<Map<String, Object>>) cached.get("pointsTable")) <= before;
                 if (store != null) store.save(new LeagueSnapshot(ROW, json.writeValueAsString(cached), fetchedAt.toString()));
             }
+            if (events != null) events.publishEvent(new LeagueRefreshed());
             return true;
         } catch (Exception e) {
             log.warn("HPL feed: could not refresh from Crickslab ({}); keeping the last copy.", e.getMessage());

@@ -101,12 +101,12 @@ class LeagueFeedServiceTest {
     }
 
     @Test
-    void fetchesFromSaturdayFourPmPakistanTime() {
+    void fetchesFromSaturdaySixPmPakistanTime() {
         // Sat 31 Oct 2026, 4 pm in Pakistan is 11:00 UTC.
-        java.time.Instant sat4pm = java.time.Instant.parse("2026-10-31T11:00:00Z");
-        assertThat(LeagueFeedService.lastFetchTime(sat4pm)).isEqualTo(sat4pm);
-        assertThat(LeagueFeedService.lastFetchTime(sat4pm.plusSeconds(3600 * 30))).isEqualTo(sat4pm);       // Sunday evening
-        assertThat(LeagueFeedService.lastFetchTime(sat4pm.minusSeconds(60))).isEqualTo(sat4pm.minusSeconds(7 * 86400)); // Saturday 3:59 pm
+        java.time.Instant sat6pm = java.time.Instant.parse("2026-10-31T13:00:00Z");
+        assertThat(LeagueFeedService.lastFetchTime(sat6pm)).isEqualTo(sat6pm);
+        assertThat(LeagueFeedService.lastFetchTime(sat6pm.plusSeconds(3600 * 30))).isEqualTo(sat6pm);       // Sunday evening
+        assertThat(LeagueFeedService.lastFetchTime(sat6pm.minusSeconds(60))).isEqualTo(sat6pm.minusSeconds(7 * 86400)); // Saturday 5:59 pm
     }
 
     @Test

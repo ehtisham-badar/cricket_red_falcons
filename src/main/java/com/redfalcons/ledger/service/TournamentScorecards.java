@@ -4,6 +4,8 @@ import com.redfalcons.ledger.model.LeagueSnapshot;
 import com.redfalcons.ledger.repo.LeagueSnapshotRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -25,16 +27,17 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Full scorecards of every HPL match (both innings, both teams), for the Tournament tab. Each comes from the
- * match's public Crickslab scorecard page (under /match-central/, which Crickslab's robots.txt allows), whose
- * streamed data carries the innings as JSON. A finished match is read once and kept in our database; a match
- * still being played is read again at most every {@link #LIVE_REFRESH}.
+ * Full scorecards of every HPL match (both innings, both teams), for the Tournament tab. Each finished match's
+ * scorecard is read once from its public Crickslab page (under /match-central/, which Crickslab's robots.txt
+ * allows) and kept in our database; the app is always served from there and never waits on Crickslab. They are
+ * read right after each league fetch (Saturday 6 pm, or the admin's refresh button), and once at the first start
+ * so the matches already played have theirs.
  */
 @Service
 public class TournamentScorecards {
 
     private static final Logger log = LoggerFactory.getLogger(TournamentScorecards.class);
-    static final Duration LIVE_REFRESH = Duration.ofMinutes(10);
+    static final String BACKFILLED = "hplScorecardsBackfilled";
     /** Never ask Crickslab more often than this, whoever is looking. */
     private static final Duration MIN_GAP = Duration.ofSeconds(3);
     private static final Pattern CHUNK = Pattern.compile("self\\.__next_f\\.push\\(\\[1,\"(.*?)\"\\]\\)</script>", Pattern.DOTALL);
@@ -44,46 +47,94 @@ public class TournamentScorecards {
     private final ObjectMapper json;
     private final LeagueFeedService feed;
     private final LeagueSnapshotRepository store;
+    /** Records that the one-time first fill has run. Null in unit tests that only parse pages. */
+    private final com.redfalcons.ledger.repo.SettingRepository settings;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).followRedirects(HttpClient.Redirect.NORMAL).build();
     private Instant lastFetch = Instant.EPOCH;
 
-    public TournamentScorecards(ObjectMapper json, LeagueFeedService feed, LeagueSnapshotRepository store) {
+    public TournamentScorecards(ObjectMapper json, LeagueFeedService feed, LeagueSnapshotRepository store,
+                                com.redfalcons.ledger.repo.SettingRepository settings) {
         this.json = json;
         this.feed = feed;
         this.store = store;
+        this.settings = settings;
     }
 
-    /** The scorecard of league match {@code id}: stored, or read from Crickslab now. Empty when it isn't a league match. */
+    /** The stored scorecard of league match {@code id} (never fetched here). Empty when it isn't a league match. */
     @SuppressWarnings("unchecked")
-    public synchronized Optional<Map<String, Object>> scorecard(long id) {
-        Map<String, Object> match = ((List<Map<String, Object>>) feed.summary().getOrDefault("results", List.of())).stream()
-                .filter(r -> String.valueOf(r.get("id")).equals(String.valueOf(id))).findFirst().orElse(null);
+    public Optional<Map<String, Object>> scorecard(long id) {
+        Map<String, Object> match = matches().stream().filter(r -> String.valueOf(r.get("id")).equals(String.valueOf(id))).findFirst().orElse(null);
         if (match == null) return Optional.empty();
-        String key = "sc-" + id;
-        Optional<LeagueSnapshot> kept = store.findById(key);
-        Map<String, Object> stored = kept.map(this::read).orElse(null);
-        boolean finished = stored != null && Boolean.TRUE.equals(stored.get("finished"));
-        boolean fresh = kept.isPresent() && Instant.parse(kept.get().getFetchedAt()).plus(LIVE_REFRESH).isAfter(Instant.now());
-        if (stored != null && (finished || fresh)) return Optional.of(stored);
-        URI page = scorecardPage(String.valueOf(match.getOrDefault("summaryUrl", "")));
-        if (page == null) return Optional.of(stored != null ? stored : unavailable("Crickslab has no scorecard page for this match yet."));
-        try {
-            Thread.sleep(Math.max(0, Duration.between(Instant.now(), lastFetch.plus(MIN_GAP)).toMillis()));
-            lastFetch = Instant.now();
-            HttpResponse<String> res = http.send(HttpRequest.newBuilder(page).timeout(Duration.ofSeconds(25))
-                    .header("User-Agent", "RedFalconsLedger/1.0 (+https://red-falcons-ledger.vercel.app)").header("Accept", "text/html").GET().build(),
-                    HttpResponse.BodyHandlers.ofString());
-            if (res.statusCode() != 200) throw new IllegalStateException("HTTP " + res.statusCode());
-            Map<String, Object> card = parse(res.body());
-            card.put("source", page.toString());
-            boolean done = "Completed".equalsIgnoreCase(String.valueOf(match.get("status"))) && ((List<?>) card.get("innings")).size() >= 2;
-            card.put("finished", done);
-            store.save(new LeagueSnapshot(key, json.writeValueAsString(card), Instant.now().toString()));
-            return Optional.of(card);
-        } catch (Exception e) {
-            log.warn("HPL scorecard {}: could not read it from Crickslab ({}).", id, e.getMessage());
-            return Optional.of(stored != null ? stored : unavailable("Couldn’t load the scorecard from Crickslab right now. Try again in a minute."));
+        Map<String, Object> stored = store.findById(key(id)).map(this::read).orElse(null);
+        if (stored != null) return Optional.of(stored);
+        return Optional.of(unavailable(finished(match)
+                ? "This scorecard is added with the Saturday 6 pm update."
+                : "The scorecard is added after the match, with the Saturday 6 pm update."));
+    }
+
+    /** After each league fetch: read the scorecards of finished matches we don't have yet, once each. */
+    @EventListener(LeagueRefreshed.class)
+    public void afterLeagueFetch() {
+        fetchMissing();
+    }
+
+    /** Once, at the first start: the matches already played get their scorecards without waiting for Saturday. */
+    @EventListener(ApplicationReadyEvent.class)
+    public void backfillOnce() {
+        if (settings == null || settings.existsById(BACKFILLED)) return;
+        Thread t = new Thread(() -> {
+            fetchMissing();
+            settings.save(new com.redfalcons.ledger.model.Setting(BACKFILLED, Instant.now().toString()));
+        }, "hpl-scorecards-backfill");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /** Reads and stores every finished match's scorecard that isn't stored yet. Returns how many were added. */
+    public synchronized int fetchMissing() {
+        int added = 0;
+        for (Map<String, Object> m : matches()) {
+            if (!finished(m)) continue;
+            long id;
+            try { id = Long.parseLong(String.valueOf(m.get("id"))); } catch (NumberFormatException e) { continue; }
+            if (store.existsById(key(id))) continue;
+            URI page = scorecardPage(String.valueOf(m.getOrDefault("summaryUrl", "")));
+            if (page == null) continue;
+            try {
+                Thread.sleep(Math.max(0, Duration.between(Instant.now(), lastFetch.plus(MIN_GAP)).toMillis()));
+                lastFetch = Instant.now();
+                HttpResponse<String> res = http.send(HttpRequest.newBuilder(page).timeout(Duration.ofSeconds(25))
+                        .header("User-Agent", "RedFalconsLedger/1.0 (+https://red-falcons-ledger.vercel.app)").header("Accept", "text/html").GET().build(),
+                        HttpResponse.BodyHandlers.ofString());
+                if (res.statusCode() != 200) throw new IllegalStateException("HTTP " + res.statusCode());
+                Map<String, Object> card = parse(res.body());
+                if (((List<?>) card.get("innings")).size() < 2) continue; // not finished on Crickslab yet: next time
+                card.put("source", page.toString());
+                card.put("finished", true);
+                store.save(new LeagueSnapshot(key(id), json.writeValueAsString(card), Instant.now().toString()));
+                added++;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return added;
+            } catch (Exception e) {
+                log.warn("HPL scorecard {}: could not read it from Crickslab ({}); it will be tried at the next fetch.", id, e.getMessage());
+            }
         }
+        if (added > 0) log.info("HPL scorecards: {} new scorecard{} saved.", added, added == 1 ? "" : "s");
+        return added;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> matches() {
+        return (List<Map<String, Object>>) feed.summary().getOrDefault("results", List.of());
+    }
+
+    private static boolean finished(Map<String, Object> m) {
+        return "Completed".equalsIgnoreCase(String.valueOf(m.get("status"))) || !String.valueOf(m.getOrDefault("result", "")).isEmpty();
+    }
+
+    private static String key(long id) {
+        return "sc-" + id;
     }
 
     /** The public scorecard page for a match, from the summary link the league page gives. */
