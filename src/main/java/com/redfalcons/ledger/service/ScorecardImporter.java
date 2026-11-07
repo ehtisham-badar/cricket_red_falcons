@@ -71,7 +71,11 @@ public class ScorecardImporter {
                 continue;
             }
             String matchId = mine.get().getId();
-            if (stats.findAll().stream().anyMatch(s -> s.getMatchId().equals(matchId))) continue; // already has stats: leave them alone
+            long have = stats.findAll().stream().filter(s -> s.getMatchId().equals(matchId)).count();
+            if (have > 0) { // already has stats: leave them alone, but say so
+                report.add(entry(label, "skipped", "Already has stats for " + have + " player" + (have == 1 ? "" : "s") + " in the ledger, so nothing was imported. Clear that match's stats on the Stats tab to import the scorecard instead."));
+                continue;
+            }
             String url = String.valueOf(r.getOrDefault("summaryUrl", ""));
             if (fetched >= MAX_PER_REFRESH) { report.add(entry(label, "skipped", "Several scorecards waiting; press refresh again for the rest.")); continue; }
             fetched++;
@@ -82,7 +86,18 @@ public class ScorecardImporter {
                 report.add(entry(label, "failed", "Could not read the scorecard: " + e.getMessage()));
             }
         }
+        if (report.isEmpty()) report.add(entry("Scorecards", "skipped", "No finished Red Falcons league match on the saved league page."));
+        last = report;
+        lastAt = java.time.Instant.now().toString();
         return report;
+    }
+
+    private List<Map<String, Object>> last = List.of();
+    private String lastAt = "";
+
+    /** What the last refresh did with the scorecards, for the admin to read again after a reload. */
+    public synchronized Map<String, Object> lastReport() {
+        return Map.of("report", last, "at", lastAt);
     }
 
     Map<String, Object> importOne(String label, String matchId, String url, Map<String, Object> us, Map<String, Object> them,

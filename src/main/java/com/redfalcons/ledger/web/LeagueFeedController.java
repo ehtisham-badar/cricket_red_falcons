@@ -49,6 +49,15 @@ public class LeagueFeedController {
         return ResponseEntity.ok(out);
     }
 
+    /** What the last refresh did with the scorecards of our matches (admin only). */
+    @GetMapping("/scorecards")
+    public ResponseEntity<?> lastScorecards(@RequestHeader(value = LedgerController.TOKEN_HEADER, required = false) String token) {
+        if (!auth.isValidToken(token)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Only the admin can see this."));
+        }
+        return ResponseEntity.ok(scorecards.lastReport());
+    }
+
     @GetMapping
     public Map<String, Object> get() {
         return feed.summary();

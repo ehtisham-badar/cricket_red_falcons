@@ -861,6 +861,10 @@
 
   async function loadHpl() {
     try { hpl = await api('GET', '/api/hpl'); } catch { hpl = hpl || { available: false }; }
+    // The admin also sees what the last refresh did with the match scorecards, even after a reload.
+    if (isAdmin() && !scorecardReport.length) {
+      try { const r = await api('GET', '/api/hpl/scorecards'); scorecardReport = r.report || []; } catch { /* keep what we have */ }
+    }
     if (tab === 'summary' || tab === 'news') render();
     if (sheet && sheet.type === 'hpl-match') render();
   }
