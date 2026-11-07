@@ -1,6 +1,7 @@
 package com.redfalcons.ledger.web;
 
 import com.redfalcons.ledger.service.LeagueFeedService;
+import com.redfalcons.ledger.service.MatchReportNews;
 import com.redfalcons.ledger.service.ScorecardImporter;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -20,11 +21,13 @@ public class LeagueFeedController {
     private final LeagueFeedService feed;
     private final AdminAuth auth;
     private final ScorecardImporter scorecards;
+    private final MatchReportNews reports;
 
-    public LeagueFeedController(LeagueFeedService feed, AdminAuth auth, ScorecardImporter scorecards) {
+    public LeagueFeedController(LeagueFeedService feed, AdminAuth auth, ScorecardImporter scorecards, MatchReportNews reports) {
         this.feed = feed;
         this.auth = auth;
         this.scorecards = scorecards;
+        this.reports = reports;
     }
 
     /** The admin's refresh button: fetch the latest from Crickslab now. */
@@ -40,6 +43,9 @@ public class LeagueFeedController {
         } catch (Exception e) {
             out.put("scorecards", java.util.List.of(Map.of("match", "Scorecards", "status", "failed", "message", String.valueOf(e.getMessage()))));
         }
+        try {
+            reports.postNew(); // a match that has just finished gets its News post now rather than at the next check
+        } catch (Exception ignored) { /* the refresh itself worked */ }
         return ResponseEntity.ok(out);
     }
 
