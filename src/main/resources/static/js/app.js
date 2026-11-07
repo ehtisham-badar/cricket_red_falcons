@@ -857,6 +857,7 @@
   let hpl = null;                             // the server's summary of the league page
   let hplView = 'table';
   let hplRefreshing = false;
+  let scorecardReport = [];                   // admin: what the last refresh did with our match scorecards
 
   async function loadHpl() {
     try { hpl = await api('GET', '/api/hpl'); } catch { hpl = hpl || { available: false }; }
@@ -927,6 +928,7 @@
         </div>
       </div>
       ${body}
+      ${isAdmin() && scorecardReport.length ? `<div class="hpl-cards">${scorecardReport.map(c => `<p class="hpl-card ${esc(c.status)}"><strong>${esc(c.match)}</strong> · ${esc(c.message)}${c.sample ? `<details><summary>What the scorecard page looked like</summary><pre>${esc(c.sample)}</pre></details>` : ''}</p>`).join('')}</div>` : ''}
       <p class="hpl-source">From <a href="${esc(hpl.source)}" target="_blank" rel="noopener">Crickslab</a>${ago != null ? ` · updated ${ago < 1 ? 'just now' : ago === 1 ? '1 min ago' : ago + ' min ago'}` : ''}</p>
     </section>`;
   }
@@ -5966,9 +5968,17 @@ ${tabRows.map(r => {
       hplRefreshing = true;
       render();
       try {
+        // Anything I have changed but not saved goes first, so the imported stats don't clash with it.
+        if (saveTimer) { clearTimeout(saveTimer); await flushSave(); }
         const r = await api('POST', '/api/hpl/refresh');
         if (r.available) hpl = r;
-        toast(r.fetchOk === false ? 'Couldn’t reach Crickslab — showing the last results.' : r.refreshed ? 'League updated from Crickslab.' : 'Already up to date.');
+        scorecardReport = r.scorecards || [];
+        const done = scorecardReport.filter(c => c.status === 'imported'), bad = scorecardReport.filter(c => c.status === 'failed');
+        if (done.length) state = await fetchLedger();
+        let msg = r.fetchOk === false ? 'Couldn’t reach Crickslab — showing the last results.' : r.refreshed ? 'League updated from Crickslab.' : 'Already up to date.';
+        if (done.length) msg += ` Scorecard stats imported for ${done.length} match${done.length === 1 ? '' : 'es'}.`;
+        if (bad.length) msg += ' A scorecard couldn’t be read — details are under the table.';
+        toast(msg);
       } catch {
         toast('Couldn’t refresh the league.');
       } finally {

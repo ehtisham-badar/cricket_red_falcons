@@ -1,6 +1,7 @@
 package com.redfalcons.ledger.web;
 
 import com.redfalcons.ledger.service.LeagueFeedService;
+import com.redfalcons.ledger.service.ScorecardImporter;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,10 +19,12 @@ public class LeagueFeedController {
 
     private final LeagueFeedService feed;
     private final AdminAuth auth;
+    private final ScorecardImporter scorecards;
 
-    public LeagueFeedController(LeagueFeedService feed, AdminAuth auth) {
+    public LeagueFeedController(LeagueFeedService feed, AdminAuth auth, ScorecardImporter scorecards) {
         this.feed = feed;
         this.auth = auth;
+        this.scorecards = scorecards;
     }
 
     /** The admin's refresh button: fetch the latest from Crickslab now. */
@@ -30,7 +33,14 @@ public class LeagueFeedController {
         if (!auth.isValidToken(token)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Only the admin can refresh the league."));
         }
-        return ResponseEntity.ok(feed.refreshNow());
+        Map<String, Object> out = new java.util.LinkedHashMap<>(feed.refreshNow());
+        // The scorecards of our finished matches that have no stats yet; a problem there never spoils the refresh.
+        try {
+            out.put("scorecards", scorecards.importMissing());
+        } catch (Exception e) {
+            out.put("scorecards", java.util.List.of(Map.of("match", "Scorecards", "status", "failed", "message", String.valueOf(e.getMessage()))));
+        }
+        return ResponseEntity.ok(out);
     }
 
     @GetMapping

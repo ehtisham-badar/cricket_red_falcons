@@ -2506,3 +2506,12 @@ a.btn { text-decoration: none; }
 .cb .group-head.match::before { background: var(--gold); }
 .cb .size-tot strong, .cb .size-opt strong { font-family: var(--body-font); font-weight: 800; }
 .usage-note { margin: 10px 0 0; font-size: 12px; color: var(--muted); opacity: .8; text-align: center; }
+
+/* Scorecard import notes under the HPL table (admin) */
+.hpl-cards { margin-top: 10px; }
+.hpl-card { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
+.hpl-card strong { color: var(--text); }
+.hpl-card.imported strong { color: var(--pos); }
+.hpl-card.failed strong { color: var(--neg); }
+.hpl-card details { margin-top: 4px; }
+.hpl-card pre { max-height: 180px; overflow: auto; margin: 6px 0 0; padding: 8px; white-space: pre-wrap; word-break: break-all; font-size: 11px; border-radius: 8px; background: var(--well-1); }
