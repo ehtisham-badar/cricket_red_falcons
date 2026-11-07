@@ -65,6 +65,8 @@
   }
 
   const inTournament = p => p.tournament !== false;
+  // On the shirt orders: the player is picked for shirts and listed on the kit sizes.
+  const inShirt = p => p.shirt !== false;
   // "Divide money": the player shares the league fee equally with the others who have it on.
   const dividesMoney = p => p.divide === true;
   // Who the league fee falls on: the players who divide the money if any do, else the whole squad (the per-match way).
@@ -470,7 +472,7 @@
   }
 
   const api = {
-    matches, leagueMatchCount, attendance, seasonAwards, dividesMoney, feePayers, days, num, isCharged, pays, expPays, twelfthPlays,
+    matches, leagueMatchCount, attendance, seasonAwards, dividesMoney, inShirt, feePayers, days, num, isCharged, pays, expPays, twelfthPlays,
     BALLS_PER_OVER, STAT_KEYS, statOf, runsOf, shotsOf, strikeRate, oversOf, economy, batted, extrasOf, concededOf, bowled, leagueStats, round2, inTournament, paidTotal, dayExpenses, dayAmount, sharedOf, charges, chargeOf, chargeTotal, dayStats, allStats,
     tournamentStats, advanceShare, advancePerPlayer, advanceDue, playerCalc, totals, warnings, money, signedMoney, netLabel
   };

@@ -33,6 +33,10 @@ public class Player {
     @Column(name = "divide_money")
     private Boolean divideMoney = false;
 
+    /** Whether the player is on the shirt orders. Null (older rows) means yes. */
+    @Column(name = "in_shirt")
+    private Boolean inShirt = true;
+
     /** WhatsApp number for reminders; admin-only. Null on rows from before this column. */
     private String phone = "";
 
@@ -99,6 +103,8 @@ public class Player {
     public String getRole() { return role; }
     public String getPaid() { return paid; }
     public boolean isInTournament() { return !Boolean.FALSE.equals(inTournament); }
+    public boolean isInShirt() { return !Boolean.FALSE.equals(inShirt); }
+    public void setInShirt(boolean v) { this.inShirt = v; }
     public boolean isDivideMoney() { return Boolean.TRUE.equals(divideMoney); }
     public void setDivideMoney(boolean v) { this.divideMoney = v; }
     public String getPhone() { return phone == null ? "" : phone; }

@@ -93,7 +93,7 @@ class LedgerApiTest {
 
         String v3 = """
                 {"players":[{"id":"p1","name":"Babar","paid":"1500","tournament":true,"divide":true,"att":{"t1":true}},
-                            {"id":"p2","name":"Rizwan","paid":"2000","tournament":false,"att":{}}],
+                            {"id":"p2","name":"Rizwan","paid":"2000","tournament":false,"shirt":false,"att":{}}],
                  "trainings":[{"id":"t1","desc":""}],
                  "expenses":{"t1":[{"id":"e1","item":"Water","amount":"500","paidBy":"p2","sharedBy":["p2","ghost","p2"]},
                                    {"id":"e2","item":"Balls","amount":"1000","paidBy":"ghost"}]},
@@ -104,8 +104,8 @@ class LedgerApiTest {
                 .contains("\"tournament\":{\"name\":\"\",\"fee\":\"65000\",\"advance\":\"\",\"payments\":[],\"matchCount\":5}")
                 .contains("\"name\":\"Rizwan\",\"role\":\"\",\"paid\":\"2000\",\"tournament\":false")
                 // "Divide money" is saved per player; off unless set
-                .contains("\"kitAt\":\"\",\"divide\":true")
-                .contains("\"kitAt\":\"\",\"divide\":false")
+                                .contains("\"kitAt\":\"\",\"divide\":false,\"shirt\":false")
+                .contains("\"kitAt\":\"\",\"divide\":true,\"shirt\":true")
                 // sharedBy keeps only real players, once each
                 .contains("{\"id\":\"e1\",\"item\":\"Water\",\"amount\":\"500\",\"paidBy\":\"p2\",\"sharedBy\":[\"p2\"]}")
                 // paidBy pointing at an unknown player falls back to the team fund

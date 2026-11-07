@@ -454,7 +454,7 @@
     const players = (d.players || []).map(p => {
       const id = p.id || rid();
       return {
-        id, name: p.name || '', role: p.role || '', tournament: p.tournament !== false, divide: p.divide === true, att: p.att || {},
+        id, name: p.name || '', role: p.role || '', tournament: p.tournament !== false, divide: p.divide === true, shirt: p.shirt !== false, att: p.att || {},
         payments: paymentsFrom(id, p), phone: p.phone == null ? '' : String(p.phone),
         battingHand: p.battingHand === 'left' || p.battingHand === 'right' ? p.battingHand : '',
         bowlingArm: p.bowlingArm === 'left' || p.bowlingArm === 'right' ? p.bowlingArm : '',
@@ -1206,7 +1206,7 @@
 
   // The admin's kit order: every player's shirt size, jersey name and number, with totals per size.
   function viewKit() {
-    const list = state.players.filter(C.inTournament);
+    const list = state.players.filter(p => C.inTournament(p) && C.inShirt(p));
     const counts = SIZE_CHART.map(([sz, c, l]) => ({ sz, c, l, n: list.filter(p => p.shirtSize === sz).length }));
     const answered = list.filter(p => p.shirtSize).length;
     const rows = list.map((p, i) => `<tr>
@@ -2395,7 +2395,7 @@
               <button class="chip" data-action="charge-set" ${attrs} data-who="squad">Whole squad</button>
               <button class="chip" data-action="charge-set" ${attrs} data-who="none">Nobody</button>
             </div>
-            <div class="exp-pick-people">${state.players.map(p => `<button class="exp-person ${chosen.has(p.id) ? 'on' : ''}" data-action="charge-toggle" ${attrs} data-player="${esc(p.id)}" aria-pressed="${chosen.has(p.id)}">
+            <div class="exp-pick-people">${state.players.filter(p => !isShirtCharge(x) || C.inShirt(p) || chosen.has(p.id)).map(p => `<button class="exp-person ${chosen.has(p.id) ? 'on' : ''}" data-action="charge-toggle" ${attrs} data-player="${esc(p.id)}" aria-pressed="${chosen.has(p.id)}">
               ${chosen.has(p.id) ? icon('<path d="M20 6 9 17l-5-5"/>', 14) : ''}${esc(p.name || 'Unnamed')}</button>`).join('')}</div>
             <button class="btn btn-ghost small" data-action="charge-open" ${attrs}>Done</button>
           </div>` : ''}
@@ -3220,6 +3220,14 @@
     return `<button class="tog divide-tog ${on ? 'on' : ''} ${isAdmin() ? '' : 'ro'}" data-action="toggle-divide" data-id="${esc(p.id)}"
       ${isAdmin() ? '' : 'disabled'} aria-pressed="${on}" title="Divide the league fee equally with the others who have this on">${on ? 'On' : 'Off'}</button>`;
   }
+
+  // "Shirt": whether the player is on the shirt orders (picked for shirts, listed on the kit sizes).
+  function shirtToggle(p) {
+    const on = C.inShirt(p);
+    return `<button class="tog shirt-tog ${on ? 'on' : ''} ${isAdmin() ? '' : 'ro'}" data-action="toggle-shirt" data-id="${esc(p.id)}"
+      ${isAdmin() ? '' : 'disabled'} aria-pressed="${on}" title="Include this player in the shirt orders">${on ? 'On' : 'Off'}</button>`;
+  }
+  const isShirtCharge = c => /shirt/i.test(c.title || '');
 
   // ---------- stats (admin) ----------
   const SR = (runs, balls) => { const v = C.strikeRate(runs, balls); return v == null ? '—' : v.toFixed(2); };
@@ -4164,9 +4172,9 @@
         <span class="pl-namecell">${avatar(p, 30)}<button class="pl-name" data-action="open-profile" data-id="${esc(p.id)}">${esc(p.name) || '<em>Unnamed</em>'}</button>${tag(p)}<button class="icon-btn exp-btn mini" data-action="open-player" data-id="${esc(p.id)}" aria-label="Expense card for ${esc(p.name)}" title="Expenses and payments">${WALLET_ICON}</button></span>
         ${admin
           ? `<select class="field select" data-input="role" data-id="${esc(p.id)}" aria-label="Role for ${esc(p.name)}">${ROLES.map(r => `<option value="${esc(r)}" ${r === p.role ? 'selected' : ''}>${r || 'No role'}</option>`).join('')}</select>
-             ${tourToggle(p)}${divideToggle(p)}
+             ${tourToggle(p)}${divideToggle(p)}${shirtToggle(p)}
              <button class="icon-btn danger" data-action="remove-player" data-id="${esc(p.id)}" aria-label="Remove ${esc(p.name)}">${X_ICON}</button>`
-          : `<span class="muted role">${esc(p.role) || '—'}</span>${tourToggle(p)}${divideToggle(p)}`}
+          : `<span class="muted role">${esc(p.role) || '—'}</span>${tourToggle(p)}${divideToggle(p)}${shirtToggle(p)}`}
       </div>`).join('');
 
     return `
@@ -4174,7 +4182,7 @@
           <button class="btn btn-gold" data-action="share-squad">${IMAGE_ICON} Send squad list to management</button></div>` : '')}
       <div class="players-layout">
         <section class="panel">
-          <div class="player-head"><span>Sr.</span><span>Name</span><span>Role</span><span>Tournament</span><span>Divide</span></div>
+          <div class="player-head"><span>Sr.</span><span>Name</span><span>Role</span><span>Tournament</span><span>Divide</span><span>Shirt</span></div>
           ${list || emptyPlayers()}
         </section>
         ${admin ? `<section class="panel add-panel">
@@ -4981,6 +4989,8 @@ ${tabRows.map(r => {
           <span class="tour-row">${tourToggle(p)}<small class="muted">${inTour ? 'Taking part · pays league fee for matches played' : 'Not taking part in the league'}</small></span></div>
         <div class="form-row"><span>Divide money</span>
           <span class="tour-row">${divideToggle(p)}<small class="muted">${C.dividesMoney(p) ? 'Shares the league fee equally with the others who divide' : 'League fee not divided to this player'}</small></span></div>
+        <div class="form-row"><span>Shirt order</span>
+          <span class="tour-row">${shirtToggle(p)}<small class="muted">${C.inShirt(p) ? 'On the shirt orders' : 'Left out of the shirt orders'}</small></span></div>
       </div>` : `
       <dl class="kv"><dt>Role</dt><dd>${esc(p.role) || '—'}</dd>
         <dt>Tournament</dt><dd>${inTour ? 'Taking part' : 'Not taking part'}</dd></dl>`;
@@ -5061,7 +5071,7 @@ ${tabRows.map(r => {
       version: 3,
       savedAt: new Date().toISOString(),
       players: state.players.map(p => ({
-        id: p.id, name: p.name, role: p.role, paid: String(C.paidTotal(p) || ''), tournament: p.tournament, divide: p.divide === true, att: p.att, payments: p.payments,
+        id: p.id, name: p.name, role: p.role, paid: String(C.paidTotal(p) || ''), tournament: p.tournament, divide: p.divide === true, shirt: p.shirt !== false, att: p.att, payments: p.payments,
         phone: p.phone
       })),
       amounts,
@@ -5389,7 +5399,7 @@ ${tabRows.map(r => {
       copyText(`*${x.title || 'Shirt'} money still due*${amt > 0 ? ` (${fmt(amt)} each)` : ''}\n${names.join('\n')}\n\nPlease send it as soon as you can. Thanks! 🦅`);
     },
     async 'kit-copy'() {
-      const list = state.players.filter(C.inTournament);
+      const list = state.players.filter(p => C.inTournament(p) && C.inShirt(p));
       const lines = list.map((p, i) => `${i + 1}. ${p.name} — ${p.shirtSize || 'no size'}${p.jerseyName || p.jersey ? ` — ${p.jerseyName || ''}${p.jersey ? ` #${p.jersey}` : ''}`.replace('—  #', '— #') : ''}`);
       const counts = SIZE_CHART.map(([sz]) => [sz, list.filter(p => p.shirtSize === sz).length]).filter(x => x[1]);
       copyText(`Red Falcons shirt sizes\n${lines.join('\n')}\n\nTotals: ${counts.map(([sz, n]) => `${sz} × ${n}`).join(', ') || '—'}`);
@@ -6235,6 +6245,22 @@ ${tabRows.map(r => {
       p.divide = !C.dividesMoney(p);
       commit();
     },
+    'toggle-shirt'(el) {
+      const p = findPlayer(el.dataset.id);
+      if (!p || !isAdmin()) return;
+      p.shirt = !C.inShirt(p);
+      if (!p.shirt) {
+        // Leaving the shirt orders takes the player off every shirt order they were on.
+        let was = 0;
+        C.charges(state).filter(isShirtCharge).forEach(c => {
+          if (c.players.includes(p.id)) was += 1;
+          c.players = c.players.filter(id => id !== p.id);
+          c.received = (c.received || []).filter(id => id !== p.id);
+        });
+        toast(`${p.name || 'This player'} is left out of the shirt orders${was ? ` and taken off ${was} order${was === 1 ? '' : 's'}` : ''}.`);
+      }
+      commit();
+    },
     'add-payment'(el) {
       const list = paymentsOf(el.dataset.id);
       if (!list || !isAdmin()) return;
@@ -6412,7 +6438,8 @@ ${tabRows.map(r => {
     'charge-set'(el) {
       const x = findCharge(el);
       if (!x || !isAdmin()) return;
-      x.players = el.dataset.who === 'squad' ? state.players.filter(C.inTournament).map(p => p.id) : [];
+      // "Whole squad" on a shirt order leaves out the players switched off for shirts.
+      x.players = el.dataset.who === 'squad' ? state.players.filter(p => C.inTournament(p) && (!isShirtCharge(x) || C.inShirt(p))).map(p => p.id) : [];
       x.received = (x.received || []).filter(id => x.players.includes(id));
       commit();
     },

@@ -46,7 +46,7 @@ public record LedgerDto(
                             String battingHand, String bowlingArm, String bowlingStyle,
                             Boolean keeper, Boolean captain, Boolean viceCaptain, String jersey, String photoAt,
                             String jerseyName, String profileAt, String shirtSize, String kitAt,
-                            Boolean divide) {
+                            Boolean divide, Boolean shirt) {
     }
 
     /**

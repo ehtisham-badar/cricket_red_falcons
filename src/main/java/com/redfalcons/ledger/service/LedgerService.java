@@ -131,7 +131,7 @@ public class LedgerService {
         LedgerDto full = load();
         List<PlayerDto> ps = full.players() == null ? List.of() : full.players().stream().map(p -> new PlayerDto(p.id(), p.name(), p.role(), "",
                 p.tournament(), Map.of(), List.of(), null, p.battingHand(), p.bowlingArm(), p.bowlingStyle(), p.keeper(), p.captain(), p.viceCaptain(),
-                p.jersey(), p.photoAt(), p.jerseyName(), "", "", "", p.divide())).toList();
+                p.jersey(), p.photoAt(), p.jerseyName(), "", "", "", p.divide(), p.shirt())).toList();
         SettingsDto s = full.settings();
         SettingsDto st = s == null ? null : new SettingsDto(s.currency(), s.maxPerMatch(), s.roundUp(), null, null, null, "own",
                 "admin", "admin", s.showNextMatch(), s.showFixtures(), s.adminShowFixtures());
@@ -160,7 +160,7 @@ public class LedgerService {
                     p.id().equals(viewerId) ? p.profileAt() : "",
                     // Shirt sizes and whether someone has answered are for the admin; players see only their own.
                     p.id().equals(viewerId) ? p.shirtSize() : "", p.id().equals(viewerId) ? p.kitAt() : "",
-                    p.divide());
+                    p.divide(), p.shirt());
         }).toList();
         // Who has sent money for an order is payment news too: with "own", a viewer only learns about themselves.
         List<ChargeDto> cs = full.charges() == null ? null : full.charges().stream().map(c -> !ownOnly || c.received() == null ? c
@@ -189,7 +189,7 @@ public class LedgerService {
                             p.isInTournament(), att, paid, p.getPhone(), p.getBattingHand(), p.getBowlingArm(),
                             p.getBowlingStyle(), p.isKeeper(), p.isCaptain(), p.isViceCaptain(), p.getJersey(),
                             photoAt.getOrDefault(p.getId(), ""), p.getJerseyName(), p.getProfileSavedAt(),
-                            p.getShirtSize(), p.getKitSavedAt(), p.isDivideMoney());
+                            p.getShirtSize(), p.getKitSavedAt(), p.isDivideMoney(), p.isInShirt());
                 })
                 .toList();
 
@@ -456,6 +456,7 @@ public class LedgerService {
             Player row = new Player(p.id(), newPlayers.size(), nz(p.name()).trim(), nz(p.role()),
                     sum(amounts.stream()), !Boolean.FALSE.equals(p.tournament()), phone, attended);
             row.setDivideMoney(Boolean.TRUE.equals(p.divide()));
+            row.setInShirt(!Boolean.FALSE.equals(p.shirt()));
             Player kept = storedProfiles.get(p.id());
             if (p.battingHand() != null || kept == null) {
                 row.setProfile(pick(p.battingHand(), HANDS), pick(p.bowlingArm(), HANDS), clip(p.bowlingStyle(), 40),
