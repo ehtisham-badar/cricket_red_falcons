@@ -298,6 +298,42 @@
     return { cost, paid, credit, net, usedSoFar, left, lines, creditLines };
   }
 
+  // What one player cost the team, match by match: the league share, the expenses everyone shares, and the items
+  // only some had (breakfast, lunch…), for trainings as well as matches (`matches` holds every charged day; `trainings` is their sum).
+  // Whatever isn't in a day (league advance/rounding,
+  // season charges) goes in `other`, so the matches plus `other` always add up to playerCalc's cost.
+  function matchCosts(state, player, stats, tour) {
+    stats = stats || allStats(state);
+    tour = tour || tournamentStats(state, stats);
+    const perMatch = !state.players.some(dividesMoney);
+    const out = { matches: {}, trainings: 0, leagueOther: 0, charges: 0, total: 0 };
+    let leagueInMatches = 0;
+    days(state).forEach(d => {
+      if (!isCharged(d)) return;
+      const s = stats[d.id];
+      const items = [];
+      let shared = 0, league = 0;
+      if (expPays(state, player, d.id) && s.common > 0) shared = s.share;
+      dayExpenses(state, d.id).forEach(e => {
+        const amt = num(e.amount);
+        const only = sharedOf(state, e);
+        if (only && only.includes(player.id) && amt > 0) items.push({ item: e.item || 'Expense', amount: split(amt, only.length, state.settings.roundUp) });
+      });
+      if (d.type === 'match' && perMatch && tour.fee > 0 && s.payers > 0 && pays(state, player, d.id)) league = tour.perMatch / s.payers;
+      leagueInMatches += league;
+      const total = round2(league + shared + items.reduce((t, x) => t + x.amount, 0));
+      if (d.type !== 'match') out.trainings += total;
+      out.matches[d.id] = { day: d, played: !!(player.att && player.att[d.id]), league: round2(league), shared, items, total };
+    });
+    charges(state).forEach(c => { out.charges += chargeOf(c, player.id); });
+    const lc = tour.charges[player.id];
+    out.leagueOther = round2(((lc && lc.amount) || 0) - round2(leagueInMatches));
+    out.trainings = round2(out.trainings);
+    out.charges = round2(out.charges);
+    out.total = round2(Object.values(out.matches).reduce((t, m) => t + m.total, 0) + out.leagueOther + out.charges);
+    return out;
+  }
+
   function totals(state, fmt) {
     const stats = allStats(state);
     const tour = tournamentStats(state, stats);
@@ -474,7 +510,7 @@
   const api = {
     matches, leagueMatchCount, attendance, seasonAwards, dividesMoney, inShirt, feePayers, days, num, isCharged, pays, expPays, twelfthPlays,
     BALLS_PER_OVER, STAT_KEYS, statOf, runsOf, shotsOf, strikeRate, oversOf, economy, batted, extrasOf, concededOf, bowled, leagueStats, round2, inTournament, paidTotal, dayExpenses, dayAmount, sharedOf, charges, chargeOf, chargeTotal, dayStats, allStats,
-    tournamentStats, advanceShare, advancePerPlayer, advanceDue, playerCalc, totals, warnings, money, signedMoney, netLabel
+    matchCosts, tournamentStats, advanceShare, advancePerPlayer, advanceDue, playerCalc, totals, warnings, money, signedMoney, netLabel
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.RFCalc = api;

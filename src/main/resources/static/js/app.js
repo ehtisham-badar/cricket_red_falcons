@@ -31,6 +31,7 @@
     { id: 'news', label: 'News', icon: '<path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8M15 18h-5M10 6h8v4h-8z"/>' },
     { id: 'days', label: 'Days', daysTab: true, icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' },
     { id: 'money', label: 'Money', icon: '<rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20M16 14.5h2"/>' },
+    { id: 'contrib', label: 'Contributions', icon: '<rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20M16 14.5h2"/>' },
     { id: 'stats', label: 'Stats', statsTab: true, icon: '<path d="M18 20V10M12 20V4M6 20v-6"/>' },
     { id: 'players', label: 'Team', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>' },
     { id: 'announce', label: 'Announce', staffTab: true, icon: '<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>' },
@@ -46,12 +47,12 @@
   ];
 
   // The bar shows six entries, not every screen: related screens share one entry and a switch at the top of the page.
-  const SEG_LABEL = { days: 'Days', stats: 'Stats', news: 'News', announce: 'Announcements', polls: 'Polls', kit: 'Kit', players: 'Squad', shirtpay: 'Shirt money', accounts: 'Accounts', games: 'Matches' };
+  const SEG_LABEL = { days: 'Days', stats: 'Stats', news: 'News', announce: 'Announcements', polls: 'Polls', kit: 'Kit', players: 'Squad', shirtpay: 'Shirt money', accounts: 'Accounts', games: 'Matches', contrib: 'Contributions', money: 'Money' };
   const GROUPS = [
     { id: 'summary', label: 'Home', tabs: ['summary'] },
     { id: 'matches', label: 'Matches', tabs: ['days', 'games', 'stats'], icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' },
     { id: 'tournament', label: 'Tournament', tabs: ['tournament'] },
-    { id: 'money', label: 'Money', tabs: ['money'] },
+    { id: 'money', label: 'Money', tabs: ['money', 'contrib'] },
     { id: 'players', label: 'Team', tabs: ['players', 'shirtpay', 'accounts'] },
     { id: 'news', label: 'News', tabs: ['news', 'announce', 'polls', 'kit'] },
     { id: 'requests', label: 'Requests', tabs: ['requests'] },
@@ -2096,7 +2097,7 @@
       : isUser() ? `<span class="badge badge-view">${icon(PERSON_ICON, 14)} ${esc(session.name)}</span>`
       : `<span class="badge badge-view">${icon('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>', 14)} ${esc(session.name)} · ${isManager() ? 'manager' : 'view only'}</span>`;
 
-    const views = { news: viewNews, summary: viewHome, money: viewMoney, days: viewDays, stats: viewStats, players: viewPlayers, announce: viewAnnounce, polls: viewPolls, kit: viewKit, shirtpay: viewShirtMoney, accounts: viewAccounts, tournament: viewTournament, games: viewGames, requests: () => sheetInbox(true), profile: viewProfile, settings: viewSettings };
+    const views = { news: viewNews, summary: viewHome, money: viewMoney, contrib: viewContrib, days: viewDays, stats: viewStats, players: viewPlayers, announce: viewAnnounce, polls: viewPolls, kit: viewKit, shirtpay: viewShirtMoney, accounts: viewAccounts, tournament: viewTournament, games: viewGames, requests: () => sheetInbox(true), profile: viewProfile, settings: viewSettings };
     // Every screen gets the flat, Cricbuzz-style look (.cb).
     $('#view').innerHTML = `<div class="cb cb-${tab}">${archiveBar()}${groupSeg()}${(views[tab] || viewHome)()}</div>`;
     $('#sheet-root').innerHTML = sheet ? renderSheet() : '';
@@ -2961,6 +2962,40 @@
         <ul class="breakdown">${c.lines.length ? c.lines.map(l => `<li class="${l.type}">${esc(l.text)}</li>`).join('') : '<li class="none">No cost yet</li>'}</ul></section>
       ${c.creditLines.length ? `<section class="panel"><div class="panel-head"><h3>Bought for the team <span class="muted">${fmt(c.credit)}</span></h3></div>
         <ul class="breakdown credit">${c.creditLines.map(l => `<li class="${l.type}">${esc(l.text)}</li>`).join('')}</ul></section>` : ''}`;
+  }
+
+  // ---------- Contributions: what each player cost, match by match ----------
+  function viewContrib() {
+    const stats = C.allStats(state);
+    const tour = C.tournamentStats(state, stats);
+    const ms = C.days(state).filter(d => C.isCharged(d) && (d.type !== 'match' || matchVisible(d)));
+    const players = state.players.filter(seesMoneyOf);
+    if (!ms.length || !players.length) {
+      return `${pageHead('Contributions', 'What each player cost, match by match.')}<section class="panel"><p class="muted">${players.length ? 'No finished matches yet.' : 'Nothing to show yet.'}</p></section>`;
+    }
+    const rows = players.map(p => ({ p, c: C.matchCosts(state, p, stats, tour) }));
+    const sum = f => C.round2(rows.reduce((t, r) => t + f(r.c), 0));
+    const hasOther = rows.some(r => Math.abs(r.c.leagueOther) >= 0.005), hasCharge = rows.some(r => r.c.charges > 0);
+    const cell = m => {
+      if (!m || m.total <= 0) return `<td class="league-cell">${m && m.played ? '<span class="muted">0</span>' : '—'}</td>`;
+      const parts = [m.league > 0 ? 'League ' + fmt(m.league) : '', m.shared > 0 ? 'Shared ' + fmt(m.shared) : '', ...m.items.map(x => esc(x.item) + ' ' + fmt(x.amount))].filter(Boolean);
+      return `<td class="league-cell" title="${parts.join(' · ')}"><strong>${fmt(m.total)}</strong><small class="muted" style="display:block">${parts.join(' · ')}</small></td>`;
+    };
+    return `${pageHead('Contributions', 'What each player cost per match and training: league fee share, shared expenses, and breakfast, lunch and other items only some had.')}
+      <section class="panel"><div class="table-wrap"><table class="sheet-table">
+        <thead><tr><th class="sticky">#</th><th class="sticky sticky-2">Player</th>
+          ${ms.map(m => `<th class="day-col ${m.type}" title="${esc(m.label)}${m.opponent ? ' vs ' + esc(m.opponent) : ''}">${m.short}<small>${esc(m.opponent || m.desc || '')}</small></th>`).join('')}
+          ${hasOther ? '<th class="day-col tour" title="League fee not tied to a played match: matches still to come, divided fee, rounding">League (other)</th>' : ''}${hasCharge ? '<th class="day-col charge">Charges</th>' : ''}
+          <th>Total</th></tr></thead>
+        <tbody>${rows.map(({ p, c }, i) => `<tr><td class="sticky">${i + 1}</td><td class="sticky sticky-2 name-cell"><button class="pl-name" data-action="open-profile" data-id="${esc(p.id)}">${esc(p.name)}</button></td>
+          ${ms.map(m => cell(c.matches[m.id])).join('')}
+          ${hasOther ? `<td class="league-cell">${Math.abs(c.leagueOther) >= 0.005 ? fmt(c.leagueOther) : '—'}</td>` : ''}${hasCharge ? `<td class="league-cell">${c.charges > 0 ? fmt(c.charges) : '—'}</td>` : ''}
+          <td class="strong">${fmt(c.total)}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><td class="sticky"></td><td class="sticky sticky-2">Total</td>
+          ${ms.map(m => `<td>${fmt(sum(c => (c.matches[m.id] || {}).total || 0))}</td>`).join('')}
+          ${hasOther ? `<td>${fmt(sum(c => c.leagueOther))}</td>` : ''}${hasCharge ? `<td>${fmt(sum(c => c.charges))}</td>` : ''}
+          <td>${fmt(sum(c => c.total))}</td></tr></tfoot>
+      </table></div></section>`;
   }
 
   function viewMoney() {
