@@ -2966,14 +2966,13 @@
 
   // ---------- Contributions: what each player cost, match by match ----------
   let contribView = 'all';   // 'all' | 'fee' (the league match money only) | 'exp' (expenses only)
-  function viewContrib() {
+  // What the table and the picture both show: the days, each player's costs, and the view's cell and total values.
+  function contribModel() {
     const stats = C.allStats(state);
     const tour = C.tournamentStats(state, stats);
     const ms = C.days(state).filter(d => C.isCharged(d) && (d.type !== 'match' || matchVisible(d)));
     const players = state.players.filter(seesMoneyOf);
-    if (!ms.length || !players.length) {
-      return `${pageHead('Contributions', 'What each player cost, match by match.')}<section class="panel"><p class="muted">${players.length ? 'No finished matches yet.' : 'Nothing to show yet.'}</p></section>`;
-    }
+    if (!ms.length || !players.length) return { ms, players, rows: [] };
     const rows = players.map(p => ({ p, c: C.matchCosts(state, p, stats, tour) }));
     const sum = f => C.round2(rows.reduce((t, r) => t + f(r.c), 0));
     const hasOther = contribView !== 'exp' && rows.some(r => Math.abs(r.c.leagueOther) >= 0.005), hasCharge = contribView !== 'fee' && rows.some(r => r.c.charges > 0);
@@ -2981,6 +2980,14 @@
     const val = m => !m ? 0 : contribView === 'fee' ? m.league : contribView === 'exp' ? C.round2(m.total - m.league) : m.total;
     const rowTotal = c => contribView === 'fee' ? C.round2(Object.values(c.matches).reduce((t, m) => t + m.league, 0) + c.leagueOther)
       : contribView === 'exp' ? C.round2(Object.values(c.matches).reduce((t, m) => t + m.total - m.league, 0) + c.charges) : c.total;
+    return { ms, players, rows, sum, hasOther, hasCharge, val, rowTotal };
+  }
+
+  function viewContrib() {
+    const { ms, players, rows, sum, hasOther, hasCharge, val, rowTotal } = contribModel();
+    if (!rows.length) {
+      return `${pageHead('Contributions', 'What each player cost, match by match.')}<section class="panel"><p class="muted">${players.length ? 'No finished matches yet.' : 'Nothing to show yet.'}</p></section>`;
+    }
     const cell = m => {
       const v = val(m);
       if (!m || v <= 0) return `<td class="league-cell">${m && m.played ? '<span class="muted">0</span>' : '—'}</td>`;
@@ -2988,7 +2995,8 @@
       return `<td class="league-cell" title="${parts.join(' · ')}"><strong>${fmt(v)}</strong>${parts.length ? `<small class="muted" style="display:block">${parts.join(' · ')}</small>` : ''}</td>`;
     };
     const seg = `<div class="seg-tabs">${[['all', 'All'], ['fee', 'Match fee'], ['exp', 'Expenses']].map(([id, l]) => `<button class="seg-btn ${contribView === id ? 'on' : ''}" data-action="contrib-view" data-id="${id}">${l}</button>`).join('')}</div>`;
-    return `${pageHead('Contributions', 'What each player cost per match and training: league fee share, shared expenses, and breakfast, lunch and other items only some had.')}
+    return `${pageHead('Contributions', 'What each player cost per match and training: league fee share, shared expenses, and breakfast, lunch and other items only some had.',
+      isAdmin() ? `<div class="share-row"><button class="btn btn-gold" data-action="share-contrib">${IMAGE_ICON} Share as image</button></div>` : '')}
       <section class="panel">${seg}<div class="table-wrap"><table class="sheet-table">
         <thead><tr><th class="sticky">#</th><th class="sticky sticky-2">Player</th>
           ${ms.map(m => `<th class="day-col ${m.type}" title="${esc(m.label)}${m.opponent ? ' vs ' + esc(m.opponent) : ''}">${m.short}<small>${esc(m.opponent || m.desc || '')}</small></th>`).join('')}
@@ -3003,6 +3011,28 @@
           ${hasOther ? `<td>${fmt(sum(c => c.leagueOther))}</td>` : ''}${hasCharge ? `<td>${fmt(sum(c => c.charges))}</td>` : ''}
           <td>${fmt(sum(rowTotal))}</td></tr></tfoot>
       </table></div></section>`;
+  }
+
+  // The contributions table as a picture for the group, in whichever view (All / Match fee / Expenses) is open.
+  function contribImage() {
+    const { ms, rows, sum, hasOther, hasCharge, val, rowTotal } = contribModel();
+    const cell = v => v > 0 ? fmt(v) : '';
+    const cols = ms.map(m => ({ label: m.short, sub: m.opponent || m.desc || '', type: m.type }));
+    if (hasOther) cols.push({ label: 'League', sub: 'other', type: 'tour' });
+    if (hasCharge) cols.push({ label: 'Charges', sub: '', type: 'charge' });
+    return window.RFBalanceImage.renderTable({
+      viewLabel: { all: 'All contributions', fee: 'Match fee only', exp: 'Expenses only' }[contribView],
+      cols,
+      rows: rows.map(({ p, c }) => ({
+        name: p.name,
+        cells: [...ms.map(m => cell(val(c.matches[m.id]))), ...(hasOther ? [Math.abs(c.leagueOther) >= 0.005 ? fmt(c.leagueOther) : ''] : []), ...(hasCharge ? [cell(c.charges)] : [])],
+        total: fmt(rowTotal(c))
+      })),
+      totals: { cells: [...ms.map(m => fmt(sum(c => val(c.matches[m.id])))), ...(hasOther ? [fmt(sum(c => c.leagueOther))] : []), ...(hasCharge ? [fmt(sum(c => c.charges))] : [])], total: fmt(sum(rowTotal)) },
+      dateText: 'Updated ' + new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
+      link: location.host,
+      logoSrc: 'img/logo.jpeg'
+    });
   }
 
   function viewMoney() {
@@ -6761,6 +6791,23 @@ ${tabRows.map(r => {
       el.textContent = 'Creating…';
       try {
         showImageDialog(await balanceImage());
+      } catch (e) {
+        toast('Could not create the picture.');
+      } finally {
+        el.disabled = false;
+        el.innerHTML = label;
+      }
+    },
+    async 'share-contrib'(el) {
+      if (!isAdmin()) return;
+      const label = el.innerHTML;
+      el.disabled = true;
+      el.textContent = 'Creating…';
+      try {
+        showImageDialog(await contribImage(), {
+          title: 'Contributions picture', alt: 'Contributions per match', shareTitle: 'Red Falcons contributions',
+          fileName: () => `red-falcons-contributions-${today()}.png`
+        });
       } catch (e) {
         toast('Could not create the picture.');
       } finally {

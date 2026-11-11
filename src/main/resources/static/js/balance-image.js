@@ -1,7 +1,7 @@
 // Draws the shareable PNGs for the WhatsApp group: the team's balances and a match's Playing XI.
 // Input rows are already calculated by the app; this file only does layout and drawing.
 (function (root) {
-  const W = 1080;
+  let W = 1080;   // renderTable widens it for many columns while it draws, then puts it back
   const PAD = 64;
   const C = {
     bgTop: '#1c1c21', bgBottom: '#0e0e11', card: 'rgba(255,255,255,0.035)', line: 'rgba(255,255,255,0.08)',
@@ -742,5 +742,86 @@
     return new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
   }
 
-  root.RFBalanceImage = { render, renderXI, renderSquad, renderAwards };
+  /**
+   * The contributions table: a row per player, a column per match / training, a total at the end.
+   * @param {{label: string, sub: string, type: string}[]} o.cols
+   * @param {{name: string, cells: string[], total: string}[]} o.rows   cells are '' when there is nothing to show
+   * @param {{cells: string[], total: string}} o.totals
+   */
+  async function renderTable(o) {
+    await ensureFonts();
+    const logo = await loadImage(o.logoSrc);
+    const NAME_W = 280, COL_W = 132, TOTAL_W = 170, ROW_H = 68, HEAD_H = 92;
+    const width = Math.max(1080, PAD * 2 + NAME_W + o.cols.length * COL_W + TOTAL_W);
+    const headerH = 300, viewH = 70;
+    const tableTop = headerH + viewH;
+    const H = tableTop + HEAD_H + (o.rows.length + 1) * ROW_H + 24 + 150;
+    const prevW = W;
+    W = width;
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = W;
+      canvas.height = H;
+      const ctx = canvas.getContext('2d');
+      ctx.textBaseline = 'middle';
+      drawHeader(ctx, H, logo, 'CRICKET CLUB · CONTRIBUTIONS', o.dateText, headerH);
+
+      ctx.fillStyle = C.gold;
+      ctx.font = `800 22px ${BODY}`;
+      spaced(ctx, (o.viewLabel || '').toUpperCase(), PAD, headerH + 22, 3);
+
+      const colX = i => PAD + NAME_W + i * COL_W;
+      const totalX = PAD + NAME_W + o.cols.length * COL_W;
+      const right = x => x - 14;
+      // Column heads.
+      ctx.fillStyle = C.muted;
+      ctx.font = `700 22px ${BODY}`;
+      ctx.fillText('PLAYER', PAD + 16, tableTop + HEAD_H / 2);
+      ctx.textAlign = 'right';
+      o.cols.forEach((c, i) => {
+        ctx.fillStyle = c.type === 'match' ? C.gold : c.type === 'training' ? C.muted : C.goldLight;
+        ctx.font = `800 26px ${BODY}`;
+        ctx.fillText(c.label, right(colX(i) + COL_W), tableTop + 34);
+        if (c.sub) {
+          ctx.fillStyle = C.muted;
+          ctx.font = `600 18px ${BODY}`;
+          ctx.fillText(fit(ctx, c.sub, COL_W - 20), right(colX(i) + COL_W), tableTop + 66);
+        }
+      });
+      ctx.fillStyle = C.text;
+      ctx.font = `800 26px ${BODY}`;
+      ctx.fillText('TOTAL', right(totalX + TOTAL_W), tableTop + HEAD_H / 2);
+      ctx.textAlign = 'left';
+
+      const drawRow = (r, y, zebra, bold) => {
+        if (zebra) { ctx.fillStyle = C.card; roundRect(ctx, PAD, y, W - PAD * 2, ROW_H - 6, 14); ctx.fill(); }
+        const cy = y + (ROW_H - 6) / 2;
+        ctx.fillStyle = bold ? C.gold : C.text;
+        ctx.font = `${bold ? 800 : 700} 28px ${BODY}`;
+        ctx.fillText(fit(ctx, r.name, NAME_W - 30), PAD + 16, cy);
+        ctx.textAlign = 'right';
+        r.cells.forEach((t, i) => {
+          ctx.fillStyle = t ? (bold ? C.gold : C.text) : C.settled;
+          ctx.font = `${bold ? 800 : 600} 26px ${BODY}`;
+          ctx.fillText(t || '—', right(colX(i) + COL_W), cy);
+        });
+        ctx.fillStyle = bold ? C.goldLight : C.gold;
+        ctx.font = `800 30px ${BODY}`;
+        ctx.fillText(r.total, right(totalX + TOTAL_W), cy);
+        ctx.textAlign = 'left';
+      };
+      let y = tableTop + HEAD_H;
+      o.rows.forEach((r, i) => { drawRow(r, y, i % 2 === 0, false); y += ROW_H; });
+      ctx.fillStyle = C.line;
+      ctx.fillRect(PAD, y - 2, W - PAD * 2, 2);
+      drawRow({ name: 'Total', cells: o.totals.cells, total: o.totals.total }, y + 4, false, true);
+      y += ROW_H;
+      drawFooter(ctx, y + 24, 'Red Falcons', o.link || '');
+      return await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    } finally {
+      W = prevW;
+    }
+  }
+
+  root.RFBalanceImage = { renderTable, render, renderXI, renderSquad, renderAwards };
 })(this);
