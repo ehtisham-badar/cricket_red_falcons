@@ -331,7 +331,18 @@
     });
     charges(state).forEach(c => { out.charges += chargeOf(c, player.id); });
     const lc = tour.charges[player.id];
-    out.leagueOther = round2(((lc && lc.amount) || 0) - round2(leagueInMatches));
+    if (state.settings.roundUp) {
+      // Whole rupees: the match fees are rounded so they add up to the player's rounded league total (largest remainder).
+      const withFee = Object.values(out.matches).filter(m => m.league > 0);
+      let target = Math.min(Math.round(leagueInMatches), Math.round((lc && lc.amount) || 0));
+      withFee.forEach(m => { m.exact = m.league; m.league = Math.floor(m.league + 1e-9); target -= m.league; });
+      withFee.filter(m => m.exact - m.league > 1e-9).sort((a, b) => (b.exact - b.league) - (a.exact - a.league))
+        .forEach(m => { if (target > 0) { m.league += 1; target -= 1; } });
+      withFee.forEach(m => { m.total = round2(m.league + m.shared + m.items.reduce((t, x) => t + x.amount, 0)); });
+      leagueInMatches = withFee.reduce((t, m) => t + m.league, 0);
+    }
+    // Sum what is shown (each match's fee as displayed), so the matches plus the rest add up exactly.
+    out.leagueOther = round2(((lc && lc.amount) || 0) - Object.values(out.matches).reduce((t, m) => t + m.league, 0));
     out.trainings = round2(out.trainings);
     out.charges = round2(out.charges);
     out.total = round2(Object.values(out.matches).reduce((t, m) => t + m.total, 0) + out.leagueOther + out.charges);
