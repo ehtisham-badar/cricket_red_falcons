@@ -2991,18 +2991,17 @@
     const cell = m => {
       const v = val(m);
       if (!m || v <= 0) return `<td class="league-cell">${m && m.played ? '<span class="muted">0</span>' : '—'}</td>`;
-      const parts = contribView === 'fee' ? [] : [contribView === 'all' && m.league > 0 ? 'Match fee ' + fmt(m.league) : '', m.shared > 0 ? 'Shared ' + fmt(m.shared) : '', ...m.items.map(x => esc(x.item) + ' ' + fmt(x.amount))].filter(Boolean);
-      return `<td class="league-cell" title="${parts.join(' · ')}"><strong>${fmt(v)}</strong>${parts.length ? `<small class="muted" style="display:block">${parts.join(' · ')}</small>` : ''}</td>`;
+      return `<td class="league-cell"><strong>${fmt(v)}</strong></td>`;
     };
     const seg = `<div class="seg-tabs">${[['all', 'All'], ['fee', 'Match fee'], ['exp', 'Expenses']].map(([id, l]) => `<button class="seg-btn ${contribView === id ? 'on' : ''}" data-action="contrib-view" data-id="${id}">${l}</button>`).join('')}</div>`;
-    return `${pageHead('Contributions', 'What each player cost per match and training: league fee share, shared expenses, and breakfast, lunch and other items only some had.',
+    return `${pageHead('Contributions', 'What each player cost per match and training. Tap a player for the details.',
       isAdmin() ? `<div class="share-row"><button class="btn btn-gold" data-action="share-contrib">${IMAGE_ICON} Share as image</button></div>` : '')}
       <section class="panel">${seg}<div class="table-wrap"><table class="sheet-table">
         <thead><tr><th class="sticky">#</th><th class="sticky sticky-2">Player</th>
           ${ms.map(m => `<th class="day-col ${m.type}" title="${esc(m.label)}${m.opponent ? ' vs ' + esc(m.opponent) : ''}">${m.short}<small>${esc(m.opponent || m.desc || '')}</small></th>`).join('')}
           ${hasOther ? '<th class="day-col tour" title="League fee not tied to a played match: matches still to come, divided fee, rounding">League (other)</th>' : ''}${hasCharge ? '<th class="day-col charge">Charges</th>' : ''}
           <th>Total</th></tr></thead>
-        <tbody>${rows.map(({ p, c }, i) => `<tr><td class="sticky">${i + 1}</td><td class="sticky sticky-2 name-cell"><button class="pl-name" data-action="open-profile" data-id="${esc(p.id)}">${esc(p.name)}</button></td>
+        <tbody>${rows.map(({ p, c }, i) => `<tr data-action="open-contrib" data-id="${esc(p.id)}"><td class="sticky">${i + 1}</td><td class="sticky sticky-2 name-cell"><button class="pl-name">${esc(p.name)}</button></td>
           ${ms.map(m => cell(c.matches[m.id])).join('')}
           ${hasOther ? `<td class="league-cell">${Math.abs(c.leagueOther) >= 0.005 ? fmt(c.leagueOther) : '—'}</td>` : ''}${hasCharge ? `<td class="league-cell">${c.charges > 0 ? fmt(c.charges) : '—'}</td>` : ''}
           <td class="strong">${fmt(rowTotal(c))}</td></tr>`).join('')}</tbody>
@@ -5071,6 +5070,7 @@ ${tabRows.map(r => {
     let body = '';
     if (sheet.type === 'day') body = sheetDay();
     if (sheet.type === 'player') body = sheetPlayer();
+    if (sheet.type === 'contrib') body = sheetContrib();
     if (sheet.type === 'profile') body = sheetProfile();
     if (sheet.type === 'inbox') body = sheetInbox();
     if (sheet.type === 'scorecard') body = sheetMatchInfo();
@@ -5431,6 +5431,32 @@ ${tabRows.map(r => {
     return now > 0
       ? `<p class="adv-status due">Advance: <strong>${fmt(now)}</strong> to pay now (of ${fmt(advance)})</p>`
       : `<p class="adv-status">Advance of ${fmt(advance)} paid ✓</p>`;
+  }
+
+  // One player's contributions in full: for each match and training, the match fee, shared expenses and each item.
+  function sheetContrib() {
+    const p = state.players.find(x => x.id === sheet.id);
+    if (!p || !seesMoneyOf(p)) return '';
+    const c = C.matchCosts(state, p);
+    const days = C.days(state).filter(d => c.matches[d.id] && (d.type !== 'match' || matchVisible(d)));
+    const line = (label, amt) => `<li><span>${esc(label)}</span><strong>${fmt(amt)}</strong></li>`;
+    const card = d => {
+      const m = c.matches[d.id];
+      const lines = [m.league > 0 ? line('Match fee', m.league) : '', m.shared > 0 ? line('Shared expenses', m.shared) : '', ...m.items.map(x => line(x.item, x.amount))].filter(Boolean);
+      return `<section class="panel"><div class="panel-head"><h3>${esc(d.label)}${d.opponent ? ' · vs ' + esc(d.opponent) : d.desc ? ' · ' + esc(d.desc) : ''} <span class="muted">${fmt(m.total)}</span></h3>
+        <p class="muted">${[d.date ? formatDate(d.date) : '', m.played ? (d.type === 'match' ? 'Played' : 'Arrived') : 'Not played'].filter(Boolean).join(' · ')}</p></div>
+        <ul class="breakdown">${lines.length ? lines.join('') : '<li class="none">No cost</li>'}</ul></section>`;
+    };
+    const rest = [Math.abs(c.leagueOther) >= 0.005 ? line('League fee (matches still to come, rounding)', c.leagueOther) : '', c.charges > 0 ? line('Season charges', c.charges) : ''].filter(Boolean);
+    return `<header class="sheet-head">
+        <div><span class="day-kind">Contributions</span><h2>${esc(p.name) || 'Unnamed'}</h2></div>
+        <button class="icon-btn" data-action="close-sheet" aria-label="Close">${X_ICON}</button>
+      </header>
+      <div class="sheet-body">
+        <div class="net-hero zero"><span>Total cost</span><strong>${fmt(c.total)}</strong><small>Match fee, shared expenses and items such as breakfast and lunch</small></div>
+        ${days.length ? days.map(card).join('') : '<section class="panel"><p class="muted">No finished matches or trainings yet.</p></section>'}
+        ${rest.length ? `<section class="panel"><div class="panel-head"><h3>Other</h3></div><ul class="breakdown">${rest.join('')}</ul></section>` : ''}
+      </div>`;
   }
 
   function sheetPlayer() {
@@ -5929,6 +5955,7 @@ ${tabRows.map(r => {
       } catch (e) { toast(e.message || 'Could not remove the photo.'); }
     },
     'open-profile'(el) { sheet = { type: 'profile', id: el.dataset.id }; render(); },
+    'open-contrib'(el) { sheet = { type: 'contrib', id: el.dataset.id }; render(); },
     'open-player'(el) { sheet = { type: 'player', id: el.dataset.id }; render(); },
     'open-day'(el) { sheet = { type: 'day', dayId: el.dataset.id }; render(); },
     'close-sheet'() { sheet = null; render(); },

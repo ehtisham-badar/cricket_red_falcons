@@ -2697,3 +2697,6 @@ a.btn { text-decoration: none; }
 .acc-kv dd { margin: 0; overflow-wrap: anywhere; }
 .acc-sheet-btns { margin-top: 14px; }
 @media (max-width: 640px) { .acc-sheet-head { flex-direction: column; text-align: center; } .acc-sheet-head .acc-flags { justify-content: center; } }
+
+/* Contributions detail: label on the left, amount on the right */
+.sheet .breakdown li:has(> span):has(> strong) { display: flex; justify-content: space-between; gap: 12px; }
