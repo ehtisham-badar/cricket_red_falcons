@@ -319,7 +319,11 @@
         const only = sharedOf(state, e);
         if (only && only.includes(player.id) && amt > 0) items.push({ item: e.item || 'Expense', amount: split(amt, only.length, state.settings.roundUp) });
       });
-      if (d.type === 'match' && perMatch && tour.fee > 0 && s.payers > 0 && pays(state, player, d.id)) league = tour.perMatch / s.payers;
+      if (d.type === 'match' && tour.fee > 0) {
+        if (perMatch) { if (s.payers > 0 && pays(state, player, d.id)) league = tour.perMatch / s.payers; }
+        // Divided fee: each divider's equal share, spread over the league's matches.
+        else if (dividesMoney(player)) league = tour.fee / state.players.filter(dividesMoney).length / leagueMatchCount(state);
+      }
       leagueInMatches += league;
       const total = round2(league + shared + items.reduce((t, x) => t + x.amount, 0));
       if (d.type !== 'match') out.trainings += total;

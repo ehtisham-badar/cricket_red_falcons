@@ -2965,6 +2965,7 @@
   }
 
   // ---------- Contributions: what each player cost, match by match ----------
+  let contribView = 'all';   // 'all' | 'fee' (the league match money only) | 'exp' (expenses only)
   function viewContrib() {
     const stats = C.allStats(state);
     const tour = C.tournamentStats(state, stats);
@@ -2975,14 +2976,20 @@
     }
     const rows = players.map(p => ({ p, c: C.matchCosts(state, p, stats, tour) }));
     const sum = f => C.round2(rows.reduce((t, r) => t + f(r.c), 0));
-    const hasOther = rows.some(r => Math.abs(r.c.leagueOther) >= 0.005), hasCharge = rows.some(r => r.c.charges > 0);
+    const hasOther = contribView !== 'exp' && rows.some(r => Math.abs(r.c.leagueOther) >= 0.005), hasCharge = contribView !== 'fee' && rows.some(r => r.c.charges > 0);
+    // The view picks what the cells and totals count: everything, only the league match money, or only expenses.
+    const val = m => !m ? 0 : contribView === 'fee' ? m.league : contribView === 'exp' ? C.round2(m.total - m.league) : m.total;
+    const rowTotal = c => contribView === 'fee' ? C.round2(Object.values(c.matches).reduce((t, m) => t + m.league, 0) + c.leagueOther)
+      : contribView === 'exp' ? C.round2(Object.values(c.matches).reduce((t, m) => t + m.total - m.league, 0) + c.charges) : c.total;
     const cell = m => {
-      if (!m || m.total <= 0) return `<td class="league-cell">${m && m.played ? '<span class="muted">0</span>' : '—'}</td>`;
-      const parts = [m.league > 0 ? 'League ' + fmt(m.league) : '', m.shared > 0 ? 'Shared ' + fmt(m.shared) : '', ...m.items.map(x => esc(x.item) + ' ' + fmt(x.amount))].filter(Boolean);
-      return `<td class="league-cell" title="${parts.join(' · ')}"><strong>${fmt(m.total)}</strong><small class="muted" style="display:block">${parts.join(' · ')}</small></td>`;
+      const v = val(m);
+      if (!m || v <= 0) return `<td class="league-cell">${m && m.played ? '<span class="muted">0</span>' : '—'}</td>`;
+      const parts = contribView === 'fee' ? [] : [contribView === 'all' && m.league > 0 ? 'Match fee ' + fmt(m.league) : '', m.shared > 0 ? 'Shared ' + fmt(m.shared) : '', ...m.items.map(x => esc(x.item) + ' ' + fmt(x.amount))].filter(Boolean);
+      return `<td class="league-cell" title="${parts.join(' · ')}"><strong>${fmt(v)}</strong>${parts.length ? `<small class="muted" style="display:block">${parts.join(' · ')}</small>` : ''}</td>`;
     };
+    const seg = `<div class="seg-tabs">${[['all', 'All'], ['fee', 'Match fee'], ['exp', 'Expenses']].map(([id, l]) => `<button class="seg-btn ${contribView === id ? 'on' : ''}" data-action="contrib-view" data-id="${id}">${l}</button>`).join('')}</div>`;
     return `${pageHead('Contributions', 'What each player cost per match and training: league fee share, shared expenses, and breakfast, lunch and other items only some had.')}
-      <section class="panel"><div class="table-wrap"><table class="sheet-table">
+      <section class="panel">${seg}<div class="table-wrap"><table class="sheet-table">
         <thead><tr><th class="sticky">#</th><th class="sticky sticky-2">Player</th>
           ${ms.map(m => `<th class="day-col ${m.type}" title="${esc(m.label)}${m.opponent ? ' vs ' + esc(m.opponent) : ''}">${m.short}<small>${esc(m.opponent || m.desc || '')}</small></th>`).join('')}
           ${hasOther ? '<th class="day-col tour" title="League fee not tied to a played match: matches still to come, divided fee, rounding">League (other)</th>' : ''}${hasCharge ? '<th class="day-col charge">Charges</th>' : ''}
@@ -2990,11 +2997,11 @@
         <tbody>${rows.map(({ p, c }, i) => `<tr><td class="sticky">${i + 1}</td><td class="sticky sticky-2 name-cell"><button class="pl-name" data-action="open-profile" data-id="${esc(p.id)}">${esc(p.name)}</button></td>
           ${ms.map(m => cell(c.matches[m.id])).join('')}
           ${hasOther ? `<td class="league-cell">${Math.abs(c.leagueOther) >= 0.005 ? fmt(c.leagueOther) : '—'}</td>` : ''}${hasCharge ? `<td class="league-cell">${c.charges > 0 ? fmt(c.charges) : '—'}</td>` : ''}
-          <td class="strong">${fmt(c.total)}</td></tr>`).join('')}</tbody>
+          <td class="strong">${fmt(rowTotal(c))}</td></tr>`).join('')}</tbody>
         <tfoot><tr><td class="sticky"></td><td class="sticky sticky-2">Total</td>
-          ${ms.map(m => `<td>${fmt(sum(c => (c.matches[m.id] || {}).total || 0))}</td>`).join('')}
+          ${ms.map(m => `<td>${fmt(sum(c => val(c.matches[m.id])))}</td>`).join('')}
           ${hasOther ? `<td>${fmt(sum(c => c.leagueOther))}</td>` : ''}${hasCharge ? `<td>${fmt(sum(c => c.charges))}</td>` : ''}
-          <td>${fmt(sum(c => c.total))}</td></tr></tfoot>
+          <td>${fmt(sum(rowTotal))}</td></tr></tfoot>
       </table></div></section>`;
   }
 
@@ -6401,6 +6408,7 @@ ${tabRows.map(r => {
       render();
     },
     'hpl-match'(el) { sheet = { type: 'hpl-match', id: el.dataset.id }; render(); },
+    'contrib-view'(el) { contribView = el.dataset.id; render(); },
     'hpl-view'(el) { hplView = el.dataset.id; render(); },
     'tour-view'(el) { tourView = el.dataset.id; render(); },
     'hpl-team'(el) {
