@@ -4422,6 +4422,7 @@
 
     return `
       ${pageHead('Team', `${state.players.length} in the squad`, admin && state.players.length ? `<div class="share-row">
+          ${state.players.some(C.dividesMoney) ? '<button class="btn btn-ghost" data-action="divide-off-all">Turn off Divide money for everyone</button>' : ''}
           <button class="btn btn-gold" data-action="share-squad">${IMAGE_ICON} Send squad list to management</button></div>` : '')}
       <div class="players-layout">
         <section class="panel">
@@ -6759,6 +6760,15 @@ ${tabRows.map(r => {
       const p = findPlayer(el.dataset.id);
       if (!p || !isAdmin()) return;
       p.tournament = !C.inTournament(p);
+      commit();
+    },
+    async 'divide-off-all'() {
+      if (!isAdmin()) return;
+      const n = state.players.filter(C.dividesMoney).length;
+      if (!n) return;
+      const ok = await confirmDialog('Turn off Divide money for everyone?', `${n} player${n === 1 ? '' : 's'} will no longer share the league fee equally. The fee is then charged per match, to the Playing XI of each finished match.`, 'Turn off');
+      if (!ok) return;
+      state.players.forEach(p => { p.divide = false; });
       commit();
     },
     'toggle-divide'(el) {
