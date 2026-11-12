@@ -3528,7 +3528,7 @@
     return `<article class="st-card ${twelfthMan ? 'twelfth' : ''} ${folded ? 'folded' : ''}">
       <button class="st-head" data-action="stat-fold" data-m="${esc(d.id)}" data-p="${esc(p.id)}" aria-expanded="${!folded}" title="${folded ? 'Show' : 'Minimise'} ${esc(p.name)}’s stats">
         <span class="bat-pos ${pos <= 2 && !twelfthMan ? 'opener' : ''}">${twelfthMan ? '12' : pos}</span>
-        <span class="pname"><strong>${esc(p.name)}</strong><small>${twelfthMan ? `12th man · ${C.twelfthPlays(state, d.id) ? 'batted or bowled — shares the costs' : 'not charged unless he bats or bowls'}${[bat, bowl, field].filter(x => x && x !== 'Did not bat').length ? ' · ' + esc([bat, bowl, field].filter(x => x && x !== 'Did not bat').join('  ·  ')) : ''}` : esc([bat, bowl, field].filter(Boolean).join('  ·  '))}</small></span>
+        <span class="pname"><strong>${esc(p.name)}</strong><small>${twelfthMan ? `12th man · ${d.twelfthShares ? 'shares the costs (switched on)' : 'not charged'}${[bat, bowl, field].filter(x => x && x !== 'Did not bat').length ? ' · ' + esc([bat, bowl, field].filter(x => x && x !== 'Did not bat').join('  ·  ')) : ''}` : esc([bat, bowl, field].filter(Boolean).join('  ·  '))}</small></span>
         <span class="st-fold-ico">${icon(folded ? '<path d="m6 9 6 6 6-6"/>' : '<path d="m18 15-6-6-6 6"/>', 18)}</span>
       </button>
       ${folded ? '' : `<div class="st-body">`}
@@ -5357,13 +5357,12 @@ ${tabRows.map(r => {
         ${d.test ? '<p class="test-note">A generated test match: it never changes anyone’s balance or the league fee.</p>' : ''}
         ${isMatch ? leagueLine(d, s) : ''}
         ${isMatch ? matchCostBox(d, s) : ''}
-        ${twelfthId ? `<p class="twelfth-line">12th man: <strong>${esc(playerName(twelfthId))}</strong> · ${C.twelfthPlays(state, d.id)
-          ? 'batted or bowled, so the costs are split among all 12'
-          : d.twelfthShares ? 'shares the expenses (but not the league fee) because you included him'
-          : 'not charged — only if he bats or bowls does he share the costs (÷12)'}</p>` : ''}
-        ${isMatch && !d.test && twelfthId && isAdmin() ? `<div class="twelfth-opt"><span><strong>Share the expenses with the 12th man</strong>
-          <small class="muted">${d.twelfthShares ? `Expenses like water are split among ${s.expPayers} players, including ${esc(playerName(twelfthId))}.` : 'Off: the expenses are split among the players who played.'}</small></span>
-          <button class="switch ${d.twelfthShares ? 'on' : ''}" role="switch" aria-checked="${!!d.twelfthShares}" data-action="twelfth-shares" data-id="${esc(d.id)}" aria-label="Share the expenses with the 12th man"><span></span></button></div>` : ''}
+        ${twelfthId ? `<p class="twelfth-line">12th man: <strong>${esc(playerName(twelfthId))}</strong> · ${d.twelfthShares
+          ? 'shares the match fee and the expenses (÷12) because you switched it on'
+          : 'not charged — the match fee and expenses are split among the 11 who played'}</p>` : ''}
+        ${isMatch && !d.test && twelfthId && isAdmin() ? `<div class="twelfth-opt"><span><strong>Share the match fee and expenses with the 12th man</strong>
+          <small class="muted">${d.twelfthShares ? `The match fee and expenses are split among ${s.payers} players, including ${esc(playerName(twelfthId))}.` : 'Off: they are split among the players who played.'}</small></span>
+          <button class="switch ${d.twelfthShares ? 'on' : ''}" role="switch" aria-checked="${!!d.twelfthShares}" data-action="twelfth-shares" data-id="${esc(d.id)}" aria-label="Share the match fee and expenses with the 12th man"><span></span></button></div>` : ''}
         ${isMatch && s.n > 0 ? battingSection(d) : ''}
         <h3 class="sub first">Expenses <span class="muted">${fmt(s.amount)}</span></h3>
         ${expenseRows(d)}
@@ -6235,7 +6234,7 @@ ${tabRows.map(r => {
         if (only && C.num(e.amount) > 0) parts.push(`${e.item || 'an expense'} ${fmt(C.num(e.amount))} ÷ ${only.length} chosen players`);
       });
       const ok = await confirmDialog(`Finish ${d.label}?`,
-        `${parts.length ? parts.join(', and ') + ' — charged' : 'Charged'} to the ${s.payers} who played${state.twelfth[d.id] ? (C.twelfthPlays(state, d.id) ? ' (the 12th man batted or bowled, so he’s included)' : ' (not the 12th man — he only fielded)') : ''}. Balances update straight away; you can reopen it if needed.`,
+        `${parts.length ? parts.join(', and ') + ' — charged' : 'Charged'} to the ${s.payers} who played${state.twelfth[d.id] ? (d.twelfthShares ? ' (including the 12th man, as you switched on)' : ' (not the 12th man)') : ''}. Balances update straight away; you can reopen it if needed.`,
         'Finish & charge');
       if (!ok) return;
       m.finished = true;

@@ -111,7 +111,7 @@
     return round2(num(c.amount) * (c.players || []).filter(id => state.players.some(p => p.id === id)).length);
   }
 
-  // The 12th man shares a match's costs once he bats or bowls in it; fielding as a substitute doesn't count.
+  // Whether the 12th man batted or bowled in a match (for the batting order; it no longer decides who is charged).
   // Without his stats (they may be hidden from viewers) the server's twelfthPlayed flag on the match says so.
   function twelfthPlays(state, dayId) {
     const id = state.twelfth && state.twelfth[dayId];
@@ -124,18 +124,16 @@
     return !!(m && m.twelfthPlayed);
   }
 
-  // Whether a player pays for a day: they attended / played, or they're a 12th man who batted or bowled.
+  // Whether a player pays for a day (the league fee and the expenses): they attended / played, or they are the
+  // 12th man and the admin switched "share with the 12th man" on for that match. Batting or bowling doesn't matter.
   function pays(state, player, dayId) {
     if (player.att && player.att[dayId]) return true;
-    return !!(state.twelfth && state.twelfth[dayId] === player.id && twelfthPlays(state, dayId));
-  }
-
-  // Who shares a day's expenses: whoever pays, plus the 12th man when the admin chose to include him for that match.
-  function expPays(state, player, dayId) {
-    if (pays(state, player, dayId)) return true;
     const m = (state.matches || []).find(x => x.id === dayId);
     return !!(m && m.twelfthShares && state.twelfth && state.twelfth[dayId] === player.id);
   }
+
+  // Who shares a day's expenses: the same people as the league fee.
+  const expPays = pays;
 
   // n is who attended (the XI for a match); payers is who shares the league fee (the XI, plus a 12th man who played);
   // expPayers is who shares the expenses (the same, plus the 12th man when the admin includes him).
