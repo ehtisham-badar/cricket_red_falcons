@@ -67,15 +67,31 @@ public class NewsService {
     @Transactional
     public void seedNewCaptainOnce() {
         if (settings.existsById(CAPTAIN_SEEDED)) return;
-        NewsPost post = new NewsPost(UUID.randomUUID().toString(), "Ehtisham Badar is our new captain", "Team",
-                "Red Falcons have a new captain.\n"
-                        + "Ehtisham Badar takes over the captaincy from today.\n"
-                        + "Congratulations, Ehtisham, and best of luck leading the team. Let's back our skipper all season!",
-                false, Instant.now().toString());
+        NewsPost post = new NewsPost(UUID.randomUUID().toString(), CAPTAIN_TITLE, CAPTAIN_TAG, CAPTAIN_BODY,
+                true, Instant.now().toString());
         players.findAll().stream().filter(p -> NameMatch.norm(p.getName()).equals("ehtisham badar")).findFirst()
                 .ifPresent(p -> post.setPlayerId(p.getId()));
         posts.save(post);
         settings.save(new Setting(CAPTAIN_SEEDED, "true"));
+        settings.save(new Setting(CAPTAIN_REVAMPED, "true"));
+    }
+
+    private static final String CAPTAIN_TITLE = "Ehtisham Badar – New Captain of Red Falcons";
+    private static final String CAPTAIN_TAG = "New Captain";
+    private static final String CAPTAIN_BODY = "Red Falcons have a new captain.\n"
+            + "Ehtisham Badar is the new captain of Red Falcons, taking over the captaincy from today.\n"
+            + "Congratulations, Ehtisham, and best of luck leading the team. Let's back our skipper all season!";
+    private static final String CAPTAIN_REVAMPED = "newsNewCaptainRevamped";
+
+    /** Gives the already-published captain post its final headline, tag and text, and pins it, once. */
+    @EventListener(ApplicationReadyEvent.class)
+    @Transactional
+    public void reviseCaptainPostOnce() {
+        if (settings.existsById(CAPTAIN_REVAMPED) || !settings.existsById(CAPTAIN_SEEDED)) return;
+        posts.findAll().stream().filter(n -> "Ehtisham Badar is our new captain".equals(n.getTitle())).forEach(n -> {
+            n.edit(CAPTAIN_TITLE, CAPTAIN_TAG, CAPTAIN_BODY, true, Instant.now().toString());
+        });
+        settings.save(new Setting(CAPTAIN_REVAMPED, "true"));
     }
 
     private static final String CAPTAIN_LINKED = "newsNewCaptainPlayerLinked";

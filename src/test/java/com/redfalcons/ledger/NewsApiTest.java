@@ -37,7 +37,7 @@ class NewsApiTest {
         String list = send("GET", "/api/news", null, null).body();
         assertThat(list).contains("HPL – Official Cricket Rules").contains("\"tag\":\"Rules\"").contains("\"pinned\":true")
                 .contains("Each bowler can bowl a maximum of 4 overs");
-        String rulesId = list.replaceAll("(?s).*?\"id\":\"([^\"]+)\".*", "$1");
+        String rulesId = list.replaceAll("(?s).*\"id\":\"([^\"]+)\",\"title\":\"HPL – Official.*", "$1");
 
         String draft = "{\"title\":\"Kit collection\",\"tag\":\"Team\",\"body\":\"Friday 6 pm at the ground.\"}";
         assertThat(send("POST", "/api/news", draft, null).statusCode()).isEqualTo(403);

@@ -807,6 +807,21 @@
       ctx.beginPath();
       ctx.arc(cx, cy, r + 4, 0, Math.PI * 2);
       ctx.stroke();
+      if (/captain/i.test(o.tag || '')) {   // a gold "C" armband badge on the picture
+        const bx = cx + r * 0.72, by = cy + r * 0.72;
+        ctx.fillStyle = C.red;
+        ctx.beginPath();
+        ctx.arc(bx, by, 44, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.lineWidth = 6;
+        ctx.strokeStyle = C.gold;
+        ctx.stroke();
+        ctx.fillStyle = C.goldLight;
+        ctx.font = `76px ${HEAD}`;
+        ctx.textAlign = 'center';
+        ctx.fillText('C', bx, by + 4);
+        ctx.textAlign = 'left';
+      }
     }
     const tg = ctx.createLinearGradient(0, titleY0, 0, titleY0 + titleLines.length * TL);
     tg.addColorStop(0, C.goldLight);
