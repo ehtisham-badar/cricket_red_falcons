@@ -2700,3 +2700,5 @@ a.btn { text-decoration: none; }
 
 /* Contributions detail: label on the left, amount on the right */
 .sheet .breakdown li:has(> span):has(> strong) { display: flex; justify-content: space-between; gap: 12px; }
+
+.news-share { margin-top: 14px; }

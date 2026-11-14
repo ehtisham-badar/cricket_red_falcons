@@ -748,6 +748,76 @@
    * @param {{name: string, cells: string[], total: string}[]} o.rows   cells are '' when there is nothing to show
    * @param {{cells: string[], total: string}} o.totals
    */
+  // A news post as a picture: tag, headline and the text (numbered lists keep their numbers).
+  async function renderNews(o) {
+    await ensureFonts();
+    const logo = await loadImage(o.logoSrc);
+    const headerH = 290;
+    const colW = W - PAD * 2;
+    const measure = document.createElement('canvas').getContext('2d');
+    const wrap = (text, font, maxW) => {
+      measure.font = font;
+      const lines = [];
+      let line = '';
+      String(text).split(/\s+/).filter(Boolean).forEach(w => {
+        const t = line ? line + ' ' + w : w;
+        if (!line || measure.measureText(t).width <= maxW) line = t; else { lines.push(line); line = w; }
+      });
+      if (line) lines.push(line);
+      return lines;
+    };
+    const TITLE_F = `76px ${HEAD}`, BODY_F = `600 34px ${BODY}`;
+    const titleLines = wrap(o.title, TITLE_F, colW - 20).slice(0, 4);
+    const paras = String(o.body || '').split('\n').map(l => l.trim()).filter(Boolean)
+      .map(l => wrap(l, BODY_F, colW - 20));
+    const TL = 88, BL = 48, PG = 22;
+    const bodyH = paras.reduce((t, p) => t + p.length * BL + PG, 0);
+    const titleY0 = headerH + 120;
+    const bodyTop = titleY0 + titleLines.length * TL + 20;
+    const H = bodyTop + bodyH + 190;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    ctx.textBaseline = 'middle';
+    drawHeader(ctx, H, logo, '', '', headerH);
+
+    ctx.fillStyle = C.gold;
+    ctx.font = `800 26px ${BODY}`;
+    spaced(ctx, (o.tag || 'TEAM NEWS').toUpperCase(), PAD + 4, headerH + 20, 5);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = C.muted;
+    ctx.font = `700 22px ${BODY}`;
+    ctx.fillText(o.dateText || '', W - PAD - 4, headerH + 20);
+    ctx.textAlign = 'left';
+
+    const tg = ctx.createLinearGradient(0, titleY0, 0, titleY0 + titleLines.length * TL);
+    tg.addColorStop(0, C.goldLight);
+    tg.addColorStop(1, C.gold);
+    ctx.fillStyle = tg;
+    ctx.font = TITLE_F;
+    titleLines.forEach((ln, i) => ctx.fillText(ln, PAD + 4, titleY0 + i * TL + 20));
+
+    let y = bodyTop + BL / 2;
+    ctx.fillStyle = C.text;
+    ctx.font = BODY_F;
+    paras.forEach(lines => {
+      lines.forEach(ln => { ctx.fillText(ln, PAD + 4, y); y += BL; });
+      y += PG;
+    });
+
+    const fy = y + 30;
+    ctx.fillStyle = C.line;
+    ctx.fillRect(PAD, fy, colW, 2);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = C.gold;
+    ctx.font = `800 28px ${BODY}`;
+    ctx.fillText(o.link || '', W / 2, fy + 50);
+    ctx.textAlign = 'left';
+    return new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+  }
+
   async function renderTable(o) {
     await ensureFonts();
     const logo = await loadImage(o.logoSrc);
@@ -823,5 +893,5 @@
     }
   }
 
-  root.RFBalanceImage = { renderTable, render, renderXI, renderSquad, renderAwards };
+  root.RFBalanceImage = { renderTable, render, renderXI, renderSquad, renderAwards, renderNews };
 })(this);

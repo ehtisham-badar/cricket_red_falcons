@@ -1273,6 +1273,7 @@
       </header>
       <h3 class="news-title">${esc(n.title)}</h3>
       <div class="news-body">${newsBody(n.body)}</div>
+      <div class="news-share"><button class="btn btn-whatsapp small" data-action="news-share" data-id="${esc(n.id)}">${WA_ICON} Share as image</button></div>
     </article>`;
     return `${pageHead('News', 'League rules and team updates.',
         admin && !newsDraft ? `<button class="btn btn-primary" data-action="news-new">${icon('<path d="M12 5v14M5 12h14"/>', 18)} Add news</button>` : '')}
@@ -6524,6 +6525,27 @@ ${tabRows.map(r => {
       if (!n || !isAdmin()) return;
       newsDraft = { id: n.id, title: n.title, tag: n.tag, body: n.body, pinned: n.pinned };
       render();
+    },
+    async 'news-share'(el) {
+      const n = (news || []).find(x => x.id === el.dataset.id);
+      if (!n) return;
+      const label = el.innerHTML;
+      el.disabled = true;
+      el.textContent = 'Creating…';
+      try {
+        showImageDialog(await window.RFBalanceImage.renderNews({
+          title: n.title, tag: n.tag, body: n.body, link: location.host, logoSrc: 'img/logo.jpeg',
+          dateText: new Date(n.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+        }), {
+          title: 'Share news', alt: n.title, shareTitle: n.title,
+          fileName: () => `red-falcons-news-${today()}.png`
+        });
+      } catch (e) {
+        toast('Could not create the picture.');
+      } finally {
+        el.disabled = false;
+        el.innerHTML = label;
+      }
     },
     'news-cancel'() { newsDraft = null; render(); },
     async 'news-pin'(el) {
