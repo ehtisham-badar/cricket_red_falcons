@@ -57,6 +57,21 @@ public class NewsService {
         settings.save(new Setting(SEEDED, "true"));
     }
 
+    private static final String CAPTAIN_SEEDED = "newsNewCaptainSeeded";
+
+    /** Announces Ehtisham Badar as the new captain, once (deleting the post later doesn't bring it back). */
+    @EventListener(ApplicationReadyEvent.class)
+    @Transactional
+    public void seedNewCaptainOnce() {
+        if (settings.existsById(CAPTAIN_SEEDED)) return;
+        posts.save(new NewsPost(UUID.randomUUID().toString(), "Ehtisham Badar is our new captain", "Team",
+                "Red Falcons have a new captain.\n"
+                        + "Ehtisham Badar takes over the captaincy from today.\n"
+                        + "Congratulations, Ehtisham, and best of luck leading the team. Let's back our skipper all season!",
+                false, Instant.now().toString()));
+        settings.save(new Setting(CAPTAIN_SEEDED, "true"));
+    }
+
     /** Pinned first, then newest first. */
     @Transactional(readOnly = true)
     public List<NewsPost> list() {
