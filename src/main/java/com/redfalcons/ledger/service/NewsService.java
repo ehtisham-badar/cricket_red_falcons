@@ -3,6 +3,7 @@ package com.redfalcons.ledger.service;
 import com.redfalcons.ledger.model.NewsPost;
 import com.redfalcons.ledger.model.Setting;
 import com.redfalcons.ledger.repo.NewsPostRepository;
+import com.redfalcons.ledger.repo.PlayerRepository;
 import com.redfalcons.ledger.repo.SettingRepository;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -40,8 +41,10 @@ public class NewsService {
 
     private final NewsPostRepository posts;
     private final SettingRepository settings;
+    private final PlayerRepository players;
 
-    public NewsService(NewsPostRepository posts, SettingRepository settings) {
+    public NewsService(NewsPostRepository posts, SettingRepository settings, PlayerRepository players) {
+        this.players = players;
         this.posts = posts;
         this.settings = settings;
     }
@@ -64,11 +67,14 @@ public class NewsService {
     @Transactional
     public void seedNewCaptainOnce() {
         if (settings.existsById(CAPTAIN_SEEDED)) return;
-        posts.save(new NewsPost(UUID.randomUUID().toString(), "Ehtisham Badar is our new captain", "Team",
+        NewsPost post = new NewsPost(UUID.randomUUID().toString(), "Ehtisham Badar is our new captain", "Team",
                 "Red Falcons have a new captain.\n"
                         + "Ehtisham Badar takes over the captaincy from today.\n"
                         + "Congratulations, Ehtisham, and best of luck leading the team. Let's back our skipper all season!",
-                false, Instant.now().toString()));
+                false, Instant.now().toString());
+        players.findAll().stream().filter(p -> NameMatch.norm(p.getName()).equals("ehtisham badar")).findFirst()
+                .ifPresent(p -> post.setPlayerId(p.getId()));
+        posts.save(post);
         settings.save(new Setting(CAPTAIN_SEEDED, "true"));
     }
 

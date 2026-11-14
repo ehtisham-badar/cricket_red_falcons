@@ -25,9 +25,9 @@ public class NewsController {
     public record Draft(String title, String tag, String body, Boolean pinned) {
     }
 
-    public record Row(String id, String title, String tag, String body, boolean pinned, String createdAt, String updatedAt) {
+    public record Row(String id, String title, String tag, String body, boolean pinned, String createdAt, String updatedAt, String playerId) {
         static Row of(NewsPost p) {
-            return new Row(p.getId(), p.getTitle(), p.getTag(), p.getBody(), p.isPinned(), p.getCreatedAt(), p.getUpdatedAt());
+            return new Row(p.getId(), p.getTitle(), p.getTag(), p.getBody(), p.isPinned(), p.getCreatedAt(), p.getUpdatedAt(), p.getPlayerId());
         }
     }
 

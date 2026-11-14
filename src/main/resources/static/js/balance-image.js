@@ -772,7 +772,8 @@
       .map(l => wrap(l, BODY_F, colW - 20));
     const TL = 88, BL = 48, PG = 22;
     const bodyH = paras.reduce((t, p) => t + p.length * BL + PG, 0);
-    const titleY0 = headerH + 120;
+    const PH = o.photo ? 300 : 0;   // the player's picture, centred under the header
+    const titleY0 = headerH + 120 + (PH ? PH + 30 : 0);
     const bodyTop = titleY0 + titleLines.length * TL + 20;
     const H = bodyTop + bodyH + 190;
 
@@ -792,6 +793,21 @@
     ctx.fillText(o.dateText || '', W - PAD - 4, headerH + 20);
     ctx.textAlign = 'left';
 
+    if (PH) {
+      const cx = W / 2, cy = headerH + 70 + PH / 2, r = PH / 2;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.clip();
+      const k = Math.max(PH / o.photo.width, PH / o.photo.height);
+      ctx.drawImage(o.photo, cx - o.photo.width * k / 2, cy - o.photo.height * k / 2, o.photo.width * k, o.photo.height * k);
+      ctx.restore();
+      ctx.lineWidth = 8;
+      ctx.strokeStyle = C.gold;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r + 4, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     const tg = ctx.createLinearGradient(0, titleY0, 0, titleY0 + titleLines.length * TL);
     tg.addColorStop(0, C.goldLight);
     tg.addColorStop(1, C.gold);

@@ -29,6 +29,10 @@ public class NewsPost {
 
     private boolean pinned;
 
+    /** The squad player this post is about; their profile picture shows on the post (null for none). */
+    @Column(name = "player_id", length = 64)
+    private String playerId;
+
     protected NewsPost() {
     }
 
@@ -51,6 +55,8 @@ public class NewsPost {
         this.pinned = pinned;
     }
 
+    public void setPlayerId(String playerId) { this.playerId = playerId; }
+    public String getPlayerId() { return playerId; }
     public String getId() { return id; }
     public String getTitle() { return title; }
     public String getTag() { return tag; }

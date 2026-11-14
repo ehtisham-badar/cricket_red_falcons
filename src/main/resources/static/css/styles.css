@@ -2702,3 +2702,4 @@ a.btn { text-decoration: none; }
 .sheet .breakdown li:has(> span):has(> strong) { display: flex; justify-content: space-between; gap: 12px; }
 
 .news-share { margin-top: 14px; }
+.news-photo { margin: 6px 0 12px; }

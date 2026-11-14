@@ -1234,6 +1234,9 @@
     return blocks.map(b => b.list ? `<ol class="news-list">${b.list.map(x => `<li>${x}</li>`).join('')}</ol>` : `<p>${b.p}</p>`).join('');
   }
 
+  // The squad player a post is about, when they have a profile picture.
+  const newsPlayer = n => { const p = n.playerId && (state.players || []).find(x => x.id === n.playerId); return p && p.photoAt ? p : null; };
+
   function newsEditor() {
     const d = newsDraft;
     return `<section class="panel news-editor">
@@ -1271,6 +1274,7 @@
           <button class="icon-btn danger" data-action="news-delete" data-id="${esc(n.id)}" aria-label="Delete ${esc(n.title)}">${X_ICON}</button>
         </span>` : ''}
       </header>
+      ${newsPlayer(n) ? `<div class="news-photo">${avatar(newsPlayer(n), 120)}</div>` : ''}
       <h3 class="news-title">${esc(n.title)}</h3>
       <div class="news-body">${newsBody(n.body)}</div>
       <div class="news-share"><button class="btn btn-whatsapp small" data-action="news-share" data-id="${esc(n.id)}">${WA_ICON} Share as image</button></div>
@@ -6533,8 +6537,13 @@ ${tabRows.map(r => {
       el.disabled = true;
       el.textContent = 'Creating…';
       try {
+        let photo = null;
+        const pl = newsPlayer(n);
+        if (pl) {
+          try { photo = await createImageBitmap(await (await fetch(photoUrl(pl))).blob()); } catch { /* picture without the photo */ }
+        }
         showImageDialog(await window.RFBalanceImage.renderNews({
-          title: n.title, tag: n.tag, body: n.body, link: location.host, logoSrc: 'img/logo.jpeg',
+          photo, title: n.title, tag: n.tag, body: n.body, link: location.host, logoSrc: 'img/logo.jpeg',
           dateText: new Date(n.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
         }), {
           title: 'Share news', alt: n.title, shareTitle: n.title,
