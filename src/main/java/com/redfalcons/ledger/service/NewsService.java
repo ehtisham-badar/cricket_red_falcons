@@ -78,6 +78,22 @@ public class NewsService {
         settings.save(new Setting(CAPTAIN_SEEDED, "true"));
     }
 
+    private static final String CAPTAIN_LINKED = "newsNewCaptainPlayerLinked";
+
+    /** The captain post was first published without a player; link Ehtisham Badar's picture to it, once. */
+    @EventListener(ApplicationReadyEvent.class)
+    @Transactional
+    public void linkCaptainPlayerOnce() {
+        if (settings.existsById(CAPTAIN_LINKED) || !settings.existsById(CAPTAIN_SEEDED)) return;
+        players.findAll().stream().filter(p -> NameMatch.norm(p.getName()).equals("ehtisham badar")).findFirst()
+                .ifPresent(p -> {
+                    posts.findAll().stream()
+                            .filter(n -> "Ehtisham Badar is our new captain".equals(n.getTitle()) && n.getPlayerId() == null)
+                            .forEach(n -> n.setPlayerId(p.getId()));
+                    settings.save(new Setting(CAPTAIN_LINKED, "true"));
+                });
+    }
+
     /** Pinned first, then newest first. */
     @Transactional(readOnly = true)
     public List<NewsPost> list() {
