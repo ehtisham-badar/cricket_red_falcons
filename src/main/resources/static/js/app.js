@@ -3008,7 +3008,8 @@
     const remCell = v => `<td class="strong ${v > 0.005 ? 'neg' : v < -0.005 ? 'pos' : ''}">${fmt(v)}</td>`;
     const seg = `<div class="seg-tabs">${[['all', 'All'], ['fee', 'Match fee'], ['exp', 'Expenses']].map(([id, l]) => `<button class="seg-btn ${contribView === id ? 'on' : ''}" data-action="contrib-view" data-id="${id}">${l}</button>`).join('')}</div>`;
     return `${pageHead('Contributions', 'What each player cost per match and training. Tap a player for the details.',
-      isAdmin() ? `<div class="share-row"><button class="btn btn-gold" data-action="share-contrib">${IMAGE_ICON} Share as image</button></div>` : '')}
+      isAdmin() ? `<div class="share-row"><button class="btn btn-gold" data-action="share-contrib">${IMAGE_ICON} Share as image</button>
+        <button class="btn btn-gold" data-action="share-contrib-pdf">${icon('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/>', 18)} Share as PDF</button></div>` : '')}
       <section class="panel">${seg}<div class="table-wrap"><table class="sheet-table">
         <thead><tr><th class="sticky">#</th><th class="sticky sticky-2">Player</th>
           ${ms.map(m => `<th class="day-col ${m.type}" title="${esc(m.label)}${m.opponent ? ' vs ' + esc(m.opponent) : ''}">${m.short}<small>${esc(m.opponent || m.desc || '')}</small></th>`).join('')}
@@ -3047,6 +3048,105 @@
       link: location.host,
       logoSrc: 'img/logo.jpeg'
     });
+  }
+
+  // ---------- Contributions as a PDF: every player's costing, match by match, and what they have paid ----------
+  let pdfLibs = null;
+  function loadPdfLibs() {
+    if (window.jspdf && window.jspdf.jsPDF && window.jspdf.jsPDF.API.autoTable) return Promise.resolve();
+    if (pdfLibs) return pdfLibs;
+    const load = src => new Promise((ok, fail) => {
+      const el = document.createElement('script');
+      el.src = src; el.onload = ok; el.onerror = () => fail(new Error('Could not load ' + src));
+      document.head.appendChild(el);
+    });
+    pdfLibs = load('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js')
+      .then(() => load('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js'))
+      .catch(e => { pdfLibs = null; throw e; });
+    return pdfLibs;
+  }
+
+  async function contribPdf() {
+    await loadPdfLibs();
+    const prevView = contribView;
+    contribView = 'all';   // the PDF always has the full costing
+    let model;
+    try { model = contribModel(); } finally { contribView = prevView; }
+    const { ms, rows } = model;
+    const stats = C.allStats(state), tour = C.tournamentStats(state, stats);
+    // The PDF's built-in font has no rupee sign or non-Latin letters.
+    const ascii = t => String(t == null ? '' : t).replace(/[^\x20-\x7E]/g, c => (c === '–' || c === '—' || c === '−') ? '-' : c === '·' ? '|' : '?');
+    const money = n => 'Rs ' + C.round2(n).toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(C.round2(n)) ? 0 : 2, maximumFractionDigits: 2 });
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    const W = doc.internal.pageSize.getWidth(), M = 36;
+    const RED = [140, 20, 30], GOLD = [168, 124, 20];
+    const heading = (text, y, size = 16) => { doc.setFont('helvetica', 'bold'); doc.setFontSize(size); doc.setTextColor(...RED); doc.text(ascii(text), M, y); doc.setTextColor(0); };
+    const when = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+    const head = { fillColor: RED, textColor: 255, fontStyle: 'bold' };
+    const rightCols = idx => Object.fromEntries(idx.map(i => [i, { halign: 'right' }]));
+
+    // Page 1: everyone at a glance.
+    heading('Red Falcons - Contributions', 52, 20);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(90);
+    doc.text(ascii('What each player cost, what they have paid till today and what remains. Updated ' + when), M, 70);
+    doc.setTextColor(0);
+    const data = rows.map(r => ({ p: r.p, c: r.c, credit: r.credit, paid: C.paidTotal(r.p), paidAll: C.round2(C.paidTotal(r.p) + r.credit) }));
+    const totalAll = C.round2(data.reduce((t, r) => t + r.c.total, 0)), paidSum = C.round2(data.reduce((t, r) => t + r.paidAll, 0));
+    doc.autoTable({
+      startY: 84, margin: { left: M, right: M }, theme: 'striped', styles: { fontSize: 10, cellPadding: 5 }, headStyles: head,
+      head: [['#', 'Player', 'Total', 'Paid till today', 'Remaining']],
+      body: data.map((r, i) => [i + 1, r.p.name || 'Unnamed', money(r.c.total), money(r.paidAll), money(r.c.total - r.paidAll)]),
+      foot: [['', 'Total', money(totalAll), money(paidSum), money(totalAll - paidSum)]], footStyles: { fillColor: [235, 228, 210], textColor: 0, fontStyle: 'bold' },
+      columnStyles: rightCols([2, 3, 4]),
+      didParseCell: h => { if (h.section === 'body' && h.column.index === 4) { const v = C.round2(data[h.row.index].c.total - data[h.row.index].paidAll); h.cell.styles.textColor = v > 0.005 ? [190, 30, 30] : v < -0.005 ? [20, 120, 60] : 0; } }
+    });
+    doc.setFontSize(8); doc.setTextColor(110);
+    doc.text('Remaining = Total - Paid till today. Negative means the team owes the player.', M, doc.lastAutoTable.finalY + 14);
+    doc.setTextColor(0);
+
+    // One page per player: costing per match and training, other charges, payments and expenses paid for the team.
+    data.forEach(r => {
+      const { p, c } = r;
+      const calc = C.playerCalc(state, p, stats, fmt, tour);
+      doc.addPage();
+      heading(p.name || 'Unnamed', 50, 20);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(90);
+      doc.text(ascii(`Total ${money(c.total)}   |   Paid till today ${money(r.paidAll)}   |   Remaining ${money(c.total - r.paidAll)}`), M, 68);
+      doc.setTextColor(0);
+      const dayRows = ms.filter(d => c.matches[d.id]).map(d => {
+        const m = c.matches[d.id];
+        return [ascii(d.label + (d.opponent ? ' vs ' + d.opponent : d.desc ? ' - ' + d.desc : '')), d.date ? ascii(formatDate(d.date)) : '', m.played ? (d.type === 'match' ? 'Played' : 'Arrived') : 'Not played',
+          m.league > 0 ? money(m.league) : '-', m.shared > 0 ? money(m.shared) : '-', m.items.length ? ascii(m.items.map(x => x.item + ' ' + money(x.amount)).join(', ')) : '-', money(m.total)];
+      });
+      const other = [];
+      if (Math.abs(c.leagueOther) >= 0.005) other.push(['Unplayed match due', '', '', money(c.leagueOther), '-', '-', money(c.leagueOther)]);
+      if (c.charges > 0) other.push(['Shirt Price', '', '', '-', '-', '-', money(c.charges)]);
+      doc.autoTable({
+        startY: 82, margin: { left: M, right: M }, theme: 'grid', styles: { fontSize: 8.5, cellPadding: 4 }, headStyles: head,
+        head: [['Match / training', 'Date', 'Status', 'Match fee', 'Shared', 'Items', 'Total']],
+        body: [...dayRows, ...other].length ? [...dayRows, ...other] : [['No finished matches or trainings yet', '', '', '', '', '', '']],
+        foot: [['Total cost', '', '', '', '', '', money(c.total)]], footStyles: { fillColor: [235, 228, 210], textColor: 0, fontStyle: 'bold' },
+        columnStyles: { ...rightCols([3, 4, 6]), 5: { cellWidth: 110 } }
+      });
+      const pay = (p.payments || []).filter(x => C.num(x.amount) !== 0).map(x => [ascii([x.refund ? 'Paid back to player' : 'Transferred', x.method, x.note].filter(Boolean).join(' | ')), x.date ? ascii(formatDate(x.date)) : '', money(x.refund ? -C.num(x.amount) : C.num(x.amount))]);
+      const bought = calc.creditLines.map(x => [ascii(x.text.replace(/: [^:]*$/, '')), '', ascii(x.text.replace(/^.*: /, ''))]);
+      doc.autoTable({
+        startY: doc.lastAutoTable.finalY + 18, margin: { left: M, right: M }, theme: 'grid', styles: { fontSize: 9, cellPadding: 4 }, headStyles: { ...head, fillColor: GOLD },
+        head: [['Paid till today', 'Date', 'Amount']],
+        body: [...pay, ...(bought.length ? [[{ content: 'Paid for the team (out of pocket)', colSpan: 2, styles: { fontStyle: 'bold' } }, { content: money(calc.credit), styles: { fontStyle: 'bold' } }], ...bought] : [])]
+          .concat(pay.length || bought.length ? [] : [['Nothing paid yet', '', '']]),
+        foot: [['Paid till today', '', money(r.paidAll)], ['Remaining (Total - Paid till today)', '', money(c.total - r.paidAll)]], footStyles: { fillColor: [235, 228, 210], textColor: 0, fontStyle: 'bold' },
+        columnStyles: { 2: { halign: 'right' } }
+      });
+    });
+    // Page numbers.
+    const n = doc.getNumberOfPages();
+    for (let i = 1; i <= n; i++) {
+      doc.setPage(i); doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(120);
+      doc.text(`Red Falcons | ${when} | Page ${i} of ${n}`, W / 2, doc.internal.pageSize.getHeight() - 20, { align: 'center' });
+    }
+    return doc.output('blob');
   }
 
   function viewMoney() {
@@ -6883,6 +6983,30 @@ ${tabRows.map(r => {
         showImageDialog(await balanceImage());
       } catch (e) {
         toast('Could not create the picture.');
+      } finally {
+        el.disabled = false;
+        el.innerHTML = label;
+      }
+    },
+    async 'share-contrib-pdf'(el) {
+      if (!isAdmin()) return;
+      const label = el.innerHTML;
+      el.disabled = true;
+      el.textContent = 'Creating PDF…';
+      try {
+        const blob = await contribPdf();
+        const file = new File([blob], `red-falcons-contributions-${today()}.pdf`, { type: 'application/pdf' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          try { await navigator.share({ files: [file], title: 'Red Falcons contributions' }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+        }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = file.name;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+        toast('PDF downloaded — send it on WhatsApp.');
+      } catch (e) {
+        toast('Could not create the PDF. Check your internet connection and try again.');
       } finally {
         el.disabled = false;
         el.innerHTML = label;
