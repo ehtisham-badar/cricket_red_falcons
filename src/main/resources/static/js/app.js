@@ -2978,18 +2978,21 @@
     const ms = C.days(state).filter(d => C.isCharged(d) && (d.type !== 'match' || matchVisible(d)));
     const players = state.players.filter(seesMoneyOf);
     if (!ms.length || !players.length) return { ms, players, rows: [] };
-    const rows = players.map(p => ({ p, c: C.matchCosts(state, p, stats, tour) }));
+    const rows = players.map(p => ({ p, c: C.matchCosts(state, p, stats, tour), credit: C.playerCalc(state, p, stats, fmt, tour).credit }));
     const sum = f => C.round2(rows.reduce((t, r) => t + f(r.c), 0));
     const hasOther = contribView !== 'exp' && rows.some(r => Math.abs(r.c.leagueOther) >= 0.005), hasCharge = contribView !== 'fee' && rows.some(r => r.c.charges > 0);
     // The view picks what the cells and totals count: everything, only the league match money, or only expenses.
     const val = m => !m ? 0 : contribView === 'fee' ? m.league : contribView === 'exp' ? C.round2(m.total - m.league) : m.total;
     const rowTotal = c => contribView === 'fee' ? C.round2(Object.values(c.matches).reduce((t, m) => t + m.league, 0) + c.leagueOther)
       : contribView === 'exp' ? C.round2(Object.values(c.matches).reduce((t, m) => t + m.total - m.league, 0) + c.charges) : c.total;
-    return { ms, players, rows, sum, hasOther, hasCharge, val, rowTotal };
+    // Remaining = what the player cost (this view's total) − what they transferred − what they paid out of pocket for the team.
+    const remaining = r => C.round2(rowTotal(r.c) - C.paidTotal(r.p) - r.credit);
+    const remainingAll = C.round2(rows.reduce((t, r) => t + remaining(r), 0));
+    return { ms, players, rows, sum, hasOther, hasCharge, val, rowTotal, remaining, remainingAll };
   }
 
   function viewContrib() {
-    const { ms, players, rows, sum, hasOther, hasCharge, val, rowTotal } = contribModel();
+    const { ms, players, rows, sum, hasOther, hasCharge, val, rowTotal, remaining, remainingAll } = contribModel();
     if (!rows.length) {
       return `${pageHead('Contributions', 'What each player cost, match by match.')}<section class="panel"><p class="muted">${players.length ? 'No finished matches yet.' : 'Nothing to show yet.'}</p></section>`;
     }
@@ -3007,21 +3010,21 @@
         <thead><tr><th class="sticky">#</th><th class="sticky sticky-2">Player</th>
           ${ms.map(m => `<th class="day-col ${m.type}" title="${esc(m.label)}${m.opponent ? ' vs ' + esc(m.opponent) : ''}">${m.short}<small>${esc(m.opponent || m.desc || '')}</small></th>`).join('')}
           ${hasOther ? '<th class="day-col tour" title="League fee not tied to a played match: matches still to come, divided fee, rounding">League (other)</th>' : ''}${hasCharge ? '<th class="day-col charge">Charges</th>' : ''}
-          <th>Paid till today</th><th>Total</th><th>Remaining</th></tr></thead>
-        <tbody>${rows.map(({ p, c }, i) => `<tr data-action="open-contrib" data-id="${esc(p.id)}"><td class="sticky">${i + 1}</td><td class="sticky sticky-2 name-cell"><span class="pl-namecell">${avatar(p, 30)}<button class="pl-name">${esc(p.name)}</button><button class="icon-btn exp-btn mini" data-action="open-player" data-id="${esc(p.id)}" aria-label="Expense card for ${esc(p.name)}" title="Expenses and payments">${WALLET_ICON}</button></span></td>
+          <th>Paid till today</th><th>Total</th><th title="Total − paid till today − what the player paid out of pocket for the team (lunch, balls…). Negative: the team owes them.">Remaining</th></tr></thead>
+        <tbody>${rows.map((r, i) => { const { p, c } = r; return `<tr data-action="open-contrib" data-id="${esc(p.id)}"><td class="sticky">${i + 1}</td><td class="sticky sticky-2 name-cell"><span class="pl-namecell">${avatar(p, 30)}<button class="pl-name">${esc(p.name)}</button><button class="icon-btn exp-btn mini" data-action="open-player" data-id="${esc(p.id)}" aria-label="Expense card for ${esc(p.name)}" title="Expenses and payments">${WALLET_ICON}</button></span></td>
           ${ms.map(m => cell(c.matches[m.id])).join('')}
           ${hasOther ? `<td class="league-cell">${Math.abs(c.leagueOther) >= 0.005 ? fmt(c.leagueOther) : '—'}</td>` : ''}${hasCharge ? `<td class="league-cell">${c.charges > 0 ? fmt(c.charges) : '—'}</td>` : ''}
-          <td>${fmt(C.paidTotal(p))}</td><td class="strong">${fmt(rowTotal(c))}</td>${remCell(C.round2(rowTotal(c) - C.paidTotal(p)))}</tr>`).join('')}</tbody>
+          <td>${fmt(C.paidTotal(p))}</td><td class="strong">${fmt(rowTotal(c))}</td>${remCell(remaining(r))}</tr>`; }).join('')}</tbody>
         <tfoot><tr><td class="sticky"></td><td class="sticky sticky-2">Total</td>
           ${ms.map(m => `<td>${fmt(sum(c => val(c.matches[m.id])))}</td>`).join('')}
           ${hasOther ? `<td>${fmt(sum(c => c.leagueOther))}</td>` : ''}${hasCharge ? `<td>${fmt(sum(c => c.charges))}</td>` : ''}
-          <td>${fmt(C.round2(rows.reduce((t, r) => t + C.paidTotal(r.p), 0)))}</td><td>${fmt(sum(rowTotal))}</td>${remCell(C.round2(sum(rowTotal) - rows.reduce((t, r) => t + C.paidTotal(r.p), 0)))}</tr></tfoot>
+          <td>${fmt(C.round2(rows.reduce((t, r) => t + C.paidTotal(r.p), 0)))}</td><td>${fmt(sum(rowTotal))}</td>${remCell(remainingAll)}</tr></tfoot>
       </table></div></section>`;
   }
 
   // The contributions table as a picture for the group, in whichever view (All / Match fee / Expenses) is open.
   function contribImage() {
-    const { ms, rows, sum, hasOther, hasCharge, val, rowTotal } = contribModel();
+    const { ms, rows, sum, hasOther, hasCharge, val, rowTotal, remaining, remainingAll } = contribModel();
     const cell = v => v > 0 ? fmt(v) : '';
     const cols = ms.map(m => ({ label: m.short, sub: m.opponent || m.desc || '', type: m.type }));
     if (hasOther) cols.push({ label: 'League', sub: 'other', type: 'tour' });
@@ -3029,14 +3032,14 @@
     return window.RFBalanceImage.renderTable({
       viewLabel: { all: 'All contributions', fee: 'Match fee only', exp: 'Expenses only' }[contribView],
       cols,
-      rows: rows.map(({ p, c }) => ({
+      rows: rows.map(r => { const { p, c } = r; return ({
         name: p.name,
         cells: [...ms.map(m => cell(val(c.matches[m.id]))), ...(hasOther ? [Math.abs(c.leagueOther) >= 0.005 ? fmt(c.leagueOther) : ''] : []), ...(hasCharge ? [cell(c.charges)] : [])],
         total: fmt(rowTotal(c)),
         paid: fmt(C.paidTotal(p)),
-        remaining: fmt(C.round2(rowTotal(c) - C.paidTotal(p)))
-      })),
-      totals: { cells: [...ms.map(m => fmt(sum(c => val(c.matches[m.id])))), ...(hasOther ? [fmt(sum(c => c.leagueOther))] : []), ...(hasCharge ? [fmt(sum(c => c.charges))] : [])], total: fmt(sum(rowTotal)), paid: fmt(C.round2(rows.reduce((t, r) => t + C.paidTotal(r.p), 0))), remaining: fmt(C.round2(sum(rowTotal) - rows.reduce((t, r) => t + C.paidTotal(r.p), 0))) },
+        remaining: fmt(remaining(r))
+      }); }),
+      totals: { cells: [...ms.map(m => fmt(sum(c => val(c.matches[m.id])))), ...(hasOther ? [fmt(sum(c => c.leagueOther))] : []), ...(hasCharge ? [fmt(sum(c => c.charges))] : [])], total: fmt(sum(rowTotal)), paid: fmt(C.round2(rows.reduce((t, r) => t + C.paidTotal(r.p), 0))), remaining: fmt(remainingAll) },
       dateText: 'Updated ' + new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
       link: location.host,
       logoSrc: 'img/logo.jpeg'
