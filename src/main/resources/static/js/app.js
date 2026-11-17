@@ -3008,7 +3008,7 @@
           ${ms.map(m => `<th class="day-col ${m.type}" title="${esc(m.label)}${m.opponent ? ' vs ' + esc(m.opponent) : ''}">${m.short}<small>${esc(m.opponent || m.desc || '')}</small></th>`).join('')}
           ${hasOther ? '<th class="day-col tour" title="League fee not tied to a played match: matches still to come, divided fee, rounding">League (other)</th>' : ''}${hasCharge ? '<th class="day-col charge">Charges</th>' : ''}
           <th>Paid till today</th><th>Total</th><th>Remaining</th></tr></thead>
-        <tbody>${rows.map(({ p, c }, i) => `<tr data-action="open-contrib" data-id="${esc(p.id)}"><td class="sticky">${i + 1}</td><td class="sticky sticky-2 name-cell"><button class="pl-name">${esc(p.name)}</button></td>
+        <tbody>${rows.map(({ p, c }, i) => `<tr data-action="open-contrib" data-id="${esc(p.id)}"><td class="sticky">${i + 1}</td><td class="sticky sticky-2 name-cell"><span class="pl-namecell">${avatar(p, 30)}<button class="pl-name">${esc(p.name)}</button><button class="icon-btn exp-btn mini" data-action="open-player" data-id="${esc(p.id)}" aria-label="Expense card for ${esc(p.name)}" title="Expenses and payments">${WALLET_ICON}</button></span></td>
           ${ms.map(m => cell(c.matches[m.id])).join('')}
           ${hasOther ? `<td class="league-cell">${Math.abs(c.leagueOther) >= 0.005 ? fmt(c.leagueOther) : '—'}</td>` : ''}${hasCharge ? `<td class="league-cell">${c.charges > 0 ? fmt(c.charges) : '—'}</td>` : ''}
           <td>${fmt(C.paidTotal(p))}</td><td class="strong">${fmt(rowTotal(c))}</td>${remCell(C.round2(rowTotal(c) - C.paidTotal(p)))}</tr>`).join('')}</tbody>
