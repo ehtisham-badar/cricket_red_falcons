@@ -2985,14 +2985,17 @@
     const val = m => !m ? 0 : contribView === 'fee' ? m.league : contribView === 'exp' ? C.round2(m.total - m.league) : m.total;
     const rowTotal = c => contribView === 'fee' ? C.round2(Object.values(c.matches).reduce((t, m) => t + m.league, 0) + c.leagueOther)
       : contribView === 'exp' ? C.round2(Object.values(c.matches).reduce((t, m) => t + m.total - m.league, 0) + c.charges) : c.total;
-    // Remaining = what the player cost (this view's total) − what they transferred − what they paid out of pocket for the team.
-    const remaining = r => C.round2(rowTotal(r.c) - C.paidTotal(r.p) - r.credit);
+    // Paid till today = what the player transferred plus what they paid out of pocket for the team (lunch, balls…).
+    const paidOf = r => C.round2(C.paidTotal(r.p) + r.credit);
+    const paidAll = C.round2(rows.reduce((t, r) => t + paidOf(r), 0));
+    // Remaining = what the player cost (this view's total) − paid till today.
+    const remaining = r => C.round2(rowTotal(r.c) - paidOf(r));
     const remainingAll = C.round2(rows.reduce((t, r) => t + remaining(r), 0));
-    return { ms, players, rows, sum, hasOther, hasCharge, val, rowTotal, remaining, remainingAll };
+    return { ms, players, rows, sum, hasOther, hasCharge, val, rowTotal, remaining, remainingAll, paidOf, paidAll };
   }
 
   function viewContrib() {
-    const { ms, players, rows, sum, hasOther, hasCharge, val, rowTotal, remaining, remainingAll } = contribModel();
+    const { ms, players, rows, sum, hasOther, hasCharge, val, rowTotal, remaining, remainingAll, paidOf, paidAll } = contribModel();
     if (!rows.length) {
       return `${pageHead('Contributions', 'What each player cost, match by match.')}<section class="panel"><p class="muted">${players.length ? 'No finished matches yet.' : 'Nothing to show yet.'}</p></section>`;
     }
@@ -3010,21 +3013,21 @@
         <thead><tr><th class="sticky">#</th><th class="sticky sticky-2">Player</th>
           ${ms.map(m => `<th class="day-col ${m.type}" title="${esc(m.label)}${m.opponent ? ' vs ' + esc(m.opponent) : ''}">${m.short}<small>${esc(m.opponent || m.desc || '')}</small></th>`).join('')}
           ${hasOther ? '<th class="day-col tour" title="League fee not tied to a played match: matches still to come, divided fee, rounding">Unplayed match due</th>' : ''}${hasCharge ? '<th class="day-col charge">Shirt Price</th>' : ''}
-          <th>Paid till today</th><th>Total</th><th title="Total − paid till today − what the player paid out of pocket for the team (lunch, balls…). Negative: the team owes them.">Remaining</th></tr></thead>
+          <th title="Money the player transferred plus what they paid out of pocket for the team (lunch, balls…)">Paid till today</th><th>Total</th><th title="Total − paid till today. Negative: the team owes them.">Remaining</th></tr></thead>
         <tbody>${rows.map((r, i) => { const { p, c } = r; return `<tr data-action="open-contrib" data-id="${esc(p.id)}"><td class="sticky">${i + 1}</td><td class="sticky sticky-2 name-cell"><span class="pl-namecell">${avatar(p, 30)}<button class="pl-name">${esc(p.name)}</button><button class="icon-btn exp-btn mini" data-action="open-player" data-id="${esc(p.id)}" aria-label="Expense card for ${esc(p.name)}" title="Expenses and payments">${WALLET_ICON}</button></span></td>
           ${ms.map(m => cell(c.matches[m.id])).join('')}
           ${hasOther ? `<td class="league-cell">${Math.abs(c.leagueOther) >= 0.005 ? fmt(c.leagueOther) : '—'}</td>` : ''}${hasCharge ? `<td class="league-cell">${c.charges > 0 ? fmt(c.charges) : '—'}</td>` : ''}
-          <td>${fmt(C.paidTotal(p))}</td><td class="strong">${fmt(rowTotal(c))}</td>${remCell(remaining(r))}</tr>`; }).join('')}</tbody>
+          <td>${fmt(paidOf(r))}</td><td class="strong">${fmt(rowTotal(c))}</td>${remCell(remaining(r))}</tr>`; }).join('')}</tbody>
         <tfoot><tr><td class="sticky"></td><td class="sticky sticky-2">Total</td>
           ${ms.map(m => `<td>${fmt(sum(c => val(c.matches[m.id])))}</td>`).join('')}
           ${hasOther ? `<td>${fmt(sum(c => c.leagueOther))}</td>` : ''}${hasCharge ? `<td>${fmt(sum(c => c.charges))}</td>` : ''}
-          <td>${fmt(C.round2(rows.reduce((t, r) => t + C.paidTotal(r.p), 0)))}</td><td>${fmt(sum(rowTotal))}</td>${remCell(remainingAll)}</tr></tfoot>
+          <td>${fmt(paidAll)}</td><td>${fmt(sum(rowTotal))}</td>${remCell(remainingAll)}</tr></tfoot>
       </table></div></section>`;
   }
 
   // The contributions table as a picture for the group, in whichever view (All / Match fee / Expenses) is open.
   function contribImage() {
-    const { ms, rows, sum, hasOther, hasCharge, val, rowTotal, remaining, remainingAll } = contribModel();
+    const { ms, rows, sum, hasOther, hasCharge, val, rowTotal, remaining, remainingAll, paidOf, paidAll } = contribModel();
     const cell = v => v > 0 ? fmt(v) : '';
     const cols = ms.map(m => ({ label: m.short, sub: m.opponent || m.desc || '', type: m.type }));
     if (hasOther) cols.push({ label: 'Unplayed', sub: 'match due', type: 'tour' });
@@ -3036,10 +3039,10 @@
         name: p.name,
         cells: [...ms.map(m => cell(val(c.matches[m.id]))), ...(hasOther ? [Math.abs(c.leagueOther) >= 0.005 ? fmt(c.leagueOther) : ''] : []), ...(hasCharge ? [cell(c.charges)] : [])],
         total: fmt(rowTotal(c)),
-        paid: fmt(C.paidTotal(p)),
+        paid: fmt(paidOf(r)),
         remaining: fmt(remaining(r))
       }); }),
-      totals: { cells: [...ms.map(m => fmt(sum(c => val(c.matches[m.id])))), ...(hasOther ? [fmt(sum(c => c.leagueOther))] : []), ...(hasCharge ? [fmt(sum(c => c.charges))] : [])], total: fmt(sum(rowTotal)), paid: fmt(C.round2(rows.reduce((t, r) => t + C.paidTotal(r.p), 0))), remaining: fmt(remainingAll) },
+      totals: { cells: [...ms.map(m => fmt(sum(c => val(c.matches[m.id])))), ...(hasOther ? [fmt(sum(c => c.leagueOther))] : []), ...(hasCharge ? [fmt(sum(c => c.charges))] : [])], total: fmt(sum(rowTotal)), paid: fmt(paidAll), remaining: fmt(remainingAll) },
       dateText: 'Updated ' + new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
       link: location.host,
       logoSrc: 'img/logo.jpeg'
