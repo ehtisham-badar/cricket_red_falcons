@@ -5462,6 +5462,18 @@ ${tabRows.map(r => {
         <p class="muted">${[d.date ? formatDate(d.date) : '', m.played ? (d.type === 'match' ? 'Played' : 'Arrived') : 'Not played'].filter(Boolean).join(' · ')}</p></div>
         <ul class="breakdown">${lines.length ? lines.join('') : '<li class="none">No cost</li>'}</ul></section>`;
     };
+    // Everything the player has paid so far: money they transferred, and expenses they paid for out of pocket.
+    const calc = C.playerCalc(state, p, undefined, fmt);
+    const payLines = (p.payments || []).filter(x => C.num(x.amount) !== 0)
+      .map(x => line([x.refund ? 'Paid back to player' : 'Transferred', x.date ? formatDate(x.date) : '', x.method, x.note].filter(Boolean).join(' · '), x.refund ? -C.num(x.amount) : C.num(x.amount)));
+    const boughtLines = calc.creditLines.map(x => `<li><span>${esc(x.text.replace(/: [^:]*$/, ''))}</span><strong>${esc(x.text.replace(/^.*: /, ''))}</strong></li>`);
+    const paidAll = C.round2(calc.paid + calc.credit), left = C.round2(c.total - paidAll);
+    const paidPanel = `<section class="panel"><div class="panel-head"><h3>Paid till today <span class="muted">${fmt(paidAll)}</span></h3>
+        <p class="muted">Money transferred${calc.credit > 0 ? ' plus expenses paid out of pocket (lunch, balls…)' : ''}</p></div>
+        <ul class="breakdown">${payLines.join('')}${boughtLines.length ? `<li><span><strong>Paid for the team</strong></span><strong>${fmt(calc.credit)}</strong></li>${boughtLines.join('')}` : ''}${payLines.length || boughtLines.length ? '' : '<li class="none">Nothing paid yet</li>'}</ul>
+        <ul class="breakdown"><li><span>Total cost</span><strong>${fmt(c.total)}</strong></li><li><span>Paid till today</span><strong>${fmt(paidAll)}</strong></li>
+          <li><span><strong>Remaining</strong></span><strong class="${left > 0.005 ? 'neg' : left < -0.005 ? 'pos' : ''}">${fmt(left)}</strong></li></ul>
+      </section>`;
     const rest = [Math.abs(c.leagueOther) >= 0.005 ? line('League fee (matches still to come, rounding)', c.leagueOther) : '', c.charges > 0 ? line('Season charges', c.charges) : ''].filter(Boolean);
     return `<header class="sheet-head">
         <div><span class="day-kind">Contributions</span><h2>${esc(p.name) || 'Unnamed'}</h2></div>
@@ -5471,6 +5483,7 @@ ${tabRows.map(r => {
         <div class="net-hero zero"><span>Total cost</span><strong>${fmt(c.total)}</strong><small>Match fee, shared expenses and items such as breakfast and lunch</small></div>
         ${days.length ? days.map(card).join('') : '<section class="panel"><p class="muted">No finished matches or trainings yet.</p></section>'}
         ${rest.length ? `<section class="panel"><div class="panel-head"><h3>Other</h3></div><ul class="breakdown">${rest.join('')}</ul></section>` : ''}
+        ${paidPanel}
       </div>`;
   }
 
