@@ -3009,7 +3009,7 @@
       <section class="panel">${seg}<div class="table-wrap"><table class="sheet-table">
         <thead><tr><th class="sticky">#</th><th class="sticky sticky-2">Player</th>
           ${ms.map(m => `<th class="day-col ${m.type}" title="${esc(m.label)}${m.opponent ? ' vs ' + esc(m.opponent) : ''}">${m.short}<small>${esc(m.opponent || m.desc || '')}</small></th>`).join('')}
-          ${hasOther ? '<th class="day-col tour" title="League fee not tied to a played match: matches still to come, divided fee, rounding">League (other)</th>' : ''}${hasCharge ? '<th class="day-col charge">Charges</th>' : ''}
+          ${hasOther ? '<th class="day-col tour" title="League fee not tied to a played match: matches still to come, divided fee, rounding">Unplayed match due</th>' : ''}${hasCharge ? '<th class="day-col charge">Shirt Price</th>' : ''}
           <th>Paid till today</th><th>Total</th><th title="Total − paid till today − what the player paid out of pocket for the team (lunch, balls…). Negative: the team owes them.">Remaining</th></tr></thead>
         <tbody>${rows.map((r, i) => { const { p, c } = r; return `<tr data-action="open-contrib" data-id="${esc(p.id)}"><td class="sticky">${i + 1}</td><td class="sticky sticky-2 name-cell"><span class="pl-namecell">${avatar(p, 30)}<button class="pl-name">${esc(p.name)}</button><button class="icon-btn exp-btn mini" data-action="open-player" data-id="${esc(p.id)}" aria-label="Expense card for ${esc(p.name)}" title="Expenses and payments">${WALLET_ICON}</button></span></td>
           ${ms.map(m => cell(c.matches[m.id])).join('')}
@@ -3027,8 +3027,8 @@
     const { ms, rows, sum, hasOther, hasCharge, val, rowTotal, remaining, remainingAll } = contribModel();
     const cell = v => v > 0 ? fmt(v) : '';
     const cols = ms.map(m => ({ label: m.short, sub: m.opponent || m.desc || '', type: m.type }));
-    if (hasOther) cols.push({ label: 'League', sub: 'other', type: 'tour' });
-    if (hasCharge) cols.push({ label: 'Charges', sub: '', type: 'charge' });
+    if (hasOther) cols.push({ label: 'Unplayed', sub: 'match due', type: 'tour' });
+    if (hasCharge) cols.push({ label: 'Shirt Price', sub: '', type: 'charge' });
     return window.RFBalanceImage.renderTable({
       viewLabel: { all: 'All contributions', fee: 'Match fee only', exp: 'Expenses only' }[contribView],
       cols,
