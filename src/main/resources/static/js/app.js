@@ -2998,6 +2998,8 @@
       if (!m || v <= 0) return `<td class="league-cell">${m && m.played ? '<span class="muted">0</span>' : '—'}</td>`;
       return `<td class="league-cell"><strong>${fmt(v)}</strong></td>`;
     };
+    // Remaining = total − paid till today: red while the player still owes, green once they are ahead.
+    const remCell = v => `<td class="strong ${v > 0.005 ? 'neg' : v < -0.005 ? 'pos' : ''}">${fmt(v)}</td>`;
     const seg = `<div class="seg-tabs">${[['all', 'All'], ['fee', 'Match fee'], ['exp', 'Expenses']].map(([id, l]) => `<button class="seg-btn ${contribView === id ? 'on' : ''}" data-action="contrib-view" data-id="${id}">${l}</button>`).join('')}</div>`;
     return `${pageHead('Contributions', 'What each player cost per match and training. Tap a player for the details.',
       isAdmin() ? `<div class="share-row"><button class="btn btn-gold" data-action="share-contrib">${IMAGE_ICON} Share as image</button></div>` : '')}
@@ -3005,15 +3007,15 @@
         <thead><tr><th class="sticky">#</th><th class="sticky sticky-2">Player</th>
           ${ms.map(m => `<th class="day-col ${m.type}" title="${esc(m.label)}${m.opponent ? ' vs ' + esc(m.opponent) : ''}">${m.short}<small>${esc(m.opponent || m.desc || '')}</small></th>`).join('')}
           ${hasOther ? '<th class="day-col tour" title="League fee not tied to a played match: matches still to come, divided fee, rounding">League (other)</th>' : ''}${hasCharge ? '<th class="day-col charge">Charges</th>' : ''}
-          <th>Total</th></tr></thead>
+          <th>Paid till today</th><th>Total</th><th>Remaining</th></tr></thead>
         <tbody>${rows.map(({ p, c }, i) => `<tr data-action="open-contrib" data-id="${esc(p.id)}"><td class="sticky">${i + 1}</td><td class="sticky sticky-2 name-cell"><button class="pl-name">${esc(p.name)}</button></td>
           ${ms.map(m => cell(c.matches[m.id])).join('')}
           ${hasOther ? `<td class="league-cell">${Math.abs(c.leagueOther) >= 0.005 ? fmt(c.leagueOther) : '—'}</td>` : ''}${hasCharge ? `<td class="league-cell">${c.charges > 0 ? fmt(c.charges) : '—'}</td>` : ''}
-          <td class="strong">${fmt(rowTotal(c))}</td></tr>`).join('')}</tbody>
+          <td>${fmt(C.paidTotal(p))}</td><td class="strong">${fmt(rowTotal(c))}</td>${remCell(C.round2(rowTotal(c) - C.paidTotal(p)))}</tr>`).join('')}</tbody>
         <tfoot><tr><td class="sticky"></td><td class="sticky sticky-2">Total</td>
           ${ms.map(m => `<td>${fmt(sum(c => val(c.matches[m.id])))}</td>`).join('')}
           ${hasOther ? `<td>${fmt(sum(c => c.leagueOther))}</td>` : ''}${hasCharge ? `<td>${fmt(sum(c => c.charges))}</td>` : ''}
-          <td>${fmt(sum(rowTotal))}</td></tr></tfoot>
+          <td>${fmt(C.round2(rows.reduce((t, r) => t + C.paidTotal(r.p), 0)))}</td><td>${fmt(sum(rowTotal))}</td>${remCell(C.round2(sum(rowTotal) - rows.reduce((t, r) => t + C.paidTotal(r.p), 0)))}</tr></tfoot>
       </table></div></section>`;
   }
 
@@ -3030,9 +3032,11 @@
       rows: rows.map(({ p, c }) => ({
         name: p.name,
         cells: [...ms.map(m => cell(val(c.matches[m.id]))), ...(hasOther ? [Math.abs(c.leagueOther) >= 0.005 ? fmt(c.leagueOther) : ''] : []), ...(hasCharge ? [cell(c.charges)] : [])],
-        total: fmt(rowTotal(c))
+        total: fmt(rowTotal(c)),
+        paid: fmt(C.paidTotal(p)),
+        remaining: fmt(C.round2(rowTotal(c) - C.paidTotal(p)))
       })),
-      totals: { cells: [...ms.map(m => fmt(sum(c => val(c.matches[m.id])))), ...(hasOther ? [fmt(sum(c => c.leagueOther))] : []), ...(hasCharge ? [fmt(sum(c => c.charges))] : [])], total: fmt(sum(rowTotal)) },
+      totals: { cells: [...ms.map(m => fmt(sum(c => val(c.matches[m.id])))), ...(hasOther ? [fmt(sum(c => c.leagueOther))] : []), ...(hasCharge ? [fmt(sum(c => c.charges))] : [])], total: fmt(sum(rowTotal)), paid: fmt(C.round2(rows.reduce((t, r) => t + C.paidTotal(r.p), 0))), remaining: fmt(C.round2(sum(rowTotal) - rows.reduce((t, r) => t + C.paidTotal(r.p), 0))) },
       dateText: 'Updated ' + new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
       link: location.host,
       logoSrc: 'img/logo.jpeg'

@@ -853,7 +853,8 @@
     await ensureFonts();
     const logo = await loadImage(o.logoSrc);
     const NAME_W = 280, COL_W = 132, TOTAL_W = 170, ROW_H = 68, HEAD_H = 92;
-    const width = Math.max(1080, PAD * 2 + NAME_W + o.cols.length * COL_W + TOTAL_W);
+    const EXTRA_W = 190;   // Paid till today and Remaining columns
+    const width = Math.max(1080, PAD * 2 + NAME_W + o.cols.length * COL_W + EXTRA_W + TOTAL_W + EXTRA_W);
     const headerH = 300, viewH = 70;
     const tableTop = headerH + viewH;
     const H = tableTop + HEAD_H + (o.rows.length + 1) * ROW_H + 24 + 150;
@@ -872,7 +873,9 @@
       spaced(ctx, (o.viewLabel || '').toUpperCase(), PAD, headerH + 22, 3);
 
       const colX = i => PAD + NAME_W + i * COL_W;
-      const totalX = PAD + NAME_W + o.cols.length * COL_W;
+      const paidX = PAD + NAME_W + o.cols.length * COL_W;
+      const totalX = paidX + EXTRA_W;
+      const remX = totalX + TOTAL_W;
       const right = x => x - 14;
       // Column heads.
       ctx.fillStyle = C.muted;
@@ -891,7 +894,14 @@
       });
       ctx.fillStyle = C.text;
       ctx.font = `800 26px ${BODY}`;
+      ctx.fillText('PAID', right(paidX + EXTRA_W), tableTop + 34);
+      ctx.fillStyle = C.muted;
+      ctx.font = `600 18px ${BODY}`;
+      ctx.fillText('till today', right(paidX + EXTRA_W), tableTop + 66);
+      ctx.fillStyle = C.text;
+      ctx.font = `800 26px ${BODY}`;
       ctx.fillText('TOTAL', right(totalX + TOTAL_W), tableTop + HEAD_H / 2);
+      ctx.fillText('REMAINING', right(remX + EXTRA_W), tableTop + HEAD_H / 2);
       ctx.textAlign = 'left';
 
       const drawRow = (r, y, zebra, bold) => {
@@ -909,13 +919,18 @@
         ctx.fillStyle = bold ? C.goldLight : C.gold;
         ctx.font = `800 30px ${BODY}`;
         ctx.fillText(r.total, right(totalX + TOTAL_W), cy);
+        ctx.fillStyle = bold ? C.gold : C.text;
+        ctx.font = `${bold ? 800 : 600} 26px ${BODY}`;
+        ctx.fillText(r.paid || '—', right(paidX + EXTRA_W), cy);
+        ctx.font = `800 28px ${BODY}`;
+        ctx.fillText(r.remaining || '—', right(remX + EXTRA_W), cy);
         ctx.textAlign = 'left';
       };
       let y = tableTop + HEAD_H;
       o.rows.forEach((r, i) => { drawRow(r, y, i % 2 === 0, false); y += ROW_H; });
       ctx.fillStyle = C.line;
       ctx.fillRect(PAD, y - 2, W - PAD * 2, 2);
-      drawRow({ name: 'Total', cells: o.totals.cells, total: o.totals.total }, y + 4, false, true);
+      drawRow({ name: 'Total', cells: o.totals.cells, total: o.totals.total, paid: o.totals.paid, remaining: o.totals.remaining }, y + 4, false, true);
       y += ROW_H;
       drawFooter(ctx, y + 24, 'Red Falcons', o.link || '');
       return await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
