@@ -425,7 +425,9 @@
         high: null, bowlBalls: 0, bowlRuns: 0, conceded: 0, wides: 0, noBalls: 0, wickets: 0, best: null,
         catches: 0, drops: 0, misfields: 0, goodFielding: 0 };
       ms.forEach(m => {
-        if (!(state.stats && state.stats[m.id] && state.stats[m.id][p.id])) return;
+        const hasStats = !!(state.stats && state.stats[m.id] && state.stats[m.id][p.id]);
+        // A finished match the player was picked for counts as played even before its stats are entered.
+        if (!hasStats) { if (m.finished && !m.test && p.att && p.att[m.id]) t.matches += 1; return; }
         const e = statOf(state, m.id, p.id);
         t.matches += 1;
         if (batted(e)) {
