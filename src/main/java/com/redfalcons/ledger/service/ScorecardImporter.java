@@ -8,6 +8,8 @@ import com.redfalcons.ledger.repo.MatchStatRepository;
 import com.redfalcons.ledger.repo.PlayerRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
 
@@ -49,6 +51,28 @@ public class ScorecardImporter {
         this.matches = matches;
         this.players = players;
         this.stats = stats;
+    }
+
+    /** After every league fetch (the scheduled one too), and shortly after a start: import scorecards without waiting for the admin's refresh. */
+    @EventListener(LeagueRefreshed.class)
+    public void afterLeagueFetch() { importInBackground(0); }
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void afterStart() { importInBackground(60_000); }
+
+    private void importInBackground(long delayMs) {
+        Thread t = new Thread(() -> {
+            try {
+                if (delayMs > 0) Thread.sleep(delayMs);
+                importMissing(); // never overwrites a match that already has stats
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (Exception e) {
+                log.warn("Automatic scorecard import failed: {}", e.getMessage());
+            }
+        }, "hpl-scorecard-import");
+        t.setDaemon(true);
+        t.start();
     }
 
     /** What happened for each finished Red Falcons match that has no stats yet: imported, skipped or failed, and why. */
