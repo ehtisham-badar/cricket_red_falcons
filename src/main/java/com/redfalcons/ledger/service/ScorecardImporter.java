@@ -41,11 +41,13 @@ public class ScorecardImporter {
     private final MatchDayRepository matches;
     private final PlayerRepository players;
     private final MatchStatRepository stats;
+    private final TournamentScorecards tournament;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10))
             .followRedirects(HttpClient.Redirect.NORMAL).build();
 
     public ScorecardImporter(ObjectMapper json, LeagueFeedService feed, MatchDayRepository matches, PlayerRepository players,
-                             MatchStatRepository stats) {
+                             MatchStatRepository stats, TournamentScorecards tournament) {
+        this.tournament = tournament;
         this.json = json;
         this.feed = feed;
         this.matches = matches;
@@ -172,6 +174,15 @@ public class ScorecardImporter {
                 why.add("scorecard page: " + e.getMessage());
             }
         }
+        // 3. The full scorecard the Tournament tab already stores for this match (read reliably from Crickslab).
+        if (card == null) {
+            try {
+                card = fromStored(resultId, String.valueOf(us.get("name")));
+                if (card == null) why.add("stored tournament scorecard: not available yet");
+            } catch (Exception e) {
+                why.add("stored tournament scorecard: " + e.getMessage());
+            }
+        }
         if (card == null) {
             Map<String, Object> out = entry(label, "failed", "No scorecard could be read (" + String.join("; ", why) + ").");
             if (!sample.isBlank()) out.put("sample", sample);
@@ -227,6 +238,35 @@ public class ScorecardImporter {
     }
 
     // ---------- helpers ----------
+
+    /** Our card from the Tournament tab's stored scorecard of the match, or null when there isn't one. */
+    @SuppressWarnings("unchecked")
+    private ScorecardParser.Card fromStored(long resultId, String ourTeam) {
+        Map<String, Object> sc = tournament.scorecard(resultId).orElse(null);
+        if (sc == null || !Boolean.TRUE.equals(sc.get("available"))) return null;
+        List<Map<String, Object>> innings = (List<Map<String, Object>>) sc.getOrDefault("innings", List.of());
+        String want = key(ourTeam);
+        List<ScorecardParser.Bat> bat = new ArrayList<>(), opp = new ArrayList<>();
+        List<ScorecardParser.Bowl> bowl = new ArrayList<>();
+        for (Map<String, Object> inn : innings) {
+            boolean ours = key(String.valueOf(inn.get("team"))).equals(want);
+            for (Map<String, Object> b : (List<Map<String, Object>>) inn.getOrDefault("batting", List.of())) {
+                ScorecardParser.Bat x = new ScorecardParser.Bat(String.valueOf(b.get("name")), num(b.get("runs"), 0), num(b.get("balls"), 0),
+                        num(b.get("fours"), 0), num(b.get("sixes"), 0), String.valueOf(b.get("how")));
+                (ours ? bat : opp).add(x);
+            }
+            if (!ours) { // the other side's innings is when our bowlers bowled
+                for (Map<String, Object> w : (List<Map<String, Object>>) inn.getOrDefault("bowling", List.of())) {
+                    String[] ov = String.valueOf(w.get("overs")).split("\\.");
+                    int balls = (ov.length > 0 && ov[0].matches("\\d+") ? Integer.parseInt(ov[0]) : 0) * 5
+                            + (ov.length > 1 && ov[1].matches("\\d+") ? Integer.parseInt(ov[1]) : 0);
+                    bowl.add(new ScorecardParser.Bowl(String.valueOf(w.get("name")), balls, num(w.get("runs"), 0), num(w.get("wickets"), 0),
+                            num(w.get("wides"), 0), num(w.get("noBalls"), 0)));
+                }
+            }
+        }
+        return bat.isEmpty() ? null : new ScorecardParser.Card(bat, bowl, opp);
+    }
 
     private Optional<MatchDay> ledgerMatch(String start, String opponent) {
         if (start == null || start.length() < 10) return Optional.empty();
