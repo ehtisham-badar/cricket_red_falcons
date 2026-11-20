@@ -3738,8 +3738,8 @@
   // Award cards, the training attendance table, and a button to share the awards as a picture.
   function awardsPanel() {
     const awards = seasonAwards();
-    const att = C.attendance(state).filter(a => a.trainings > 0 || a.matches > 0)
-      .sort((a, b) => b.trainings - a.trainings || b.longest - a.longest || b.matches - a.matches);
+    const att = C.attendance(state).filter(a => a.trainings > 0)
+      .sort((a, b) => b.trainings - a.trainings || b.longest - a.longest);
     if (!awards.length && !att.length) return '';
     const share = awards.length && isAdmin() ? `<button class="btn btn-gold" data-action="share-awards">${IMAGE_ICON} Share awards as image</button>` : '';
     return `<section class="panel st-table">
@@ -3747,9 +3747,9 @@
       ${awards.length ? `<div class="st-leaders aw-grid">${awards.map(a => `<div class="stat pos"><span>${esc(a.title)}</span>
         <strong>${esc(a.value)}</strong><small>${esc(a.name)}${a.note ? ` · ${esc(a.note)}` : ''}</small></div>`).join('')}</div>` : ''}
       ${share ? `<div class="share-row">${share}</div>` : ''}
-      ${att.length ? `<div class="table-wrap"><table class="sheet-table"><thead><tr><th class="st-name">Attendance</th><th>Trainings</th><th>Best streak</th><th>Streak now</th><th>Matches</th></tr></thead>
+      ${att.length ? `<div class="table-wrap"><table class="sheet-table"><thead><tr><th class="st-name">Attendance</th><th>Trainings</th><th>Best streak</th><th>Streak now</th></tr></thead>
         <tbody>${att.map(a => `<tr><td class="st-name"><button class="pl-name" data-action="open-profile" data-id="${esc(a.player.id)}">${esc(a.player.name)}</button></td>
-          <td class="strong">${a.trainings}/${a.trainingsTotal}</td><td>${a.longest}</td><td>${a.current}</td><td>${a.matches}/${a.matchesTotal}</td></tr>`).join('')}</tbody></table></div>` : ''}
+          <td class="strong">${a.trainings}/${a.trainingsTotal}</td><td>${a.longest}</td><td>${a.current}</td></tr>`).join('')}</tbody></table></div>` : ''}
     </section>`;
   }
 
