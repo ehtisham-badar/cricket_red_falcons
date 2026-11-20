@@ -42,7 +42,8 @@ public class ScorecardImporter {
             "hassan gul", "Hasan Gul",
             "rana abu bakar saeed", "Rana Abubakar Saeed",
             "roshan ullah zaheer", "Roshaan Ullah Zaheer",
-            "syed ahsan hamdani", "Ahsan");
+            "syed ahsan hamdani", "Ahsan",
+            "umair ayub", "Umair Ayub Rana");
     /** Catchers, whom Crickslab's dismissal text names by first name only. */
     static final Map<String, String> CATCHER_NAMES = Map.of(
             "haider", "Haider Ali",
