@@ -111,16 +111,22 @@ public class ScorecardImporter {
                 continue;
             }
             String matchId = mine.get().getId();
-            long have = stats.findAll().stream().filter(s -> s.getMatchId().equals(matchId)).count();
-            if (have > 0) { // already has stats: leave them alone, but say so
-                report.add(entry(label, "skipped", "Already has stats for " + have + " player" + (have == 1 ? "" : "s") + " in the ledger, so nothing was imported. Clear that match's stats on the Stats tab to import the scorecard instead."));
+            Set<String> have = new HashSet<>();
+            stats.findAll().forEach(s -> { if (s.getMatchId().equals(matchId)) have.add(s.getPlayerId()); });
+            if (!have.isEmpty()) { // already has stats: leave them alone, only add players on the stored scorecard who have none
+                try {
+                    report.add(importOne(label, matchId, ((Number) r.get("id")).longValue(), "", us, them, robots, have));
+                } catch (Exception e) {
+                    log.warn("Scorecard top-up for {} failed: {}", label, e.getMessage());
+                    report.add(entry(label, "failed", "Could not read the scorecard: " + e.getMessage()));
+                }
                 continue;
             }
             String url = String.valueOf(r.getOrDefault("summaryUrl", ""));
             if (fetched >= MAX_PER_REFRESH) { report.add(entry(label, "skipped", "Several scorecards waiting; press refresh again for the rest.")); continue; }
             fetched++;
             try {
-                report.add(importOne(label, matchId, ((Number) r.get("id")).longValue(), url, us, them, robots));
+                report.add(importOne(label, matchId, ((Number) r.get("id")).longValue(), url, us, them, robots, Set.of()));
             } catch (Exception e) {
                 log.warn("Scorecard import for {} failed: {}", label, e.getMessage());
                 report.add(entry(label, "failed", "Could not read the scorecard: " + e.getMessage()));
@@ -140,8 +146,12 @@ public class ScorecardImporter {
         return Map.of("report", last, "at", lastAt);
     }
 
+    /**
+     * {@code have}: players who already have stats for the match. They are left alone, and when there are any only the
+     * stored scorecard is read (Crickslab isn't asked again) to add the players who are missing.
+     */
     Map<String, Object> importOne(String label, String matchId, long resultId, String url, Map<String, Object> us, Map<String, Object> them,
-                                  Map<String, List<String>> robots) throws Exception {
+                                  Map<String, List<String>> robots, Set<String> have) throws Exception {
         List<Player> squad = players.findAll();
         List<NameMatch.Squad> names = squad.stream().map(p -> new NameMatch.Squad(p.getId(), p.getName())).toList();
         java.util.function.Function<String, String> idOf = n -> {
@@ -155,8 +165,10 @@ public class ScorecardImporter {
         List<String> why = new ArrayList<>();
         String sample = "";
         // 1. The league page's own data for this match: already fetched, so nothing more is asked of Crickslab.
-        String data = feed.matchData(resultId);
-        if (data == null) {
+        String data = have.isEmpty() ? feed.matchData(resultId) : null;
+        if (!have.isEmpty()) {
+            // a top-up: straight to the stored scorecard
+        } else if (data == null) {
             why.add("league page: not fetched since the server started");
         } else {
             try {
@@ -167,7 +179,7 @@ public class ScorecardImporter {
             }
         }
         // 2. Failing that, the match's own scorecard page (only if that site's robots.txt allows it).
-        if (card == null) {
+        if (card == null && have.isEmpty()) {
             URI uri = scorecardUri(url);
             try {
                 if (uri == null) {
@@ -236,6 +248,10 @@ public class ScorecardImporter {
             if (id != null) rows.computeIfAbsent(id, k -> new int[15])[9] += 1;
         }
         if (rows.isEmpty()) return entry(label, "failed", "The scorecard was read but none of its players are in the squad.");
+        if (!have.isEmpty()) {
+            rows.keySet().removeAll(have);
+            if (rows.isEmpty()) return entry(label, "skipped", "Already has stats for every squad player on the scorecard (" + have.size() + "), so nothing was imported.");
+        }
 
         List<MatchStat> toSave = new ArrayList<>();
         rows.forEach((id, n) -> {
@@ -245,7 +261,8 @@ public class ScorecardImporter {
             toSave.add(s);
         });
         stats.saveAll(toSave); // one save: all of the match's stats or none
-        String msg = "Stats imported for " + rows.size() + " players."
+        String msg = (have.isEmpty() ? "Stats imported for " + rows.size() + " players."
+                : "Added stats for " + rows.size() + " player" + (rows.size() == 1 ? "" : "s") + " missing from this match; the " + have.size() + " already there were left alone.")
                 + (unmatched.isEmpty() ? "" : " Not in the squad, left out: " + String.join(", ", unmatched) + ".")
                 + " Twos and threes count as singles; set the Playing XI and finish the match on the Days tab.";
         return entry(label, "imported", msg);
