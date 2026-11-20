@@ -35,6 +35,19 @@ public class ScorecardImporter {
     private static final String AGENT = "RedFalconsLedger";
     private static final int MAX_PER_REFRESH = 4;
     private static final Pattern US = Pattern.compile("red\\s*falcons", Pattern.CASE_INSENSITIVE);
+    /** Crickslab names (as {@link NameMatch#norm} gives them) that differ from the squad's, as the admin mapped them. */
+    static final Map<String, String> CRICKSLAB_NAMES = Map.of(
+            "haidar", "Haider Ali",
+            "haider", "Haider Sami",
+            "hassan gul", "Hasan Gul",
+            "rana abu bakar saeed", "Rana Abubakar Saeed",
+            "roshan ullah zaheer", "Roshaan Ullah Zaheer",
+            "syed ahsan hamdani", "Ahsan");
+    /** Catchers, whom Crickslab's dismissal text names by first name only. */
+    static final Map<String, String> CATCHER_NAMES = Map.of(
+            "haider", "Haider Ali",
+            "nauman", "Nauman Akhtar",
+            "talha", "Talha Ramzan");
 
     private final ObjectMapper json;
     private final LeagueFeedService feed;
@@ -131,7 +144,7 @@ public class ScorecardImporter {
         List<Player> squad = players.findAll();
         List<NameMatch.Squad> names = squad.stream().map(p -> new NameMatch.Squad(p.getId(), p.getName())).toList();
         java.util.function.Function<String, String> idOf = n -> {
-            var m = NameMatch.match(n, names);
+            var m = NameMatch.match(CRICKSLAB_NAMES.getOrDefault(NameMatch.norm(n), n), names);
             return m.exact() == null ? null : m.exact().id();
         };
         java.util.function.Predicate<String> ours = n -> idOf.apply(n) != null;
@@ -218,7 +231,7 @@ public class ScorecardImporter {
         for (ScorecardParser.Bat b : card.opposition()) { // catches taken against their batters
             String[] d = dismissal(b.how());
             String catcher = "caught".equals(d[0]) ? d[2] : "";
-            String id = catcher.isEmpty() ? null : idOf.apply(catcher);
+            String id = catcher.isEmpty() ? null : idOf.apply(CATCHER_NAMES.getOrDefault(NameMatch.norm(catcher), catcher));
             if (id != null) rows.computeIfAbsent(id, k -> new int[15])[9] += 1;
         }
         if (rows.isEmpty()) return entry(label, "failed", "The scorecard was read but none of its players are in the squad.");
